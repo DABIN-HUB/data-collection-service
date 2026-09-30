@@ -102,7 +102,10 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
                 alarmRepository.createStable(database, superTable);
                 log.info("TDengine 告警 超级表 已初始化:{}.{}", database, superTable);
             }
-            ensureAlarmEventTypeColumn(database, superTable);
+            synchronized (AlarmRepository.class) {
+                ensureAlarmEventTypeColumn(database, superTable);
+                ensureAlarmLifecycleColumns(database, superTable);
+            }
             alarmStableReady.set(true);
         }
     }
@@ -174,9 +177,19 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
                 ALARM_EVENT_TYPE_COLUMN, database, superTable);
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
+    /** 缺失列才升级；列名和类型由服务端固定集合提供。 */
+    private void ensureAlarmLifecycleColumns(String database, String superTable) {
+        for (java.util.Map.Entry<String, String> column : java.util.Map.of(
+                "alarm_id", "NCHAR(128)", "related_alarm_id", "NCHAR(128)",
+                "alarm_started_at", "BIGINT", "alarm_last_occurred_at", "BIGINT",
+                "alarm_duration_ms", "BIGINT").entrySet()) {
+            if (!columnExists(database, superTable, column.getKey())) {
+                alarmRepository.addAlarmLifecycleColumn(database, superTable, column.getKey(), column.getValue());
+            }
+        }
+    }
+
+    /** 检查超级表是否存在。 */
     private boolean stableExists(String database, String stableName) {
         Long count = dataRepository.countStable(database, stableName);
         return count != null && count > 0;

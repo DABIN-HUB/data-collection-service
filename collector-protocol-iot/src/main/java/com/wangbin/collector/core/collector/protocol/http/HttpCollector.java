@@ -9,15 +9,19 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.connection.adapter.HttpConnectionAdapter;
+import com.wangbin.collector.core.config.validator.HttpConfigurationContract;
+import com.wangbin.collector.core.collector.runtime.PointMappingException;
+import com.wangbin.collector.core.collector.protocol.http.extractor.HttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.JsonPathHttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.PointArrayHttpResponseExtractor;
+import com.wangbin.collector.core.collector.protocol.http.extractor.RawHttpResponseExtractor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -29,7 +33,6 @@ public class HttpCollector extends ConnectionBackedCollector {
     private HttpConnectionAdapter httpConnection;
 
     private final Map<String, DataPoint> pointDefinitions = new ConcurrentHashMap<>();
-    private final Map<String, Object> latestValues = new ConcurrentHashMap<>();
 
     @Override
     public String getCollectorType() {
@@ -57,7 +60,6 @@ public class HttpCollector extends ConnectionBackedCollector {
     protected void doDisconnect() throws Exception {
         removeManagedConnection("HTTP");
         httpConnection = null;
-        latestValues.clear();
         pointDefinitions.clear();
     }
 
@@ -65,48 +67,19 @@ public class HttpCollector extends ConnectionBackedCollector {
      * 执行当前业务逻辑。
      */
     @Override
-    protected Object doReadPoint(DataPoint point) {
-        try {
-            Map<String, Object> values = requestRead(List.of(point));
-            Object value = values.get(point.getPointId());
-            if (value != null) {
-                latestValues.put(point.getPointId(), value);
-            }
-            return value;
-        } catch (Exception e) {
-            log.error("HTTP 读取 点位 失败, 点位={}", point.getPointId(), e);
-            return latestValues.get(point.getPointId());
-        }
+    protected Object doReadPoint(DataPoint point) throws Exception {
+        return requestRead(List.of(point)).get(point.getPointId());
     }
 
     /**
      * 执行当前业务逻辑。
      */
     @Override
-    protected Map<String, Object> doReadPoints(List<DataPoint> points) {
-        Map<String, Object> result = new HashMap<>();
+    protected Map<String, Object> doReadPoints(List<DataPoint> points) throws Exception {
         if (points == null || points.isEmpty()) {
-            return result;
+            return Map.of();
         }
-
-        try {
-            Map<String, Object> values = requestRead(points);
-            for (DataPoint point : points) {
-                String pointId = point.getPointId();
-                Object value = values.get(pointId);
-                if (value != null) {
-                    latestValues.put(pointId, value);
-                }
-                result.put(pointId, value != null ? value : latestValues.get(pointId));
-            }
-            return result;
-        } catch (Exception e) {
-            log.error("HTTP 批量 读取 失败, 数量={}", points.size(), e);
-            for (DataPoint point : points) {
-                result.put(point.getPointId(), latestValues.get(point.getPointId()));
-            }
-            return result;
-        }
+        return requestRead(points);
     }
 
     /**
@@ -124,14 +97,20 @@ public class HttpCollector extends ConnectionBackedCollector {
             payload.put(CommonMapKeys.VALUE, value);
             payload.put(CommonMapKeys.TIMESTAMP, System.currentTimeMillis());
 
-            httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
-
-            byte[] response = tryReceiveResponse();
-            boolean success = parseWriteAck(response);
-            if (success) {
-                latestValues.put(point.getPointId(), value);
+            DeviceConnection config = httpConnection.getConnectionConfig();
+            boolean direct = "DIRECT".equals(resolveRequestMode(config, List.of(point)));
+            String endpoint = direct ? config.getString("writeEndpoint", "")
+                    : config.getString("sendEndpoint", "/api/data");
+            if (direct && endpoint.isBlank()) throw new IllegalArgumentException("HTTP DIRECT write requires writeEndpoint");
+            String method = direct ? config.getString("writeMethod", "POST") : config.getString("method", "POST");
+            byte[] response = httpConnection.request(method, endpoint, payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+            String ackMode = config.getString("writeAckMode", "RESPONSE");
+            if (!"RESPONSE".equalsIgnoreCase(ackMode) && !"HTTP_2XX".equalsIgnoreCase(ackMode)) {
+                throw new IllegalArgumentException("HTTP invalid writeAckMode");
             }
-            return success;
+            if ((response == null || response.length == 0) && "HTTP_2XX".equalsIgnoreCase(ackMode)) return true;
+            if ((response == null || response.length == 0) && !direct) response = tryReceiveResponse();
+            return parseWriteAck(response);
         } catch (Exception e) {
             log.error("HTTP 写入 点位 失败, 点位={}", point.getPointId(), e);
             return false;
@@ -192,7 +171,6 @@ public class HttpCollector extends ConnectionBackedCollector {
         status.put(CommonMapKeys.IS_CONNECTED, isConnected());
         status.put("protocolType", getProtocolType());
         status.put(CommonMapKeys.POINT_COUNT, pointDefinitions.size());
-        status.put("cachedValueCount", latestValues.size());
         status.put("connectionStats", httpConnection != null ? httpConnection.getStatistics() : Map.of());
         return status;
     }
@@ -256,9 +234,24 @@ public class HttpCollector extends ConnectionBackedCollector {
         }
         payload.put("points", pointArray);
 
-        httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
-        byte[] response = tryReceiveResponse();
-        return parseReadResponse(points, response);
+        DeviceConnection config = httpConnection.getConnectionConfig();
+        String requestMode = resolveRequestMode(config, points);
+        byte[] response;
+        if ("DIRECT".equals(requestMode)) {
+            String endpoint = HttpConfigurationContract.path(config);
+            response = httpConnection.request(config.getString("method", "GET"), endpoint);
+        } else {
+            httpConnection.send(payload.toJSONString().getBytes(StandardCharsets.UTF_8));
+            response = tryReceiveResponse();
+        }
+        if (response != null) {
+            // HTTP 状态码已通过连接适配器校验；JSON 映射失败不应抹去协议层响应事实。
+            reportProtocolReady();
+        }
+        Map<String, Object> values = selectResponseExtractor(config).extract(response, points,
+                config.getExtJson() != null ? config.getExtJson() : Map.of());
+        if (values.isEmpty()) throw new PointMappingException("HTTP POINT_NOT_FOUND: no requested points mapped");
+        return values;
     }
 
     /**
@@ -276,80 +269,25 @@ public class HttpCollector extends ConnectionBackedCollector {
         return httpConnection.receive(timeout);
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private Map<String, Object> parseReadResponse(List<DataPoint> points, byte[] responseBytes) {
-        Map<String, Object> result = new HashMap<>();
-        if (responseBytes == null || responseBytes.length == 0) {
-            return result;
+    /** 根据显式配置决定 HTTP 请求模式；AUTO_COMPAT 仅保留旧配置兼容规则。 */
+    private String resolveRequestMode(DeviceConnection config, List<DataPoint> points) {
+        String configured = HttpConfigurationContract.requestMode(config);
+        if ("DIRECT".equals(configured) || "ENVELOPE".equals(configured)) {
+            return configured;
         }
-
-        String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
-        if (text.isEmpty()) {
-            return result;
-        }
-
-        try {
-            Object parsed = JSON.parse(text);
-
-            if (parsed instanceof JSONObject obj) {
-                Object valuesObj = obj.get("values");
-                if (valuesObj instanceof JSONObject values) {
-                    putValueMap(points, result, values);
-                    return result;
-                }
-
-                Object pointId = obj.get(CommonMapKeys.POINT_ID);
-                if (pointId != null && obj.containsKey(CommonMapKeys.VALUE)) {
-                    result.put(pointId.toString(), obj.get(CommonMapKeys.VALUE));
-                    return result;
-                }
-
-                putValueMap(points, result, obj);
-                return result;
-            }
-
-            if (parsed instanceof JSONArray array) {
-                for (Object item : array) {
-                    if (!(item instanceof JSONObject itemObj)) {
-                        continue;
-                    }
-                    Object pointId = itemObj.get(CommonMapKeys.POINT_ID);
-                    if (pointId != null && itemObj.containsKey(CommonMapKeys.VALUE)) {
-                        result.put(pointId.toString(), itemObj.get(CommonMapKeys.VALUE));
-                    }
-                }
-                return result;
-            }
-
-            if (points.size() == 1) {
-                result.put(points.get(0).getPointId(), parsed);
-            }
-            return result;
-        } catch (Exception e) {
-            if (points.size() == 1) {
-                result.put(points.get(0).getPointId(), text);
-            }
-            return result;
-        }
+        String path = HttpConfigurationContract.path(config);
+        boolean directCompatible = !path.isBlank()
+                && points.stream().allMatch(point -> point.getAddress() != null && point.getAddress().startsWith("/"));
+        return directCompatible ? "DIRECT" : "ENVELOPE";
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void putValueMap(List<DataPoint> points, Map<String, Object> result, JSONObject source) {
-        for (DataPoint point : points) {
-            String pointId = point.getPointId();
-            if (source.containsKey(pointId)) {
-                result.put(pointId, source.get(pointId));
-                continue;
-            }
-            String pointCode = point.getPointCode();
-            if (pointCode != null && source.containsKey(pointCode)) {
-                result.put(pointId, source.get(pointCode));
-            }
-        }
+    private HttpResponseExtractor selectResponseExtractor(DeviceConnection config) {
+        return switch (HttpConfigurationContract.responseMode(config)) {
+            case "JSON_PATH" -> new JsonPathHttpResponseExtractor();
+            case "POINT_ARRAY" -> new PointArrayHttpResponseExtractor();
+            case "RAW" -> new RawHttpResponseExtractor();
+            default -> throw new IllegalArgumentException("HTTP unsupported responseMode");
+        };
     }
 
     /**
@@ -357,11 +295,11 @@ public class HttpCollector extends ConnectionBackedCollector {
      */
     private boolean parseWriteAck(byte[] responseBytes) {
         if (responseBytes == null || responseBytes.length == 0) {
-            return true;
+            return false;
         }
         String text = new String(responseBytes, StandardCharsets.UTF_8).trim();
         if (text.isEmpty()) {
-            return true;
+            return false;
         }
         try {
             Object parsed = JSON.parse(text);
@@ -373,12 +311,13 @@ public class HttpCollector extends ConnectionBackedCollector {
                 Object status = obj.get(CommonMapKeys.STATUS);
                 if (status != null) {
                     String statusText = status.toString().toLowerCase();
-                    return Objects.equals(statusText, "success") || Objects.equals(statusText, "ok");
+                    return "success".equals(statusText) || "ok".equals(statusText);
                 }
             }
-            return true;
+            return false;
         } catch (Exception e) {
-            return true;
+            log.warn("HTTP WRITE_ACK_ERROR: malformed acknowledgment", e);
+            return false;
         }
     }
 

@@ -6,6 +6,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlan;
+import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlanBuilder;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McReadPlanItem;
 import com.wangbin.collector.core.collector.protocol.mc.plan.McWritePlan;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
@@ -27,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -182,6 +184,49 @@ class McCollectorTest {
                 com.wangbin.collector.core.collector.protocol.mc.util.McAddressParser.parse(point));
 
         assertEquals(false, result);
+    }
+
+    @Test
+    void shortContinuousWordSpanFailsInsteadOfCreatingZero() {
+        List<DataPoint> points = List.of(point("p1", "D100", "INT"),
+                point("p2", "D101", "INT"), point("p3", "D102", "INT"));
+        McReadPlan plan = new McReadPlanBuilder().build(points, 120, 256).get(0);
+        Map<String, Object> results = new LinkedHashMap<>();
+        assertThrows(IllegalArgumentException.class,
+                () -> new McCollector().populateBatchReadResults(plan, results, new byte[]{1, 0, 2, 0}));
+        assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void wordBitOffsetsReadFromSharedWordPlanWithoutNativeBitDecoding() {
+        DataPoint bit1 = point("b1", "D100.1", "boolean");
+        DataPoint bit3 = point("b3", "D100", "boolean");
+        bit3.setAdditionalConfig(new LinkedHashMap<>(Map.of("bitIndex", 3)));
+        DataPoint nextWord = point("word", "D101", "INT");
+        McReadPlan plan = new McReadPlanBuilder().build(List.of(bit1, bit3, nextWord), 120, 256).get(0);
+        Map<String, Object> results = new LinkedHashMap<>();
+        new McCollector().populateBatchReadResults(plan, results, new byte[]{0b1010, 0, 42, 0});
+        assertEquals(true, results.get("b1"));
+        assertEquals(true, results.get("b3"));
+        assertEquals(42, ((Number) results.get("word")).intValue());
+        assertEquals(false, plan.isBitUnit());
+        assertEquals(2, plan.getTotalUnitCount());
+    }
+
+    @Test
+    void batchWordBitWritesRetainOtherBitsAndReuseWordLockWithoutProtocolBatch() throws Exception {
+        DataPoint bit1 = point("b1", "D100.1", "boolean");
+        DataPoint bit3 = point("b3", "D100.3", "boolean");
+        bit1.setReadWrite("RW");
+        bit3.setReadWrite("RW");
+        collector.wordValues.put("D100", 0b1000_0001);
+        Map<DataPoint, Object> writes = new LinkedHashMap<>();
+        writes.put(bit1, true);
+        writes.put(bit3, false);
+        assertEquals(Map.of("b1", true, "b3", true), collector.writePoints(writes));
+        assertEquals(0b1000_0011, collector.wordValues.get("D100"));
+        assertTrue(collector.executedWriteSegments.isEmpty());
+        assertEquals(0, ((java.util.concurrent.atomic.AtomicInteger) ReflectionTestUtils.getField(collector, "lastFallbackCount")).get());
     }
 
     private void prepareCollector(TestableMcCollector collector) throws Exception {

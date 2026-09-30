@@ -37,6 +37,7 @@ public interface McFrameCodec {
      * 校验业务条件和参数边界。
      */
     default byte[] validateResponse(byte[] request, byte[] response) {
+        McResponseParser.validate3eBinaryCorrelation(request, response);
         return response;
     }
 

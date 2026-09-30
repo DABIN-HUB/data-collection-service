@@ -2,6 +2,7 @@ package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
+import com.wangbin.collector.api.filter.RequestCorrelationFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -93,7 +94,7 @@ class ShadowControllerTest {
 
     @Test
     void shouldClearDesiredFields() throws Exception {
-        when(shadowManager.clearDesired("dev-1", List.of("temperature")))
+        when(shadowManager.clearDesired("dev-1", List.of("temperature"), null))
                 .thenReturn(shadowDocument());
 
         mockMvc.perform(delete("/api/shadow/dev-1/desired")
@@ -102,7 +103,39 @@ class ShadowControllerTest {
                 .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.data.state.reported.temperature", is(25)));
 
-        verify(shadowManager).clearDesired("dev-1", List.of("temperature"));
+        verify(shadowManager).clearDesired("dev-1", List.of("temperature"), null);
+    }
+
+    @Test
+    void shouldReturnConflictWithVersionsOnStaleUpdate() throws Exception {
+        when(shadowManager.updateDesired(eq("dev-1"), argThat(map -> map.containsKey("temperature")),
+                eq("api"), eq(2L)))
+                .thenThrow(new ShadowManager.ShadowVersionConflictException(2L, 3L));
+
+        mockMvc.perform(post("/api/shadow/dev-1/desired")
+                        .requestAttr(RequestCorrelationFilter.ATTR_REQUEST_ID, "shadow-409")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsBytes(Map.of(
+                                "expectedVersion", 2, "properties", Map.of("temperature", 26)))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code", is(409)))
+                .andExpect(jsonPath("$.status", is("error")))
+                .andExpect(jsonPath("$.machineCode", is("SHADOW_VERSION_CONFLICT")))
+                .andExpect(jsonPath("$.extra.requestId", is("shadow-409")))
+                .andExpect(jsonPath("$.data.expectedVersion", is(2)))
+                .andExpect(jsonPath("$.data.currentVersion", is(3)));
+    }
+
+    @Test
+    void shouldReturnConflictWithVersionsOnStaleClear() throws Exception {
+        when(shadowManager.clearDesired("dev-1", List.of("temperature"), 2L))
+                .thenThrow(new ShadowManager.ShadowVersionConflictException(2L, 3L));
+
+        mockMvc.perform(delete("/api/shadow/dev-1/desired")
+                        .param("fields", "temperature").param("expectedVersion", "2"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.data.expectedVersion", is(2)))
+                .andExpect(jsonPath("$.data.currentVersion", is(3)));
     }
 
     private Map<String, Object> shadowDocument() {

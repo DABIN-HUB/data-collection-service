@@ -1,24 +1,38 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type MessageBoxOptions } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { executeCollectorProxyRequest, type CollectorProxyRequest } from "./http-proxy-utils.js";
+import { MainCredentialStore, createEmptyCredentialStatus, type CredentialStatus } from "./credential-store-utils.js";
+import { readJsonWithRecovery, writeJsonAtomic, type RecoveryInfo } from "./desktop-persistence-utils.js";
+import { executeCollectorProxyRequest, withAuthoritativeProxyServerUrl, type RendererCollectorProxyRequest } from "./http-proxy-utils.js";
+import { assertTrustedIpcSender } from "./ipc-security-utils.js";
 import {
   buildAboutInfo,
   buildWindowChromeOptions,
   DEFAULT_SERVER_URL,
   DEFAULT_WINDOW_HEIGHT,
   DEFAULT_WINDOW_WIDTH,
+  isExternalNavigationUrl,
   isSafeExternalUrl,
+  isTrustedRendererUrl,
   MIN_WINDOW_HEIGHT,
   MIN_WINDOW_WIDTH,
   normalizeServerConfig,
+  normalizeServerConfigCandidate,
   normalizeWindowState,
   type NormalizedWindowState,
   type ServerConfig,
   type WindowState
 } from "./main-utils.js";
+import { applyServerConfigChange } from "./server-config-change-utils.js";
+import {
+  buildProductionViewMenuTemplate,
+  focusExistingMainWindow,
+  formatFatalStartupDiagnostic,
+  getStartupDiagnosticPath,
+  isReloadShortcut,
+  writeStartupDiagnostic
+} from "./main-lifecycle-utils.js";
 
 interface DesktopConfig extends ServerConfig {
   windowState?: WindowState;
@@ -37,25 +51,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 let mainWindow: BrowserWindow | null = null;
+let configRecovery: RecoveryInfo | undefined;
+let credentialStore: MainCredentialStore | null = null;
+
+function getRendererIndexPath(): string {
+  return resolve(__dirname, "../../renderer/index.html");
+}
 
 function getConfigPath(): string {
   return join(app.getPath("userData"), "collector-desktop-config.json");
 }
 
+function getCredentialPath(): string {
+  return join(app.getPath("userData"), "collector-desktop-credentials.json");
+}
+
 function readDesktopConfig(): DesktopConfig {
   const configPath = getConfigPath();
-  if (!existsSync(configPath)) {
-    return DEFAULT_DESKTOP_CONFIG;
-  }
-  try {
-    const raw = JSON.parse(readFileSync(configPath, "utf8")) as Partial<DesktopConfig>;
-    return {
-      ...normalizeServerConfig(raw),
-      windowState: normalizeWindowState(raw.windowState)
-    };
-  } catch {
-    return DEFAULT_DESKTOP_CONFIG;
-  }
+  const result = readJsonWithRecovery(configPath, DEFAULT_DESKTOP_CONFIG, normalizePersistedDesktopConfig);
+  configRecovery = result.recovery;
+  return result.value;
 }
 
 function writeDesktopConfig(config: Partial<DesktopConfig>): DesktopConfig {
@@ -66,9 +81,19 @@ function writeDesktopConfig(config: Partial<DesktopConfig>): DesktopConfig {
     windowState: normalizeWindowState(config.windowState || current.windowState)
   };
   const configPath = getConfigPath();
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, JSON.stringify(normalized, null, 2), "utf8");
+  writeJsonAtomic(configPath, normalized);
   return normalized;
+}
+
+function normalizePersistedDesktopConfig(raw: unknown): DesktopConfig {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("桌面配置文件格式无效");
+  }
+  const config = raw as Partial<DesktopConfig>;
+  return {
+    ...normalizeServerConfigCandidate({ serverUrl: config.serverUrl || DEFAULT_SERVER_URL }),
+    windowState: normalizeWindowState(config.windowState)
+  };
 }
 
 function readServerConfig(): ServerConfig {
@@ -77,6 +102,43 @@ function readServerConfig(): ServerConfig {
 
 function writeServerConfig(config: ServerConfig): ServerConfig {
   return normalizeServerConfig(writeDesktopConfig(config));
+}
+
+function getCredentialStore(): MainCredentialStore {
+  if (!credentialStore) {
+    credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
+    credentialStore.initialize();
+  }
+  return credentialStore;
+}
+
+function readCredentialStatus(): CredentialStatus {
+  return credentialStore?.getStatus() || createEmptyCredentialStatus();
+}
+
+async function confirmServerConfigChange(current: ServerConfig, candidate: ServerConfig): Promise<boolean> {
+  const options: MessageBoxOptions = {
+    type: "warning",
+    title: "确认切换采集服务地址",
+    message: "确认切换采集服务地址？",
+    detail: [
+      "当前采集服务：",
+      current.serverUrl,
+      "",
+      "准备切换到：",
+      candidate.serverUrl,
+      "",
+      "修改后，桌面端的后台请求将发送到新的采集服务地址。请确认该地址是可信的采集服务。"
+    ].join("\n"),
+    buttons: ["取消", "确认切换"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  };
+  const result = mainWindow
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
 }
 
 function persistWindowState(window: BrowserWindow): void {
@@ -92,7 +154,7 @@ function persistWindowState(window: BrowserWindow): void {
   });
 }
 
-function createWindow(): void {
+async function createWindow(): Promise<void> {
   const config = readDesktopConfig();
   const windowState: NormalizedWindowState = normalizeWindowState(config.windowState);
   const chromeOptions = buildWindowChromeOptions();
@@ -110,7 +172,7 @@ function createWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       preload: resolve(__dirname, "../preload/index.cjs")
     }
   });
@@ -143,19 +205,48 @@ function createWindow(): void {
     }
   });
 
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL).catch(() => undefined);
-    mainWindow.webContents.openDevTools({ mode: "detach" });
-  } else {
-    mainWindow.loadFile(resolve(__dirname, "../../renderer/index.html")).catch(() => undefined);
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (!isDev && isReloadShortcut(input)) {
+      event.preventDefault();
+    }
+  });
+
+  mainWindow.webContents.once("preload-error", (_event, preloadPath, error) => {
+    reportFatalStartupError(`preload startup failure: ${preloadPath}`, error);
+  });
+
+  try {
+    if (isDev && process.env.VITE_DEV_SERVER_URL) {
+      await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+      mainWindow.webContents.openDevTools({ mode: "detach" });
+    } else {
+      await mainWindow.loadFile(getRendererIndexPath());
+    }
+  } catch (error) {
+    mainWindow.destroy();
+    mainWindow = null;
+    throw error;
   }
 }
 
 function isExternalNavigation(url: string): boolean {
-  if (isDev && process.env.VITE_DEV_SERVER_URL && url.startsWith(process.env.VITE_DEV_SERVER_URL)) {
-    return false;
-  }
-  return !url.startsWith("file://");
+  return isExternalNavigationUrl(url, {
+    isDev,
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    rendererIndexPath: getRendererIndexPath()
+  });
+}
+
+function isTrustedRendererNavigation(url: string): boolean {
+  return isTrustedRendererUrl(url, {
+    isDev,
+    devServerUrl: process.env.VITE_DEV_SERVER_URL,
+    rendererIndexPath: getRendererIndexPath()
+  });
+}
+
+function assertTrustedSender(event: IpcMainInvokeEvent): void {
+  assertTrustedIpcSender(event, mainWindow?.webContents.id, isTrustedRendererNavigation);
 }
 
 async function openExternalUrl(url: string): Promise<boolean> {
@@ -178,16 +269,7 @@ function buildMenuTemplate(): MenuItemConstructorOptions[] {
     },
     {
       label: "视图",
-      submenu: [
-        { label: "重新加载", role: "reload" },
-        { label: "强制重新加载", role: "forceReload" },
-        { label: "开发者工具", role: "toggleDevTools" },
-        { type: "separator" },
-        { label: "重置缩放", role: "resetZoom" },
-        { label: "放大", role: "zoomIn" },
-        { label: "缩小", role: "zoomOut" },
-        { label: "全屏", role: "togglefullscreen" }
-      ]
+      submenu: buildProductionViewMenuTemplate(isDev)
     },
     {
       label: "导航",
@@ -225,40 +307,114 @@ function buildMenuTemplate(): MenuItemConstructorOptions[] {
   ];
 }
 
-ipcMain.handle("collector:get-app-info", () => ({
-  name: "数据采集工作台",
-  version: app.getVersion(),
-  platform: process.platform,
-  configPath: getConfigPath(),
-  backendManaged: false
-}));
+ipcMain.handle("collector:get-app-info", (event) => {
+  assertTrustedSender(event);
+  return {
+    name: "数据采集工作台",
+    version: app.getVersion(),
+    platform: process.platform,
+    configPath: getConfigPath(),
+    startupDiagnosticPath: getStartupDiagnosticPath(app.getPath("userData")),
+    backendManaged: false,
+    configRecovery
+  };
+});
 
-ipcMain.handle("collector:get-server-config", () => readServerConfig());
+ipcMain.handle("collector:get-server-config", (event) => {
+  assertTrustedSender(event);
+  return readServerConfig();
+});
 
-ipcMain.handle("collector:set-server-config", (_event, config: ServerConfig) => writeServerConfig(config));
+ipcMain.handle("collector:set-server-config", async (event, config: ServerConfig) => {
+  assertTrustedSender(event);
+  return applyServerConfigChange(config, {
+    readCurrent: readServerConfig,
+    write: writeServerConfig,
+    confirmChange: confirmServerConfigChange
+  });
+});
 
-ipcMain.handle("collector:open-external", (_event, url: string) => openExternalUrl(url));
+ipcMain.handle("collector:get-credential-status", (event) => {
+  assertTrustedSender(event);
+  return readCredentialStatus();
+});
 
-ipcMain.handle("collector:http-request", (_event, request: CollectorProxyRequest) => executeCollectorProxyRequest({
-  ...request,
-  serverUrl: request.serverUrl || readServerConfig().serverUrl
-}));
+ipcMain.handle("collector:set-credential", (event, credential: { token?: string; remember?: boolean }) => {
+  assertTrustedSender(event);
+  return getCredentialStore().setCredential(credential.token || "", Boolean(credential.remember));
+});
+
+ipcMain.handle("collector:clear-credential", (event) => {
+  assertTrustedSender(event);
+  return getCredentialStore().clearCredential();
+});
+
+ipcMain.handle("collector:open-external", (event, url: string) => {
+  assertTrustedSender(event);
+  return openExternalUrl(url);
+});
+
+ipcMain.handle("collector:http-request", (event, request: RendererCollectorProxyRequest) => {
+  assertTrustedSender(event);
+  return executeCollectorProxyRequest({
+    ...withAuthoritativeProxyServerUrl(request, readServerConfig().serverUrl),
+    token: getCredentialStore().getToken()
+  });
+});
 
 app.setAppUserModelId("com.wangbin.collector.desktop");
 
-app.whenReady().then(() => {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate()));
-  createWindow();
+const singleInstanceAcquired = app.requestSingleInstanceLock();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+if (!singleInstanceAcquired) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    focusExistingMainWindow(mainWindow);
   });
-}).catch(() => undefined);
+
+  app.whenReady().then(async () => {
+    credentialStore = new MainCredentialStore(getCredentialPath(), safeStorage, process.platform);
+    credentialStore.initialize();
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate()));
+    await createWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow().catch((error) => reportFatalStartupError("macOS activate renderer load", error));
+      }
+    });
+  }).catch((error) => reportFatalStartupError("application startup", error));
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
+
+function reportFatalStartupError(context: string, error: unknown): never {
+  const diagnosticPath = getStartupDiagnosticPath(app.getPath("userData"));
+  const diagnostic = formatFatalStartupDiagnostic({
+    context,
+    error,
+    appVersion: app.getVersion(),
+    platform: process.platform
+  });
+  try {
+    writeStartupDiagnostic(diagnosticPath, diagnostic);
+  } catch {
+    // Native error dialog below must still surface the startup failure if diagnostic persistence fails.
+  }
+  dialog.showErrorBox(
+    "数据采集工作台无法启动",
+    [
+      "应用启动过程中发生关键错误，主窗口无法安全加载。",
+      "",
+      `阶段：${context}`,
+      `诊断日志：${diagnosticPath}`
+    ].join("\n")
+  );
+  app.exit(1);
+  throw error instanceof Error ? error : new Error(String(error || "fatal startup error"));
+}

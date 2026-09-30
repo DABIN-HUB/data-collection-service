@@ -1,0 +1,21 @@
+device_id: 101
+name: REF-BACNET-101
+points:
+  - object_type: binaryValue
+    object_instance: 1
+    object_name: REF-BACNET-101/Circuit1Status
+    present_value: true
+  - object_type: binaryValue
+    object_instance: 2
+    object_name: REF-BACNET-101/Circuit2Status
+    present_value: false
+  - object_type: analogValue
+    object_instance: 1
+    object_name: REF-BACNET-101/TotalPower
+    present_value: 123.45
+    units: kilowatts
+  - object_type: analogValue
+    object_instance: 2
+    object_name: REF-BACNET-101/TotalEnergy
+    present_value: 6789.0
+    units: kilowattHours

@@ -80,6 +80,31 @@ class McAddressParserTest {
         assertEquals("MC bit offset address only supports BOOL", exception.getMessage());
     }
 
+    @Test
+    void wordBitIndexBoundsAndConflictsAreEnforced() {
+        assertEquals(0, McAddressParser.parse(point("D100.0", "BOOLEAN", Map.of())).getBitIndex());
+        assertEquals(15, McAddressParser.parse(point("D100", "BOOLEAN", Map.of("bitIndex", 15))).getBitIndex());
+        assertThrows(IllegalArgumentException.class,
+                () -> McAddressParser.parse(point("D100", "BOOLEAN", Map.of("bitIndex", -1))));
+        assertThrows(IllegalArgumentException.class,
+                () -> McAddressParser.parse(point("D100.16", "BOOLEAN", Map.of())));
+        assertThrows(IllegalArgumentException.class,
+                () -> McAddressParser.parse(point("D100.3", "BOOLEAN", Map.of("bitIndex", 5))));
+    }
+
+    @Test
+    void addressRadixAndWireDeviceNumberAreStable() {
+        Map<String, Integer> expected = Map.of("M0", 0, "M100", 100, "X0", 0,
+                "X1A", 0x1A, "Y2F", 0x2F, "D100", 100, "R200", 200,
+                "W300", 0x300, "ZR1000", 1000);
+        for (Map.Entry<String, Integer> entry : expected.entrySet()) {
+            String addr = entry.getKey();
+            McAddress parsed = McAddressParser.parse(point(addr,
+                    addr.startsWith("M") || addr.startsWith("X") || addr.startsWith("Y") ? "BOOLEAN" : "UINT16", Map.of()));
+            assertEquals(entry.getValue(), parsed.getDeviceNumber(), addr);
+        }
+    }
+
     private DataPoint point(String address, String dataType, Map<String, Object> additionalConfig) {
         DataPoint point = new DataPoint();
         point.setPointId(address);

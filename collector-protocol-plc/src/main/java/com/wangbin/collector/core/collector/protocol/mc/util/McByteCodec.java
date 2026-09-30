@@ -2,6 +2,7 @@ package com.wangbin.collector.core.collector.protocol.mc.util;
 
 import com.wangbin.collector.core.collector.protocol.mc.domain.McAddress;
 import com.wangbin.collector.core.collector.protocol.mc.domain.McDriverType;
+import com.wangbin.collector.core.collector.protocol.mc.codec.McPayloadLengthException;
 
 import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
@@ -34,6 +35,7 @@ public final class McByteCodec {
             return address.isScalar() ? values.get(0) : values;
         }
         if (address.getDriverType() == McDriverType.STRING) {
+            validateWordPayloadLength(address, effectivePayload);
             return decodeString(effectivePayload, address.getStringLength());
         }
         validateWordPayloadLength(address, effectivePayload);
@@ -78,8 +80,7 @@ public final class McByteCodec {
     private static void validateWordPayloadLength(McAddress address, byte[] payload) {
         int expected = address.getWordCount() * 2;
         if (payload.length < expected) {
-            throw new IllegalArgumentException("MC payload is shorter than expected: expected="
-                    + expected + ", actual=" + payload.length);
+            throw new McPayloadLengthException("word read", expected, payload.length);
         }
     }
 
@@ -133,8 +134,7 @@ public final class McByteCodec {
             }
         }
         if (values.size() < count) {
-            throw new IllegalArgumentException("MC bit payload is shorter than expected: expected="
-                    + count + ", actual=" + values.size());
+            throw new McPayloadLengthException("bit read", count, values.size());
         }
         return values;
     }

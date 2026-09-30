@@ -2,7 +2,11 @@ package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.RealtimeDataApplicationService;
 import com.wangbin.collector.api.controller.dto.AdaptiveResetResponse;
+import com.wangbin.collector.api.controller.dto.AllDeviceRealtimeDataResponse;
 import com.wangbin.collector.api.controller.dto.AlarmHistoryDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactAllDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactDeviceRealtimeDataResponse;
+import com.wangbin.collector.api.controller.dto.CompactRealtimeDeltaResponse;
 import com.wangbin.collector.api.controller.dto.DeviceListResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointListResponse;
 import com.wangbin.collector.api.controller.dto.DeviceRealtimeDataResponse;
@@ -54,6 +58,62 @@ public class DataController {
     public DeviceRealtimeDataResponse getDeviceData(@PathVariable String deviceId,
                                                      @RequestParam(required = false) List<String> pointIds) {
         return realtimeDataApplicationService.getDeviceData(deviceId, pointIds);
+    }
+
+    /**
+     * 查询指定设备的实时表格紧凑快照。
+     *
+     * @param deviceId 本地设备唯一标识
+     * @return 单设备实时表格紧凑快照
+     */
+    @GetMapping("/device/{deviceId}/compact")
+    public CompactDeviceRealtimeDataResponse getCompactDeviceData(@PathVariable String deviceId) {
+        return realtimeDataApplicationService.getCompactDeviceData(deviceId);
+    }
+
+    /**
+     * 查询指定设备的实时表格紧凑增量。
+     */
+    @GetMapping("/device/{deviceId}/compact/delta")
+    public CompactRealtimeDeltaResponse getCompactDeviceRealtimeDelta(@PathVariable String deviceId,
+                                                                       @RequestParam String snapshotId,
+                                                                       @RequestParam long configEpoch,
+                                                                       @RequestParam long sinceRevision) {
+        return realtimeDataApplicationService.getCompactDeviceRealtimeDelta(
+                deviceId,
+                snapshotId,
+                configEpoch,
+                sinceRevision);
+    }
+
+    /**
+     * 查询全部设备的实时点位数据。
+     *
+     * @return 全设备实时数据聚合响应
+     */
+    @GetMapping("/realtime")
+    public AllDeviceRealtimeDataResponse getAllRealtimeData() {
+        return realtimeDataApplicationService.getAllRealtimeData();
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑快照。
+     *
+     * @return 全设备实时表格紧凑聚合响应
+     */
+    @GetMapping("/realtime/compact")
+    public CompactAllDeviceRealtimeDataResponse getCompactAllRealtimeData() {
+        return realtimeDataApplicationService.getCompactAllRealtimeData();
+    }
+
+    /**
+     * 查询全部设备的实时表格紧凑增量。
+     */
+    @GetMapping("/realtime/compact/delta")
+    public CompactRealtimeDeltaResponse getCompactAllRealtimeDelta(@RequestParam String snapshotId,
+                                                                    @RequestParam long configEpoch,
+                                                                    @RequestParam long sinceRevision) {
+        return realtimeDataApplicationService.getCompactAllRealtimeDelta(snapshotId, configEpoch, sinceRevision);
     }
 
     /**

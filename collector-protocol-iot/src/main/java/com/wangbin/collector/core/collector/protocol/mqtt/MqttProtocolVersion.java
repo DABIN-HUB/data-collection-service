@@ -15,9 +15,13 @@ public enum MqttProtocolVersion {
             return V5;
         }
         String normalized = text.trim().toLowerCase();
-        if ("v3".equals(normalized) || "3.1.1".equals(normalized) || "mqtt3".equals(normalized)) {
+        if (normalized.isEmpty() || "v5".equals(normalized) || "5".equals(normalized)) {
+            return V5;
+        }
+        if ("v3".equals(normalized) || "3".equals(normalized)
+                || "3.1.1".equals(normalized) || "mqtt3".equals(normalized)) {
             return V3;
         }
-        return V5;
+        throw new IllegalArgumentException("MQTT version must be v3 or v5");
     }
 }

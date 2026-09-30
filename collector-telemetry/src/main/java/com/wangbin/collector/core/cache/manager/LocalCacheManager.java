@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("localCacheManager")
-@ConditionalOnExpression("'${collector.cache.type:local}' != 'redis'")
+@ConditionalOnExpression("'${collector.cache.type:multi-level}' != 'redis'")
 public class LocalCacheManager extends AbstractCacheManager {
 
     private final CacheProperties.LocalCache localProperties;

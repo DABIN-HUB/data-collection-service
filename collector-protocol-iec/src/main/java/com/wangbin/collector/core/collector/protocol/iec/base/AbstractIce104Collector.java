@@ -32,10 +32,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected int port = 2404;
     protected int commonAddress = 1;
     protected int timeout = 5000;
+    protected int connectionTimeout = 5000;
+    protected int ioaFieldLength = 3;
+    protected Iec104IoaEncodingMode ioaEncodingMode = Iec104IoaEncodingMode.STANDARD;
     protected boolean timeTag = true;
     protected CollectorProperties.Iec104Config iec104Config;
 
-    protected boolean dataTransferStopped = true;
+    protected volatile boolean dataTransferStopped = true;
 
     protected final Map<Iec104Key, CopyOnWriteArrayList<CompletableFuture<Object>>> pendingRequests = new ConcurrentHashMap<>();
     protected final Map<Iec104Key, CacheEntry> valueCache = new ConcurrentHashMap<>();
@@ -77,12 +80,19 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 ? collectorProperties.getIec104()
                 : new CollectorProperties.Iec104Config();
 
-        this.host = deviceInfo.getIpAddress();
-        this.port = deviceInfo.getPort() != null ? deviceInfo.getPort() : 2404;
-
         DeviceConnection connectionConfig = requireConnectionConfig();
+        this.host = connectionConfig.getHost() != null && !connectionConfig.getHost().isBlank()
+                ? connectionConfig.getHost() : deviceInfo.getIpAddress();
+        this.port = connectionConfig.getPort() != null ? connectionConfig.getPort()
+                : deviceInfo.getPort() != null ? deviceInfo.getPort() : 2404;
         this.commonAddress = resolveCommonAddress(connectionConfig);
         this.timeout = resolveTimeout(connectionConfig);
+        this.connectionTimeout = connectionConfig.getConnectTimeout() != null && connectionConfig.getConnectTimeout() > 0
+                ? connectionConfig.getConnectTimeout()
+                : connectionConfig.getTimeout() != null && connectionConfig.getTimeout() > 0
+                ? connectionConfig.getTimeout() : 5000;
+        this.ioaFieldLength = connectionConfig.getInt("ioaFieldLength", 3);
+        this.ioaEncodingMode = Iec104IoaEncodingMode.from(connectionConfig.getProperty("ioaEncodingMode"));
         this.timeTag = true;
         if (interrogationScheduler == null) {
             interrogationScheduler = resolveProtocolScheduler();
@@ -124,8 +134,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             CauseOfTransmission cot = asdu.getCauseOfTransmission();
             int commonAddr = asdu.getCommonAddress();
 
-            log.debug("IEC104 ASDU：类型={}，传送原因={}，否定确认={}",
-                    type, cot, asdu.isNegativeConfirm());
+            log.debug("IEC104 ASDU：类型={}，传送原因={}，公共地址={}，连续序列={}，元素数={}，否定确认={}",
+                    type, cot, commonAddr, asdu.isSequenceOfElements(),
+                    asdu.getSequenceLength(), asdu.isNegativeConfirm());
 
             if (type == ASduType.C_IC_NA_1) {
                 handleInterrogationAsdu(asdu);
@@ -144,36 +155,64 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             }
 
             boolean isResponse = isResponseCause(cot);
+            Integer typeId = Iec104Utils.resolveTypeId(type);
 
             for (InformationObject io : ios) {
-                int ioa = io.getInformationObjectAddress();
+                int rawIoa = io.getInformationObjectAddress();
                 InformationElement[][] elements = io.getInformationElements();
-
-                Object value = null;
-                if (elements != null && elements.length > 0) {
-                    value = parseValue(type, elements[0]);
+                int count = asdu.isSequenceOfElements() && elements != null ? elements.length : 1;
+                for (int i = 0; i < count; i++) {
+                    // j60870 的 sequence 只携带起始 IOA，每个元素组对应后续连续地址。
+                    int wireIoa = sequenceWireIoa(rawIoa, i);
+                    int ioa = fromWireIoa(wireIoa);
+                    Object value = elements != null && i < elements.length
+                            ? parseValue(type, elements[i]) : null;
+                    Object normalized = normalizeValue(value);
+                    boolean pendingRead = hasPendingRequest(commonAddr, typeId, ioa);
+                    cacheValue(commonAddr, typeId, ioa, normalized);
+                    completeRequest(commonAddr, typeId, ioa, normalized);
+                    if (!isResponse || (type != null && type.name().startsWith("M_")
+                            && normalized != null && !pendingRead)) {
+                        handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
+                    }
+                    result.put(String.valueOf(ioa), normalized);
                 }
-                Integer typeId = Iec104Utils.resolveTypeId(type);
-                Object normalized = normalizeValue(value);
-                cacheValue(commonAddr, typeId, ioa, normalized);
-
-                completeRequest(commonAddr, typeId, ioa, normalized);
-                if (!isResponse) {
-                    handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
-                }
-
-                result.put(String.valueOf(ioa), normalized);
             }
 
         } catch (Exception e) {
             log.error("IEC104 处理响应失败", e);
+            failAllPending(e);
         }
 
         return result;
     }
 
+    protected int toWireIoa(int logicalIoa) {
+        long wireIoa = ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT
+                ? ((long) logicalIoa) << 8 : logicalIoa;
+        validateIoa(wireIoa);
+        return (int) wireIoa;
+    }
+
+    protected int fromWireIoa(int wireIoa) {
+        validateIoa(wireIoa);
+        if (ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT && (wireIoa & 0xFF) != 0) {
+            throw new IllegalArgumentException("IEC104 SHIFT8_COMPAT wire IOA must be aligned to 256: " + wireIoa);
+        }
+        return ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT
+                ? wireIoa >>> 8 : wireIoa;
+    }
+
+    private void validateIoa(long ioa) {
+        if (ioaFieldLength < 1 || ioaFieldLength > 3 || ioa < 0
+                || ioa > (1L << (ioaFieldLength * 8)) - 1) {
+            throw new IllegalArgumentException("IEC104 IOA is not representable in "
+                    + ioaFieldLength + " bytes: " + ioa);
+        }
+    }
+
     /**
-     * 构造标准业务结果。
+     * 解析或转换业务数据。
      */
     private void failAllPending(Exception e) {
         pendingRequests.forEach((k, list) -> list.forEach(f -> f.completeExceptionally(e)));
@@ -318,6 +357,23 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         completePendingKey(new Iec104Key(commonAddress, null, ioAddress), value);
     }
 
+    private boolean hasPendingRequest(int commonAddress, Integer typeId, int ioAddress) {
+        return (typeId != null && pendingRequests.containsKey(new Iec104Key(commonAddress, typeId, ioAddress)))
+                || pendingRequests.containsKey(new Iec104Key(commonAddress, null, ioAddress));
+    }
+
+    /**
+     * 按 IEC104 的地址编码模式计算 sequence 中每个元素的 wire IOA。
+     * SHIFT8_COMPAT 的每个逻辑地址占用一个 256 对齐的 wire 地址，不能在解码后再累加逻辑地址。
+     */
+    private int sequenceWireIoa(int rawIoa, int elementIndex) {
+        long increment = ioaEncodingMode == Iec104IoaEncodingMode.SHIFT8_COMPAT
+                ? (long) elementIndex << 8 : elementIndex;
+        long wireIoa = Math.addExact((long) rawIoa, increment);
+        validateIoa(wireIoa);
+        return (int) wireIoa;
+    }
+
     /**
      * 执行当前业务逻辑。
      */
@@ -385,6 +441,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         InterrogationKey key = new InterrogationKey(commonAddr, qualifier);
         CompletableFuture<Void> future = pendingInterrogations.get(key);
 
+        if (asdu.isNegativeConfirm() || isErrorCause(cot)) {
+            if (future != null && pendingInterrogations.remove(key, future)) {
+                future.completeExceptionally(new IOException("IEC104 interrogation rejected: " + cot));
+            }
+            return;
+        }
+
         switch (cot) {
             case ACTIVATION:
             case ACTIVATION_CON:
@@ -392,8 +455,9 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 break;
             case ACTIVATION_TERMINATION:
                 if (future != null) {
-                    future.complete(null);
-                    pendingInterrogations.remove(key);
+                    if (pendingInterrogations.remove(key, future)) {
+                        future.complete(null);
+                    }
                 }
                 log.info("IEC104 总召唤已完成");
                 break;
@@ -425,7 +489,6 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 执行当前业务逻辑。
      */
     protected void onConnectionReady() {
-        dataTransferStopped = false;
         maybeTriggerGeneralInterrogation("connect");
         startGeneralInterrogationLoop();
     }
@@ -481,19 +544,24 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             return;
         }
         InterrogationKey key = new InterrogationKey(targetCommonAddress, qualifier);
-        pendingInterrogations.computeIfAbsent(key, mapKey -> {
-            CompletableFuture<Void> future = new CompletableFuture<>();
-            IeQualifierOfInterrogation qoi = new IeQualifierOfInterrogation(qualifier);
-            try {
-                connection.interrogation(targetCommonAddress, CauseOfTransmission.ACTIVATION, qoi);
-                log.info("触发 IEC104 总召唤 ca={} qualifier={} 原因={}", targetCommonAddress, qualifier, reason);
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-                pendingInterrogations.remove(mapKey, future);
-                log.error("触发总召唤失败 ca={} qualifier={}", targetCommonAddress, qualifier, e);
-            }
-            return future;
-        });
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        if (pendingInterrogations.putIfAbsent(key, future) != null) {
+            return;
+        }
+        try {
+            connection.interrogation(targetCommonAddress, CauseOfTransmission.ACTIVATION,
+                    new IeQualifierOfInterrogation(qualifier));
+            resolveProtocolScheduler().schedule(() -> {
+                if (pendingInterrogations.remove(key, future)) {
+                    future.completeExceptionally(new TimeoutException("IEC104 interrogation timeout"));
+                }
+            }, requestTimeoutMillis(), TimeUnit.MILLISECONDS);
+            log.info("触发 IEC104 总召唤 ca={} qualifier={} 原因={}", targetCommonAddress, qualifier, reason);
+        } catch (Exception e) {
+            pendingInterrogations.remove(key, future);
+            future.completeExceptionally(e);
+            log.error("触发总召唤失败 ca={} qualifier={}", targetCommonAddress, qualifier, e);
+        }
     }
 
     /**

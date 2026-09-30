@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.application;
 
 import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
+import com.wangbin.collector.api.controller.dto.DeviceOperationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
@@ -12,6 +13,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 /**
  * 设备控制台应用服务。
@@ -31,17 +34,8 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备启动结果
      */
-    public ApiResult<Object> startDevice(String deviceId) {
-        try {
-            boolean success = collectionService.startDevice(deviceId);
-            if (success) {
-                return ApiResult.deviceSuccess(deviceId, "设备启动成功");
-            }
-            return ApiResult.deviceError(deviceId, "设备已启动或启动失败");
-        } catch (Exception exception) {
-            log.error("启动设备失败，设备={}", deviceId, exception);
-            return ApiResult.deviceError(deviceId, "启动异常: " + exception.getMessage());
-        }
+    public ApiResult<DeviceOperationResponse> startDevice(String deviceId) {
+        return operate(deviceId, "START", () -> collectionService.startDevice(deviceId), "设备启动成功", "设备已启动或启动失败");
     }
 
     /**
@@ -50,17 +44,8 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备启动结果
      */
-    public ApiResult<Object> startLocalDevice(String deviceId) {
-        try {
-            boolean success = collectionService.startLocalDevice(deviceId);
-            if (success) {
-                return ApiResult.deviceSuccess(deviceId, "本地临时设备启动成功");
-            }
-            return ApiResult.deviceError(deviceId, "设备不是本地临时设备，或启动失败");
-        } catch (Exception exception) {
-            log.error("启动本地临时设备失败，设备={}", deviceId, exception);
-            return ApiResult.deviceError(deviceId, "启动异常: " + exception.getMessage());
-        }
+    public ApiResult<DeviceOperationResponse> startLocalDevice(String deviceId) {
+        return operate(deviceId, "START_LOCAL", () -> collectionService.startLocalDevice(deviceId), "本地临时设备启动成功", "设备不是本地临时设备，或启动失败");
     }
 
     /**
@@ -69,28 +54,48 @@ public class DeviceConsoleApplicationService {
      * @param deviceId 本地设备唯一标识
      * @return 设备停止结果
      */
-    public ApiResult<Object> stopDevice(String deviceId) {
+    public ApiResult<DeviceOperationResponse> stopDevice(String deviceId) {
+        return operate(deviceId, "STOP", () -> collectionService.stopDevice(deviceId), "设备已停止", "设备停止失败或已经停止");
+    }
+
+    private ApiResult<DeviceOperationResponse> operate(String deviceId, String action, BooleanSupplier operation,
+                                                        String successMessage, String failureMessage) {
+        long acceptedAt = System.currentTimeMillis();
+        String operationId = UUID.randomUUID().toString();
         try {
-            boolean success = collectionService.stopDevice(deviceId);
-            if (success) {
-                return ApiResult.deviceSuccess(deviceId, "设备已停止");
-            }
-            return ApiResult.deviceError(deviceId, "设备停止失败或已经停止");
+            boolean accepted = operation.getAsBoolean();
+            DeviceRuntimeSnapshot runtime = collectionService.getDeviceRuntimeSnapshot(deviceId);
+            DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
+                    .deviceId(deviceId).action(action).accepted(accepted).acceptedAt(acceptedAt)
+                    .completedAt(System.currentTimeMillis()).runtime(runtime).build();
+            ApiResult<DeviceOperationResponse> result = accepted
+                    ? ApiResult.statusSuccess(successMessage, response)
+                    : ApiResult.statusError(failureMessage, response);
+            return result.withDeviceId(deviceId);
         } catch (Exception exception) {
-            log.error("停止设备失败，设备={}", deviceId, exception);
-            return ApiResult.deviceError(deviceId, "停止异常: " + exception.getMessage());
+            log.error("设备操作失败，设备={}，action={}", deviceId, action, exception);
+            DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
+                    .deviceId(deviceId).action(action).accepted(false).acceptedAt(acceptedAt)
+                    .completedAt(System.currentTimeMillis()).runtime(safeRuntimeSnapshot(deviceId)).build();
+            String operationErrorPrefix = "STOP".equals(action) ? "停止异常: " : "启动异常: ";
+            return ApiResult.<DeviceOperationResponse>statusError(operationErrorPrefix + exception.getMessage(), response)
+                    .withDeviceId(deviceId);
+        }
+    }
+    private DeviceRuntimeSnapshot safeRuntimeSnapshot(String deviceId) {
+        try {
+            return collectionService.getDeviceRuntimeSnapshot(deviceId);
+        } catch (Exception exception) {
+            log.warn("获取设备运行快照失败，继续返回操作结果，设备={}", deviceId, exception);
+            return null;
         }
     }
 
-    /**
-     * 重新加载全部设备配置。
-     *
-     * @return 重载结果
-     */
+
     public ApiResult<Object> reloadAllDevices() {
         try {
             collectionService.reloadAllDevices();
-            return ApiResult.statusSuccess("已重新加载所有设备", null);
+            return ApiResult.statusSuccess("已触发设备重新加载", null);
         } catch (Exception exception) {
             log.error("重新加载所有设备失败", exception);
             return ApiResult.statusError("重新加载异常: " + exception.getMessage(), null);
@@ -144,14 +149,24 @@ public class DeviceConsoleApplicationService {
         }
     }
 
-    /**
-     * 查询全部设备运行快照。
-     *
-     * @return 设备运行快照响应
-     */
+    public ApiResult<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshot(String deviceId) {
+        try {
+            return ApiResult.statusSuccess(null, collectionService.getDeviceRuntimeSnapshot(deviceId));
+        } catch (Exception exception) {
+            log.error("获取设备运行快照失败，设备={}", deviceId, exception);
+            return ApiResult.statusError("获取设备运行快照异常: " + exception.getMessage(), null);
+        }
+    }
+
+    /** 查询全部设备运行快照。 */
     public ApiResult<List<DeviceRuntimeSnapshot>> getDeviceRuntimeSnapshots() {
-        List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
-        return ApiResult.statusSuccess(null, snapshots).withCount(snapshots.size());
+        try {
+            List<DeviceRuntimeSnapshot> snapshots = collectionService.getDeviceRuntimeSnapshots();
+            return ApiResult.statusSuccess(null, snapshots).withCount(snapshots.size());
+        } catch (Exception exception) {
+            log.error("获取设备运行快照失败", exception);
+            return ApiResult.statusError("获取设备运行快照异常: " + exception.getMessage(), null);
+        }
     }
 
     /**

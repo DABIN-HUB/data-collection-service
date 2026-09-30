@@ -38,12 +38,18 @@ public class CacheConfiguration {
      * 本地缓存管理器（可选，如果你还需要Spring的CacheManager）
      */
     @Bean("springLocalCacheManager")
-    @ConditionalOnProperty(name = "collector.cache.type",
-            havingValue = CacheMode.LOCAL_VALUE, matchIfMissing = true)
+    @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.LOCAL_VALUE)
     /**
      * 执行当前业务逻辑。
      */
     public CacheManager springLocalCacheManager() {
+        return createCaffeineCacheManager();
+    }
+
+    /**
+     * 执行当前业务逻辑。
+     */
+    private CacheManager createCaffeineCacheManager() {
         com.github.benmanes.caffeine.cache.Cache<Object, Object> cache = Caffeine.newBuilder()
                 .initialCapacity(100)
                 .maximumSize(1000)
@@ -92,9 +98,9 @@ public class CacheConfiguration {
      * 执行当前业务逻辑。
      */
     @Bean("springMultiLevelCacheManager")
-    @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.MULTI_LEVEL_VALUE)
+    @ConditionalOnProperty(name = "collector.cache.type", havingValue = CacheMode.MULTI_LEVEL_VALUE, matchIfMissing = true)
     public CacheManager springMultiLevelCacheManager() {
-        return springLocalCacheManager();
+        return createCaffeineCacheManager();
     }
 }
 

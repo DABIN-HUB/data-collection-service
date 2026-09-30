@@ -10,6 +10,7 @@ import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.port.CollectionHealthReporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,29 +25,37 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.spy;
 
 class DeviceLifecycleCoordinatorTest {
 
@@ -130,6 +139,61 @@ class DeviceLifecycleCoordinatorTest {
     }
 
     @Test
+    void invalidationDuringPrepareMustAbortBeforeGenerationActivation() throws Exception {
+        String deviceId = "dev-invalidate-prepare";
+        setupSingleDevice(deviceId);
+        DataPoint point = point(deviceId, "p1");
+        CountDownLatch pointsReadEntered = new CountDownLatch(1);
+        CountDownLatch releasePointsRead = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            pointsReadEntered.countDown();
+            releasePointsRead.await(1, TimeUnit.SECONDS);
+            return List.of(point);
+        }).when(configManager).getDataPoints(deviceId);
+
+        CompletableFuture<Boolean> startFuture = startAsync(deviceId);
+        assertTrue(pointsReadEntered.await(1, TimeUnit.SECONDS));
+        assertTrue(runtimeState.isStarting(deviceId));
+
+        lifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
+        releasePointsRead.countDown();
+
+        assertFalse(startFuture.get(1, TimeUnit.SECONDS));
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0L, runtimeState.getStartingGeneration(deviceId));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void stopAfterStartingInvalidationShouldCleanupRegisteredCollector() throws Exception {
+        String deviceId = "dev-starting-invalidation-cleanup";
+        setupSingleDevice(deviceId);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        blockConnectUntil(deviceId, connectEntered, releaseConnect);
+
+        CompletableFuture<Boolean> startFuture = startAsync(deviceId);
+        assertTrue(connectEntered.await(1, TimeUnit.SECONDS));
+        verify(collectionManager).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        assertTrue(runtimeState.isStarting(deviceId));
+
+        lifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
+        assertFalse(runtimeState.isStarting(deviceId));
+
+        assertTrue(lifecycleCoordinator.stopDeviceAfterConfigInvalidation(deviceId, false, true));
+        releaseConnect.countDown();
+
+        assertFalse(startFuture.get(1, TimeUnit.SECONDS));
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionManager, never()).disconnectDevice(deviceId);
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+    }
+
+    @Test
     void staleStartGenerationMustNotBecomeRunning() throws Exception {
         String deviceId = "dev-stale-start";
         setupSingleDevice(deviceId);
@@ -204,6 +268,112 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(collectionTaskGuard.isCurrent(startingDevice2, generation2));
         verify(healthTracker, never()).markDeviceStarted(startingDevice1);
         verify(healthTracker, never()).markDeviceStarted(startingDevice2);
+    }
+
+    @Test
+    void reservedStartShouldBeVisibleToStopAllDevices() throws Exception {
+        String deviceId = "dev-reserved-start";
+        setupSingleDevice(deviceId);
+
+        DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
+
+        assertNotNull(reservation);
+        assertTrue(runtimeState.isStarting(deviceId));
+        assertTrue(runtimeState.getActiveDeviceIds().contains(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+
+        lifecycleCoordinator.stopAllDevices();
+
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+        verify(collectionManager).cleanupDevice(deviceId);
+
+        assertFalse(lifecycleCoordinator.continueReservedStart(reservation));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void reserveStartShouldReturnNullWhenStartingGenerationIsNotVisibleBeforeReturn() throws Exception {
+        String deviceId = "dev-reserve-stale-before-return";
+        runtimeState = spy(new SchedulerRuntimeState());
+        runtimeState.initializeTimeSlices(1, 1000);
+        lifecycleCoordinator = newLifecycleCoordinator(deviceStartExecutor);
+        setupSingleDevice(deviceId);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            runtimeState.clearStarting(deviceId);
+            return null;
+        }).when(runtimeState).markStartingGeneration(eq(deviceId), anyLong());
+
+        DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
+
+        assertNull(reservation);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, 1L));
+        verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, never()).connectDevice(deviceId);
+    }
+
+    @Test
+    void cancelAllAfterStartReservedButBeforeContinueShouldPreventRunning() throws Exception {
+        String deviceId = "dev-config-reserved-shutdown";
+        setupSingleDevice(deviceId);
+        ScheduledExecutorService timeSliceScheduler = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> restartFuture = mock(ScheduledFuture.class);
+        TimeSliceConfigCoordinator timeSliceConfigCoordinator = mock(TimeSliceConfigCoordinator.class);
+        AtomicReference<Runnable> restartCommand = new AtomicReference<>();
+        CountDownLatch reservationCompleted = new CountDownLatch(1);
+        CountDownLatch releaseContinuation = new CountDownLatch(1);
+        AtomicReference<DeviceLifecycleCoordinator.StartReservation> reservedReservation = new AtomicReference<>();
+        when(timeSliceScheduler.schedule(any(Runnable.class), eq(1000L), eq(TimeUnit.MILLISECONDS)))
+                .thenAnswer(invocation -> {
+                    restartCommand.set(invocation.getArgument(0));
+                    return restartFuture;
+                });
+        ConfigRestartCoordinator restartCoordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                timeSliceConfigCoordinator,
+                timeSliceScheduler) {
+            @Override
+            void beforeReservedStartContinuationForTest(String reservedDeviceId,
+                                                        DeviceLifecycleCoordinator.StartReservation reservation) {
+                reservedReservation.set(reservation);
+                reservationCompleted.countDown();
+                try {
+                    releaseContinuation.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+
+        restartCoordinator.handleConfigUpdate(configEvent("device", deviceId));
+        Thread restartThread = new Thread(() -> restartCommand.get().run());
+        restartThread.start();
+        assertTrue(reservationCompleted.await(1, TimeUnit.SECONDS));
+        DeviceLifecycleCoordinator.StartReservation reservation = reservedReservation.get();
+
+        assertNotNull(reservation);
+        assertTrue(runtimeState.isStarting(deviceId));
+        assertTrue(runtimeState.getActiveDeviceIds().contains(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+
+        restartCoordinator.cancelAll();
+        lifecycleCoordinator.stopAllDevices();
+        releaseContinuation.countDown();
+        restartThread.join(1000L);
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
+        verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
+        verify(collectionManager, times(1)).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
+        verify(collectionManager, times(1)).connectDevice(deviceId);
     }
 
     @Test
@@ -381,21 +551,181 @@ class DeviceLifecycleCoordinatorTest {
         }
     }
 
+    @Test
+    void rejectedStartExecutorShouldCleanupStartingState() throws Exception {
+        String deviceId = "dev-start-rejected";
+        ThreadPoolExecutor rejectingExecutor = fixedPool("reject-start", 1);
+        rejectingExecutor.shutdownNow();
+        replaceDeviceStartExecutor(rejectingExecutor);
+        setupSingleDevice(deviceId);
+
+        boolean started = lifecycleCoordinator.startDevice(deviceId);
+
+        assertFalse(started);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void startTimeoutShouldCleanupStartingStateAndRuntimeResources() throws Exception {
+        String deviceId = "dev-start-timeout";
+        setupSingleDevice(deviceId);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseConnect = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            connectEntered.countDown();
+            try {
+                releaseConnect.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }).when(collectionManager).connectDevice(deviceId);
+
+        boolean started = lifecycleCoordinator.startDevice(deviceId);
+        releaseConnect.countDown();
+
+        assertTrue(connectEntered.getCount() == 0);
+        assertFalse(started);
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
+        verify(healthTracker, never()).markDeviceStarted(deviceId);
+    }
+
+    @Test
+    void failedStartCleanupShouldBeIdempotent() throws Exception {
+        String deviceId = "dev-cleanup-idempotent";
+        setupSingleDevice(deviceId);
+        assertTrue(runtimeState.markStarting(deviceId));
+        long generation = collectionTaskGuard.activateNextGeneration(deviceId);
+        runtimeState.markStartingGeneration(deviceId, generation);
+
+        lifecycleCoordinator.cleanupFailedStart(deviceId, generation);
+        lifecycleCoordinator.cleanupFailedStart(deviceId, generation);
+
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, generation));
+        assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
+        assertTrue(runtimeState.getSliceTasks(0).isEmpty());
+    }
+
+    @Test
+    void nonCriticalCleanupFailureShouldStillAllowStopSuccess() throws Exception {
+        String deviceId = "dev-non-critical-cleanup";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("statistics cleanup failed"))
+                .when(collectionStatistics).stopCollection(deviceId);
+
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+    }
+
+    @Test
+    void criticalCleanupFailureShouldMakeStopReturnFalse() throws Exception {
+        String deviceId = "dev-critical-cleanup";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("cancel in-flight failed"))
+                .when(deviceBatchExecutor).cancelDeviceInFlightTasks(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionStatistics).stopCollection(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+    }
+
+    @Test
+    void cleanupFailureMustNotSkipRemainingCleanupSteps() throws Exception {
+        String deviceId = "dev-cleanup-continues";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("remove runtime tasks failed"))
+                .when(deviceBatchExecutor).cancelDeviceInFlightTasks(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        verify(reconnectCoordinator, times(2)).clear(deviceId);
+        verify(collectionStatistics).stopCollection(deviceId);
+        verify(healthTracker).markDeviceStopped(deviceId);
+        verify(collectionManager).disconnectDevice(deviceId);
+    }
+
+    @Test
+    void disconnectFailureShouldFallbackCleanupAndReturnFalse() throws Exception {
+        String deviceId = "dev-disconnect-fallback";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        doThrow(new IllegalStateException("disconnect failed"))
+                .when(collectionManager).disconnectDevice(deviceId);
+
+        assertFalse(lifecycleCoordinator.stopDevice(deviceId));
+
+        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDevice(deviceId);
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+    }
+
+    @Test
+    void stopDeviceShouldRemainIdempotent() throws Exception {
+        String deviceId = "dev-stop-idempotent";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+    }
+
     private DeviceLifecycleCoordinator newLifecycleCoordinator(ThreadPoolExecutor startExecutor) {
+        PointRuntimeStateService pointRuntimeStateService = new PointRuntimeStateService();
+        DeviceStartPreparer startPreparer = new DeviceStartPreparer(
+                configManager,
+                collectorProperties,
+                collectionTaskGuard,
+                pointRuntimeStateService,
+                runtimeState,
+                reconnectCoordinator);
+        DeviceLifecycleCleanup lifecycleCleanup = new DeviceLifecycleCleanup(
+                collectionManager,
+                collectionStatistics,
+                healthTracker,
+                pointRuntimeStateService,
+                runtimeState,
+                deviceBatchExecutor,
+                reconnectCoordinator,
+                collectionTaskGuard);
         return new DeviceLifecycleCoordinator(
                 collectionManager,
-                configManager,
                 collectionStatistics,
-                collectorProperties,
                 healthTracker,
                 deviceBatchPlanner,
                 protocolBatchStrategy,
                 collectionTaskGuard,
-                new PointRuntimeStateService(),
                 runtimeState,
                 new PerformanceMonitor(),
-                deviceBatchExecutor,
-                reconnectCoordinator,
+                startPreparer,
+                lifecycleCleanup,
                 startExecutor);
     }
 
@@ -488,6 +818,13 @@ class DeviceLifecycleCoordinatorTest {
         point.setPointCode(pointId);
         point.setStatus(1);
         return point;
+    }
+
+    private ConfigUpdateEvent configEvent(String configType, String deviceId) {
+        ConfigUpdateEvent event = new ConfigUpdateEvent();
+        event.setConfigType(configType);
+        event.setDeviceId(deviceId);
+        return event;
     }
 
     private CompletableFuture<Boolean> startAsync(String deviceId) {

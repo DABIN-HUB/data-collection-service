@@ -87,10 +87,10 @@ public class ReconnectCoordinator {
                 }
                 return;
             }
-            success = true;
-            reconnectSuccessCount.incrementAndGet();
             state.consecutiveFailures.set(0);
             state.nextRetryAt.set(0L);
+            success = true;
+            reconnectSuccessCount.incrementAndGet();
         } catch (Exception e) {
             reconnectFailureCount.incrementAndGet();
             long delayMs = scheduleNextReconnectRetry(state);

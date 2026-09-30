@@ -12,6 +12,9 @@ public interface AlarmStateRepository {
      */
     Optional<AlarmStateSnapshot> find(String stateKey);
 
+    /** 按告警标识查询当前规则的快照；旧事件不得匹配到新事件。 */
+    Optional<AlarmStateSnapshot> findByAlarmId(String alarmId);
+
     /**
      * 写入或持久化业务数据。
      */

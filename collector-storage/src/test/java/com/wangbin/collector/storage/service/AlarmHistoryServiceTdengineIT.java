@@ -77,6 +77,11 @@ class AlarmHistoryServiceTdengineIT {
                 .ruleName("Alarm Rule")
                 .level("WARNING")
                 .eventType("QUALITY")
+                .eventId("alarm-id-" + suffix)
+                .relatedEventId("related-" + suffix)
+                .startedAt(eventTs - 500)
+                .lastOccurredAt(eventTs - 100)
+                .durationMillis(400)
                 .message("alarm tdengine integration")
                 .value(42.5)
                 .unit("C")
@@ -105,6 +110,11 @@ class AlarmHistoryServiceTdengineIT {
         assertThat(valueOf(row, "pointCode", "point_code")).isEqualTo(pointCode);
         assertThat(valueOf(row, "ruleId", "rule_id")).isEqualTo(ruleId);
         assertThat(valueOf(row, "alarm_event_type", "eventType", "event_type")).isEqualTo("QUALITY");
+        assertThat(valueOf(row, "alarm_id", "alarmId")).isEqualTo("alarm-id-" + suffix);
+        assertThat(valueOf(row, "related_alarm_id", "relatedAlarmId")).isEqualTo("related-" + suffix);
+        assertThat(((Number) valueOf(row, "alarm_started_at", "alarmStartedAt")).longValue()).isEqualTo(eventTs - 500);
+        assertThat(((Number) valueOf(row, "alarm_last_occurred_at", "alarmLastOccurredAt")).longValue()).isEqualTo(eventTs - 100);
+        assertThat(((Number) valueOf(row, "alarm_duration_ms", "alarmDurationMs")).longValue()).isEqualTo(400);
         assertThat(valueOf(row, "message")).isEqualTo("alarm tdengine integration");
         assertThat(valueOf(row, "valueText", "value_text")).isEqualTo("42.5");
     }

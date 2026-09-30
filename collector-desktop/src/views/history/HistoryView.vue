@@ -1,0 +1,881 @@
+<template>
+  <section class="exact-page legacy-history-panel">
+    <div class="section-heading">
+      <div class="heading-title-line">
+        <h1>历史趋势</h1>
+        <span class="heading-online"><i></i>{{ historyRows.length }} 条 · 对比 {{ comparePointRefs.length }} 个点位</span>
+      </div>
+    </div>
+
+    <div class="exact-page-body">
+      <section class="exact-toolbar history-query-bar">
+        <div class="history-filter-main">
+          <label class="history-filter-field">
+            <span>设备</span>
+            <select v-model="deviceId" @change="handleDeviceChange">
+              <option value="">选择设备</option>
+              <option v-for="device in devices" :key="deviceIdOf(device)" :value="deviceIdOf(device)">
+                {{ device.deviceName || deviceIdOf(device) }}
+              </option>
+            </select>
+          </label>
+          <label class="history-filter-field">
+            <span>点位</span>
+            <select v-model="pointRef">
+              <option value="">选择点位</option>
+              <option v-for="point in points" :key="pointKey(point)" :value="pointKey(point)">
+                {{ point.pointName || point.pointCode || point.pointId || point.address }}
+              </option>
+            </select>
+          </label>
+          <label class="history-filter-field">
+            <span>开始</span>
+            <input v-model="startTime" type="datetime-local" title="开始时间" />
+          </label>
+          <label class="history-filter-field">
+            <span>结束</span>
+            <input v-model="endTime" type="datetime-local" title="结束时间" />
+          </label>
+          <label class="history-filter-field is-short">
+            <span>条数</span>
+            <input v-model.number="limit" type="number" min="10" max="2000" step="10" title="最大条数" />
+          </label>
+        </div>
+        <div class="history-filter-bottom">
+          <label class="history-filter-field history-compare-field">
+            <span>对比点位</span>
+            <select v-model="comparePointRefs" multiple size="3" class="history-compare-select" title="按住 Ctrl/Command 多选对比点位">
+              <option v-for="point in comparePointOptions" :key="`compare-${point.key}`" :value="point.key">
+                {{ point.label }}
+              </option>
+            </select>
+            <small>可选多个点位做趋势对比</small>
+          </label>
+          <div class="history-query-actions">
+            <button type="button" class="primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
+            <button type="button" class="primary" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
+          </div>
+        </div>
+      </section>
+
+      <el-alert v-if="historyCapabilityMessage && !appStore.capabilities?.history.available" :title="historyCapabilityMessage" type="warning" :closable="false" />
+      <el-alert v-if="historyReadStatusText" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
+      <el-alert v-if="historyPartialWarning" :title="historyPartialWarning" type="warning" :closable="false" />
+
+      <div v-if="historySummaryCards.length" class="exact-diagnostic-cards history-summary-cards">
+        <div v-for="card in historySummaryCards" :key="card.label" class="exact-diagnostic-card">
+          <span>{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+          <small>{{ card.detail }}</small>
+        </div>
+      </div>
+
+      <div class="surface-grid two">
+        <section class="surface-card wide-field">
+          <div class="surface-card-head">
+            <h3>点位历史曲线</h3>
+            <span>{{ selectedPointLabel }}</span>
+          </div>
+          <div class="history-chart history-chart-dark">
+            <svg v-if="historySeries.length" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="历史趋势折线">
+              <polyline
+                v-for="series in historySeries"
+                :key="series.key"
+                :points="series.points"
+                fill="none"
+                :stroke="series.color"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <div v-else class="empty-state compact">请选择设备和点位后查询历史数据</div>
+          </div>
+          <div class="history-legend">
+            <span v-for="series in historySeries" :key="series.key">
+              <i :style="{ backgroundColor: series.color }"></i>
+              {{ series.label }} · {{ series.latestText }}
+            </span>
+          </div>
+          <div class="history-stat-row">
+            <span><b>{{ historyRows.length }}</b>主曲线记录数</span>
+            <span><b>{{ comparePointRefs.length }}</b>对比点位</span>
+            <span><b>{{ historyMin }}</b>最小值</span>
+            <span><b>{{ historyMax }}</b>最大值</span>
+            <span><b>{{ historyLatest }}</b>最新值</span>
+          </div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-head">
+            <h3>查询结果 JSON</h3>
+            <button type="button" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">刷新</button>
+          </div>
+          <pre class="json-view history-json-view">{{ historyExportText }}</pre>
+        </section>
+      </div>
+
+      <section class="surface-card history-alarm-card">
+        <div class="surface-card-head">
+          <h3>相关告警</h3>
+          <span>{{ relatedAlarmsSummaryText }}</span>
+        </div>
+        <table class="runtime-table history-alarm-table">
+          <thead>
+            <tr><th>时间</th><th>级别</th><th>设备</th><th>点位</th><th>内容</th></tr>
+          </thead>
+          <tbody>
+            <tr v-if="relatedAlarms.length === 0"><td colspan="5">{{ relatedAlarmsEmptyText }}</td></tr>
+            <tr v-for="alarm in relatedAlarms" :key="`${alarm.alarmId || alarm.id || '-'}-${alarm.timestamp || alarm.occurTime || '-'}`">
+              <td>{{ formatHistoryTime({ timestamp: alarm.timestamp || alarm.occurTime }) }}</td>
+              <td>{{ alarm.level || alarm.alarmType || '-' }}</td>
+              <td>{{ alarm.deviceName || alarm.deviceId || '-' }}</td>
+              <td>{{ alarm.pointName || alarm.pointCode || alarm.pointId || '-' }}</td>
+              <td>{{ alarm.content || alarm.message || alarm.alarmContent || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="exact-table-card">
+        <div class="exact-table-title">
+          <h2>历史数据表</h2>
+          <span>{{ deviceId || '-' }} / {{ pointRef || '-' }}</span>
+        </div>
+        <div class="table-wrap history-data-table-wrap">
+          <table>
+            <thead>
+              <tr><th>时间</th><th>值</th><th>质量</th><th>原始记录</th></tr>
+            </thead>
+            <tbody>
+              <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">{{ historyEmptyText }}</td></tr>
+              <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
+                <td>{{ formatHistoryTime(row) }}</td>
+                <td>{{ displayValue(row) }}</td>
+                <td>{{ row.quality || row.qualityCode || '-' }}</td>
+                <td><code>{{ compactJson(row) }}</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
+import { useRoute } from "vue-router";
+
+import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
+import { getDevicePointsConfig } from "@/api/config.api";
+import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
+import { normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
+import { resolveHistoryPartialFailure, type HistoryPartialFailureState } from "@/features/history/utils/history-partial-failure";
+import {
+  buildHistoryDataQueryParams,
+  buildHistoryPointsRequestContext,
+  buildHistoryPointsRequestSnapshot,
+  buildHistoryQueryContext,
+  buildHistoryRelatedAlarmQuery,
+  isSameHistoryPointsRequestContext,
+  isSameHistoryQueryContext,
+  shouldDisableHistorySubmit,
+  type HistoryQueryContext
+} from "@/features/history/utils/history-request-lifecycle";
+import { buildHistoryTrendExportText, buildHistoryTrendSeries, buildHistoryTrendSummaryCards } from "@/features/history/utils/history-trend-utils";
+import { buildContextualReadStatus, hasLastGoodForContext, shouldClearLastGoodForRequest } from "@/features/request/utils/context-last-good";
+import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
+import { useAppStore } from "@/stores/app.store";
+import { useDeviceStore } from "@/stores/device.store";
+import type { AlarmRow } from "@/types/monitor";
+import type { DeviceViewModel } from "@/types/device";
+import type { DataPoint } from "@/types/point";
+
+const route = useRoute();
+const appStore = useAppStore();
+const deviceStore = useDeviceStore();
+
+const deviceId = ref("");
+const pointRef = ref("");
+const comparePointRefs = ref<string[]>([]);
+const points = ref<DataPoint[]>([]);
+const historyRows = ref<HistoryRow[]>([]);
+const comparePointRows = ref<Record<string, HistoryRow[]>>({});
+const relatedAlarms = ref<AlarmRow[]>([]);
+const historyError = ref("");
+const historyPartialWarning = ref("");
+const failedComparePointRefs = ref<string[]>([]);
+const relatedAlarmsUnavailable = ref(false);
+const loading = ref(false);
+const limit = ref(200);
+const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000));
+const endTime = ref(defaultDateTimeLocal(0));
+const initialized = ref(false);
+const lastAppliedRouteKey = ref("__initial__");
+const pendingHistoryQueryContext = ref<HistoryQueryContext | null>(null);
+const lastSuccessfulHistoryContext = ref<HistoryQueryContext | null>(null);
+const historyLastSuccessAt = ref<number | null>(null);
+
+const historyPointsOwner = createLatestRequestOwner(isSameHistoryPointsRequestContext);
+const historyQueryOwner = createLatestRequestOwner(isSameHistoryQueryContext);
+
+const devices = computed(() => deviceStore.devices);
+
+const selectedPointLabel = computed(() => {
+  const point = points.value.find((item) => pointKey(item) === pointRef.value);
+  const base = point ? `${point.pointName || point.pointCode || point.pointId || point.address} · ${point.dataType || "未知类型"}` : "未选择点位";
+  return comparePointRefs.value.length ? `${base} · 对比 ${comparePointRefs.value.length} 项` : base;
+});
+
+const comparePointOptions = computed(() => points.value
+  .map((point) => ({ key: pointKey(point), label: point.pointName || point.pointCode || point.pointId || point.address || "未命名点位" }))
+  .filter((item) => item.key && item.key !== pointRef.value));
+
+const historySeries = computed(() => buildHistoryTrendSeries([
+  { key: pointRef.value, label: selectedPointLabel.value, rows: historyRows.value },
+  ...comparePointRefs.value
+    .filter((ref) => ref && ref !== pointRef.value)
+    .filter((ref) => !failedComparePointRefs.value.includes(ref))
+    .map((ref) => ({ key: ref, label: pointLabelOf(ref), rows: comparePointRows.value[ref] || [] }))
+]));
+
+const numericValues = computed(() => historyRows.value.map((row) => Number(displayValue(row))).filter((value) => Number.isFinite(value)));
+const historyMin = computed(() => numericValues.value.length ? Math.min(...numericValues.value).toFixed(2) : "-");
+const historyMax = computed(() => numericValues.value.length ? Math.max(...numericValues.value).toFixed(2) : "-");
+const historyLatest = computed(() => historyRows.value.length ? String(displayValue(historyRows.value[historyRows.value.length - 1])) : "-");
+const historyTimeRangeText = computed(() => {
+  if (!startTime.value || !endTime.value) {
+    return "-";
+  }
+  return `${startTime.value.replace("T", " ")} ~ ${endTime.value.replace("T", " ")}`;
+});
+const historySummaryCards = computed(() => buildHistoryTrendSummaryCards({
+  deviceId: deviceId.value,
+  pointRef: pointRef.value,
+  pointLabel: selectedPointLabel.value,
+  series: historySeries.value,
+  relatedAlarms: relatedAlarms.value,
+  relatedAlarmsUnavailable: relatedAlarmsUnavailable.value,
+  timeRangeText: historyTimeRangeText.value
+}));
+const historyExportText = computed(() => buildHistoryTrendExportText({
+  deviceId: deviceId.value,
+  pointRef: pointRef.value,
+  pointLabel: selectedPointLabel.value,
+  series: historySeries.value,
+  relatedAlarms: relatedAlarms.value,
+  relatedAlarmsUnavailable: relatedAlarmsUnavailable.value,
+  failedComparePointRefs: failedComparePointRefs.value,
+  partialWarning: historyPartialWarning.value
+}));
+const relatedAlarmsSummaryText = computed(() => relatedAlarmsUnavailable.value ? "暂不可用" : `${relatedAlarms.value.length} 条`);
+const relatedAlarmsEmptyText = computed(() => relatedAlarmsUnavailable.value ? "关联告警暂不可用" : "暂无相关告警");
+const hasHistoryLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulHistoryContext.value, currentHistoryQueryContext(), isSameHistoryQueryContext));
+const historyReadStatusText = computed(() => buildContextualReadStatus({
+  loading: loading.value,
+  error: historyError.value,
+  lastSuccessfulContext: lastSuccessfulHistoryContext.value,
+  currentContext: currentHistoryQueryContext(),
+  isSameContext: isSameHistoryQueryContext,
+  loadingText: "历史数据加载中...",
+  refreshingText: "刷新中 · 当前显示上次成功历史数据",
+  staleText: "刷新失败 · 当前显示上次成功历史数据",
+  initialErrorPrefix: "历史数据加载失败",
+  lastSuccessAt: historyLastSuccessAt.value
+}));
+const historyReadStatusType = computed(() => historyError.value && hasHistoryLastGoodForCurrentContext.value ? "warning" : "error");
+const historyEmptyText = computed(() => historyError.value ? `历史数据加载失败：${historyError.value}` : "暂无历史数据");
+const historyQueryDisabled = computed(() => !appStore.capabilities?.history.available || shouldDisableHistorySubmit(
+  loading.value,
+  pendingHistoryQueryContext.value,
+  currentHistoryQueryContext()
+));
+const historyCapabilityMessage = computed(() => appStore.capabilities?.history.reason || appStore.capabilitiesError);
+
+onMounted(async () => {
+  await appStore.initialize();
+  await deviceStore.refresh();
+  if (appStore.capabilities == null) {
+    await appStore.refreshCapabilities();
+  }
+  await applyRouteQuery({ autoQuery: appStore.capabilities?.history.available === true });
+  initialized.value = true;
+});
+
+watch(() => [route.query.deviceId, route.query.pointId, route.query.pointRef], () => {
+  if (!initialized.value) {
+    return;
+  }
+  void applyRouteQuery({ autoQuery: true });
+});
+
+onBeforeUnmount(() => {
+  historyPointsOwner.invalidate();
+  historyQueryOwner.invalidate();
+  loading.value = false;
+  pendingHistoryQueryContext.value = null;
+});
+
+async function handleDeviceChange() {
+  deviceStore.selectDevice(deviceId.value);
+  await loadPoints();
+}
+
+async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boolean } = {}) {
+  const snapshot = buildHistoryPointsRequestSnapshot({
+    deviceId: deviceId.value,
+    preferredPointRef: options.preferredPointRef,
+    autoQuery: options.autoQuery
+  });
+  pointRef.value = "";
+  comparePointRefs.value = [];
+  historyRows.value = [];
+  comparePointRows.value = {};
+  relatedAlarms.value = [];
+  clearHistoryLastGoodState();
+  clearHistoryFeedbackState();
+  if (!snapshot.deviceId) {
+    historyPointsOwner.invalidate();
+    points.value = [];
+    return;
+  }
+  const ticket = historyPointsOwner.begin(buildHistoryPointsRequestContext(snapshot));
+  try {
+    const response = await getDevicePointsConfig(snapshot.deviceId);
+    const nextPoints = extractPoints(response);
+    if (!historyPointsOwner.canCommit(ticket, currentHistoryPointsRequestContext())) {
+      return;
+    }
+    points.value = nextPoints;
+    const resolvedPointRef = resolvePointRefFromPoints(nextPoints, snapshot.preferredPointRef);
+    pointRef.value = resolvedPointRef || pointKey(nextPoints[0]);
+    if (snapshot.autoQuery && resolvedPointRef) {
+      await loadHistory();
+    }
+  } catch (error) {
+    if (!historyPointsOwner.canCommit(ticket, currentHistoryPointsRequestContext())) {
+      return;
+    }
+    points.value = [];
+    ElMessage.warning(error instanceof Error ? error.message : "点位配置加载失败");
+  }
+}
+
+async function applyRouteQuery(options: { autoQuery: boolean }) {
+  const routeKey = routeQueryKey();
+  if (routeKey === lastAppliedRouteKey.value) {
+    return;
+  }
+  lastAppliedRouteKey.value = routeKey;
+
+  const queryDeviceId = firstQueryValue(route.query.deviceId);
+  const queryPointRef = firstQueryValue(route.query.pointId) || firstQueryValue(route.query.pointRef);
+  const targetDeviceId = resolveTargetDeviceId(queryDeviceId);
+  if (!targetDeviceId) {
+    historyPointsOwner.invalidate();
+    historyQueryOwner.invalidate();
+    loading.value = false;
+    pendingHistoryQueryContext.value = null;
+    deviceId.value = "";
+    points.value = [];
+    pointRef.value = "";
+    comparePointRefs.value = [];
+    historyRows.value = [];
+    comparePointRows.value = {};
+    relatedAlarms.value = [];
+    clearHistoryLastGoodState();
+    clearHistoryFeedbackState();
+    return;
+  }
+
+  if (deviceStore.selectedDeviceId !== targetDeviceId) {
+    deviceStore.selectDevice(targetDeviceId);
+  }
+
+  if (deviceId.value !== targetDeviceId || points.value.length === 0) {
+    deviceId.value = targetDeviceId;
+    await loadPoints({ preferredPointRef: queryPointRef, autoQuery: options.autoQuery && Boolean(queryPointRef) });
+    return;
+  }
+
+  const resolvedPointRef = resolvePointRef(queryPointRef);
+  if (resolvedPointRef) {
+    pointRef.value = resolvedPointRef;
+    if (options.autoQuery && queryPointRef) {
+      await loadHistory();
+    }
+  }
+}
+
+async function loadHistory() {
+  if (appStore.capabilities?.history.available !== true) {
+    ElMessage.warning(appStore.capabilities?.history.reason || appStore.capabilitiesError || "当前服务未启用历史存储能力");
+    return;
+  }
+  const requestContext = currentHistoryQueryContext();
+  if (!requestContext.deviceId || !requestContext.pointRef) {
+    ElMessage.warning("请先选择设备和点位");
+    return;
+  }
+  const ticket = historyQueryOwner.begin(requestContext);
+  const canPreserveLastGood = hasLastGoodForContext(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext);
+  if (shouldClearLastGoodForRequest(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext)) {
+    clearHistoryInvestigationState();
+    clearHistoryLastGoodState();
+  }
+  loading.value = true;
+  pendingHistoryQueryContext.value = requestContext;
+  if (canPreserveLastGood) {
+    historyError.value = "";
+  } else {
+    clearHistoryFeedbackState();
+  }
+  try {
+    const params = buildHistoryDataQueryParams(requestContext);
+    const mainRequest = getPointHistory(requestContext.deviceId, requestContext.pointRef, params)
+      .then((response) => normalizeHistoryRows(response));
+    const compareRequests = requestContext.comparePointRefs.map((ref) => ({
+      ref,
+      request: getPointHistory(requestContext.deviceId, ref, params)
+        .then((response) => normalizeHistoryRows(response))
+    }));
+    const relatedAlarmRequest = loadRelatedAlarms(requestContext);
+    const settledResults = await Promise.allSettled([
+      mainRequest,
+      ...compareRequests.map((item) => item.request),
+      relatedAlarmRequest
+    ]);
+    const nextState = resolveHistoryPartialFailure({
+      mainResult: settledResults[0] as PromiseSettledResult<HistoryRow[]>,
+      compareResults: compareRequests.map((item, index) => ({
+        ref: item.ref,
+        result: settledResults[index + 1] as PromiseSettledResult<HistoryRow[]>
+      })),
+      relatedAlarmsResult: settledResults[settledResults.length - 1] as PromiseSettledResult<AlarmRow[]>,
+      pointLabelOf
+    });
+    if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
+      return;
+    }
+    if (nextState.historyError) {
+      applyHistoryMainFailureState(nextState, canPreserveLastGood);
+    } else {
+      applyHistoryPartialState(nextState);
+      lastSuccessfulHistoryContext.value = requestContext;
+      historyLastSuccessAt.value = Date.now();
+    }
+    if (nextState.historyError) {
+      ElMessage.error(nextState.historyError);
+    } else if (nextState.historyPartialWarning) {
+      ElMessage.warning(nextState.historyPartialWarning);
+    }
+  } catch (error) {
+    if (!historyQueryOwner.canCommit(ticket, currentHistoryQueryContext())) {
+      return;
+    }
+    const nextState = buildUnexpectedHistoryFailureState(error);
+    applyHistoryMainFailureState(nextState, canPreserveLastGood);
+    ElMessage.error(nextState.historyError);
+  } finally {
+    if (historyQueryOwner.isLatest(ticket)) {
+      loading.value = false;
+      pendingHistoryQueryContext.value = null;
+    }
+  }
+}
+
+async function loadRelatedAlarms(snapshot: HistoryQueryContext): Promise<AlarmRow[]> {
+  const response = await getDeviceAlarmHistory(snapshot.deviceId, buildHistoryRelatedAlarmQuery(snapshot));
+  return normalizeAlarmHistoryRows(response);
+}
+
+function applyHistoryPartialState(state: HistoryPartialFailureState) {
+  historyRows.value = state.historyRows;
+  comparePointRows.value = state.comparePointRows;
+  relatedAlarms.value = state.relatedAlarms;
+  failedComparePointRefs.value = state.failedComparePointRefs;
+  relatedAlarmsUnavailable.value = state.relatedAlarmsUnavailable;
+  historyError.value = state.historyError;
+  historyPartialWarning.value = state.historyPartialWarning;
+}
+
+function applyHistoryMainFailureState(state: HistoryPartialFailureState, preserveLastGood: boolean) {
+  if (preserveLastGood) {
+    historyError.value = state.historyError;
+    return;
+  }
+  applyHistoryPartialState(state);
+}
+
+function clearHistoryInvestigationState() {
+  historyRows.value = [];
+  comparePointRows.value = {};
+  relatedAlarms.value = [];
+  failedComparePointRefs.value = [];
+  relatedAlarmsUnavailable.value = false;
+}
+
+function clearHistoryLastGoodState() {
+  lastSuccessfulHistoryContext.value = null;
+  historyLastSuccessAt.value = null;
+}
+
+function clearHistoryFeedbackState() {
+  historyError.value = "";
+  historyPartialWarning.value = "";
+  failedComparePointRefs.value = [];
+  relatedAlarmsUnavailable.value = false;
+}
+
+function buildUnexpectedHistoryFailureState(error: unknown): HistoryPartialFailureState {
+  return {
+    historyRows: [],
+    comparePointRows: {},
+    relatedAlarms: [],
+    failedComparePointRefs: [],
+    relatedAlarmsUnavailable: false,
+    historyError: error instanceof Error && error.message
+      ? `主历史查询失败：${error.message}`
+      : "主历史查询失败",
+    historyPartialWarning: ""
+  };
+}
+
+function currentHistoryPointsRequestContext() {
+  return buildHistoryPointsRequestContext({ deviceId: deviceId.value });
+}
+
+function currentHistoryQueryContext() {
+  return buildHistoryQueryContext({
+    deviceId: deviceId.value,
+    pointRef: pointRef.value,
+    comparePointRefs: [...comparePointRefs.value],
+    startTime: startTime.value,
+    endTime: endTime.value,
+    limit: limit.value
+  });
+}
+
+function downloadHistory() {
+  if (!historySeries.value.length) {
+    return;
+  }
+  const blob = new Blob([historyExportText.value], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `collector-history-${deviceId.value || "device"}-${pointRef.value || "point"}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function extractPoints(value: unknown): DataPoint[] {
+  if (Array.isArray(value)) {
+    return value as DataPoint[];
+  }
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["points", "data", "items", "records", "rows"]) {
+    if (Array.isArray(record[key])) {
+      return record[key] as DataPoint[];
+    }
+    const nested = extractPoints(record[key]);
+    if (nested.length > 0) {
+      return nested;
+    }
+  }
+  return [];
+}
+
+function resolveTargetDeviceId(preferredDeviceId: string): string {
+  const matchedDevice = preferredDeviceId ? devices.value.find((device) => deviceMatchesId(device, preferredDeviceId)) : undefined;
+  if (matchedDevice) {
+    return deviceIdOf(matchedDevice);
+  }
+  if (preferredDeviceId && devices.value.length === 0) {
+    return preferredDeviceId;
+  }
+  if (deviceStore.selectedDeviceId && (devices.value.length === 0 || devices.value.some((device) => deviceMatchesId(device, deviceStore.selectedDeviceId)))) {
+    return deviceStore.selectedDeviceId;
+  }
+  return deviceIdOf(devices.value[0]);
+}
+
+function deviceMatchesId(device: DeviceViewModel, value: string): boolean {
+  return [device.normalizedId, device.deviceId, device.id, device.connectionKey]
+    .filter((item) => item !== undefined && item !== null)
+    .map(String)
+    .includes(value);
+}
+
+function resolvePointRef(value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const point = points.value.find((item) => pointMatchesRef(item, value));
+  return pointKey(point);
+}
+
+function resolvePointRefFromPoints(pointList: DataPoint[], value?: string): string {
+  if (!value) {
+    return "";
+  }
+  const point = pointList.find((item) => pointMatchesRef(item, value));
+  return pointKey(point);
+}
+
+function pointMatchesRef(point: DataPoint, value: string): boolean {
+  return [point.pointId, point.pointCode, point.id, point.address]
+    .filter((item) => item !== undefined && item !== null)
+    .map(String)
+    .includes(value);
+}
+
+function firstQueryValue(value: unknown): string {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === "string" ? raw : "";
+}
+
+function routeQueryKey(): string {
+  return [firstQueryValue(route.query.deviceId), firstQueryValue(route.query.pointId), firstQueryValue(route.query.pointRef)].join("|");
+}
+
+function deviceIdOf(device?: DeviceViewModel): string {
+  return String(device?.normalizedId || device?.deviceId || device?.id || device?.connectionKey || "");
+}
+
+function pointKey(point?: DataPoint): string {
+  return String(point?.pointId || point?.pointCode || point?.id || point?.address || "");
+}
+
+function pointLabelOf(ref: string): string {
+  const point = points.value.find((item) => pointKey(item) === ref);
+  return point ? `${point.pointName || point.pointCode || point.pointId || point.address || ref} · ${point.dataType || "未知类型"}` : ref;
+}
+
+function displayValue(row: HistoryRow): unknown {
+  return row.value ?? row.currentValue ?? row.rawValue ?? row.val ?? "-";
+}
+
+function formatHistoryTime(row: { timestamp?: number | string; time?: number | string; collectTime?: number | string; createdAt?: number | string }): string {
+  const raw = row.timestamp || row.time || row.collectTime || row.createdAt;
+  if (!raw) {
+    return "-";
+  }
+  if (typeof raw !== "string" && typeof raw !== "number") {
+    return String(raw);
+  }
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleString();
+}
+
+function compactJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function defaultDateTimeLocal(offsetMs: number): string {
+  const date = new Date(Date.now() + offsetMs);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+</script>
+
+<style scoped>
+.history-summary-cards {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-bottom: 14px;
+}
+
+.history-summary-cards .exact-diagnostic-card strong {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.history-summary-cards .exact-diagnostic-card small {
+  line-height: 1.4;
+}
+
+.history-query-bar {
+  min-height: auto;
+  padding: 14px 16px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 12px;
+  overflow-x: visible;
+}
+
+.history-filter-main {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.2fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(90px, 0.48fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.history-data-table-wrap {
+  width: 100%;
+}
+
+.history-data-table-wrap table {
+  width: 100%;
+  min-width: 640px;
+  table-layout: fixed;
+}
+
+.history-data-table-wrap th:nth-child(1) {
+  width: 180px;
+}
+
+.history-data-table-wrap th:nth-child(2),
+.history-data-table-wrap th:nth-child(3) {
+  width: 100px;
+}
+
+.history-data-table-wrap td code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.history-filter-bottom {
+  display: grid;
+  padding-top: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  border-top: 1px solid rgba(45, 74, 122, 0.42);
+}
+
+.history-filter-field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.history-filter-field > span {
+  color: var(--exact-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.history-filter-field input,
+.history-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.history-compare-select {
+  min-width: 0;
+  min-height: 74px;
+  height: 74px;
+}
+
+.history-compare-field small {
+  color: var(--exact-dim);
+  font-size: 10px;
+}
+
+.history-query-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.history-query-actions button {
+  min-width: 86px;
+}
+
+.history-chart {
+  width: 100%;
+  height: 320px;
+}
+
+.history-chart-dark {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #0f172a;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0f172a, #111827);
+}
+
+.history-chart-dark svg {
+  width: 100%;
+  height: 240px;
+}
+
+.history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.history-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding-top: 2px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.history-stat-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 999px;
+  background: var(--console-panel-soft);
+}
+
+.history-stat-row b {
+  color: var(--console-text-primary);
+}
+
+.history-alarm-card,
+.history-alarm-table {
+  margin-top: 0;
+}
+
+.history-alarm-table th,
+.history-alarm-table td {
+  white-space: nowrap;
+}
+
+.history-alarm-table {
+  table-layout: fixed;
+}
+
+.history-alarm-table td:nth-child(3),
+.history-alarm-table td:nth-child(4) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-alarm-table td:nth-child(5) {
+  white-space: normal;
+}
+</style>

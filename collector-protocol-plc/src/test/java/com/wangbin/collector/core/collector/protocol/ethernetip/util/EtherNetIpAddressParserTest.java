@@ -2,78 +2,66 @@ package com.wangbin.collector.core.collector.protocol.ethernetip.util;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpTagAddress;
+import com.wangbin.collector.core.collector.protocol.ethernetip.domain.EtherNetIpPlcType;
+import org.apache.plc4x.java.eip.base.tag.EipTag;
+import org.apache.plc4x.java.eip.readwrite.CIPDataTypeCode;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class EtherNetIpAddressParserTest {
 
     @Test
-    void shouldInferTypeForSimpleTag() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("Tag1", "INT", Map.of()));
-
-        assertEquals("Tag1:INT", address.getPlc4xAddress());
-        assertEquals("INT", address.getBasePlcType());
-        assertTrue(address.isScalar());
-    }
-
-    @Test
-    void shouldMapPlatformWordTypeToUintWhenInferring() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("Tag1", "WORD", Map.of()));
-
-        assertEquals("Tag1:UINT", address.getPlc4xAddress());
-        assertEquals("UINT", address.getBasePlcType());
-    }
-
-    @Test
-    void shouldKeepExplicitLogixTypeAndArraySize() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("Program:Main.TagA:REAL[4]", "FLOAT", Map.of()));
-
-        assertEquals("Program:Main.TagA:REAL[4]", address.getPlc4xAddress());
-        assertEquals("REAL", address.getBasePlcType());
+    void symbolicAddressUsesActualPlc4xTypeThenCountGrammar() {
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("TagArray[2]", "LONG", Map.of("arraySize", 3)));
+        assertEquals("TagArray[2]:DINT:3", address.getPlc4xAddress());
+        assertEquals("TagArray[2]", EipTag.of(address.getPlc4xAddress()).getTag());
+        assertEquals(CIPDataTypeCode.DINT, EipTag.of(address.getPlc4xAddress()).getType());
+        assertEquals(3, EipTag.of(address.getPlc4xAddress()).getElementNb());
         assertFalse(address.isScalar());
     }
 
     @Test
-    void shouldKeepEipSymbolicAddress() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("%TagArray[2]:3:DINT", "LONG", Map.of()));
-
-        assertEquals("%TagArray[2]:3:DINT", address.getPlc4xAddress());
-        assertEquals("DINT", address.getBasePlcType());
-        assertEquals(3, address.getArraySize());
+    void rawPlc4xAddressIsPreservedAndNotOverriddenByPlatformType() {
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("%Tag[1]:UINT:4", "FLOAT", Map.of()));
+        assertEquals("%Tag[1]:UINT:4", address.getPlc4xAddress());
+        assertEquals("%Tag[1]", address.getTagName());
+        assertEquals("UINT", address.getBasePlcType());
+        assertEquals(4, address.getArraySize());
     }
 
     @Test
-    void shouldInferTypeForIndexedTagWhenNeeded() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("TagArray[1]", "FLOAT", Map.of()));
-
-        assertEquals("TagArray[1]:REAL", address.getPlc4xAddress());
-        assertEquals("REAL", address.getBasePlcType());
-        assertTrue(address.isScalar());
+    void plainTagInfersPlatformOrExplicitDriverType() {
+        assertEquals("Tag1:UINT", EtherNetIpAddressParser.parse(point("Tag1", "WORD", Map.of())).getPlc4xAddress());
+        assertEquals("Tag1:WORD", EtherNetIpAddressParser.parse(point("Tag1", "FLOAT", Map.of("driverDataType", "WORD"))).getPlc4xAddress());
     }
 
     @Test
-    void shouldPreferExplicitOverrideType() {
-        Map<String, Object> config = new LinkedHashMap<>();
-        config.put("logixType", "DINT");
-
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("MainProgram.Tag1", "FLOAT", config));
-
-        assertEquals("MainProgram.Tag1:DINT", address.getPlc4xAddress());
-        assertEquals("DINT", address.getBasePlcType());
+    void rejectsArrayCountConflictsAndZeroOrOverflow() {
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse(point("Tag:DINT:3", "LONG", Map.of("arraySize", 4))));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse(point("Tag:DINT:0", "LONG", Map.of())));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse(point("Tag:DINT:2147483648", "LONG", Map.of())));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse(point("Tag:DINT:65536", "LONG", Map.of())));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse(point("Tag[2]:DINT:2", "LONG", Map.of("arrayIndex", 3))));
     }
 
     @Test
-    void shouldPreferDriverDataTypeOverPlatformType() {
-        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point("MainProgram.Tag1", "FLOAT", Map.of("driverDataType", "WORD")));
+    void rejectsFormatsNotAcceptedByActualPlc4xDriver() {
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse("Program:Main.Tag:DINT:3"));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse("Tag:DINT[3]"));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse("%Tag:3:DINT"));
+        assertThrows(IllegalArgumentException.class, () -> EtherNetIpAddressParser.parse("Tag:NOT_A_TYPE"));
+    }
 
-        assertEquals("MainProgram.Tag1:WORD", address.getPlc4xAddress());
-        assertEquals("WORD", address.getBasePlcType());
+    @Test
+    void resolverUsesParsedAddressBeforeConflictingPointType() {
+        DataPoint point = point("Tag:UINT:2", "FLOAT", Map.of("driverDataType", "SINT"));
+        EtherNetIpTagAddress address = EtherNetIpAddressParser.parse(point);
+        assertEquals(EtherNetIpPlcType.UINT, EtherNetIpPlcTypeResolver.INSTANCE.resolveOrNull(point, address));
+        assertEquals(EtherNetIpPlcType.SINT, EtherNetIpPlcTypeResolver.INSTANCE.resolveOrNull(point, null));
     }
 
     private DataPoint point(String address, String dataType, Map<String, Object> additionalConfig) {

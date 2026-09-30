@@ -1,0 +1,84 @@
+{
+  "Iec104Simulation": {
+    "CycleTimeMs": 5000,
+    "Debug": false,
+    "MaxQueueSize": 1000,
+    "DataPointConfiguration": {
+      "Measures": [
+        {
+          "Id": "CA1_IOA4001",
+          "Name": "phase_current_a",
+          "Ca": "1",
+          "Oa": "4001",
+          "TypeId": 13,
+          "InitValue": "10.1",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4002",
+          "Name": "phase_current_b",
+          "Ca": "1",
+          "Oa": "4002",
+          "TypeId": 13,
+          "InitValue": "11.2",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4003",
+          "Name": "phase_current_c",
+          "Ca": "1",
+          "Oa": "4003",
+          "TypeId": 13,
+          "InitValue": "12.3",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4004",
+          "Name": "zero_seq_current",
+          "Ca": "1",
+          "Oa": "4004",
+          "TypeId": 13,
+          "InitValue": "0.5",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4005",
+          "Name": "overcurrent_flag",
+          "Ca": "1",
+          "Oa": "4005",
+          "TypeId": 1,
+          "InitValue": "true",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4006",
+          "Name": "distance_zone1",
+          "Ca": "1",
+          "Oa": "4006",
+          "TypeId": 1,
+          "InitValue": "false",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4007",
+          "Name": "distance_zone2",
+          "Ca": "1",
+          "Oa": "4007",
+          "TypeId": 1,
+          "InitValue": "true",
+          "Mode": "Static"
+        },
+        {
+          "Id": "CA1_IOA4008",
+          "Name": "trip_command",
+          "Ca": "1",
+          "Oa": "4008",
+          "TypeId": 1,
+          "InitValue": "false",
+          "Mode": "Static"
+        }
+      ],
+      "Commands": []
+    }
+  }
+}

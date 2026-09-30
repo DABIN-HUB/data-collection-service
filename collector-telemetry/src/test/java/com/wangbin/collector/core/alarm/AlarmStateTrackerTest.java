@@ -41,6 +41,40 @@ public class AlarmStateTrackerTest {
     }
 
     @Test
+    void shouldAcknowledgeIncidentByIdAndRetainMetadataThroughRecovery() {
+        AlarmRule rule = new AlarmRule();
+        rule.setRuleId("temperature");
+        rule.setOperator(">");
+        rule.setThreshold(10D);
+        rule.setDuration(0);
+        InMemoryAlarmStateRepository repository = new InMemoryAlarmStateRepository();
+        AlarmStateTracker tracker = new AlarmStateTracker(repository);
+        AlarmTransition activated = tracker.evaluate("device", "point", rule, 12D, 1_000L);
+        tracker.evaluate("device", "point", rule, 13D, 2_000L);
+        assertTrue(new AlarmStateTracker(repository).acknowledgeByAlarmId(
+                activated.alarmId(), "operator", 2_500L, "handled", "request-1"));
+        AlarmStateSnapshot acked = repository.findByAlarmId(activated.alarmId()).orElseThrow();
+        assertEquals(AlarmLifecycleState.ACKED, acked.getLifecycleState());
+        assertEquals(2_000L, acked.getLastOccurredAt());
+        assertEquals("operator", acked.getAckedBy());
+        assertEquals(2_500L, acked.getAckedAt());
+        assertEquals("handled", acked.getAckNote());
+        assertEquals("request-1", acked.getAckIdempotencyKey());
+        AlarmStateTracker restarted = new AlarmStateTracker(repository);
+        AlarmTransition recovered = restarted.evaluate("device", "point", rule, 9D, 3_000L);
+        assertEquals(2_000L, recovered.lastOccurredAt());
+        assertEquals(AlarmLifecycleState.RECOVERED,
+                repository.findByAlarmId(activated.alarmId()).orElseThrow().getLifecycleState());
+        assertTrue(new AlarmStateTracker(repository).acknowledgeByAlarmId(
+                activated.alarmId(), "operator", 2_500L, "handled", "request-1"));
+        assertEquals(AlarmLifecycleState.RECOVERED,
+                repository.findByAlarmId(activated.alarmId()).orElseThrow().getLifecycleState());
+        AlarmTransition next = restarted.evaluate("device", "point", rule, 12D, 4_000L);
+        assertTrue(!activated.alarmId().equals(next.alarmId()));
+        assertTrue(!tracker.acknowledgeByAlarmId(activated.alarmId(), "operator", 5_000L, "late", "request-2"));
+    }
+
+    @Test
     void shouldRestoreActiveAndAcknowledgedStateAfterRestart() {
         AlarmRule rule = new AlarmRule();
         rule.setRuleId("pressure-high");

@@ -6,14 +6,58 @@ import com.wangbin.collector.common.exception.CollectorException;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ProtocolConnectionValidatorTest {
 
     private final ProtocolConnectionValidator validator = new ProtocolConnectionValidator();
+
+    @Test
+    void shouldValidateEtherNetIpOverrideIndependentlyOfAutoFields() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "logix:tcp://plc.example:44818",
+                "backplane", -1, "slot", "invalid", "communicationPath", "["));
+        assertDoesNotThrow(() -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        for (String invalid : List.of("s7://plc", "modbus://plc", "opcua://plc", "abc",
+                "logix:tcp://plc:0", "logix:tcp://plc:65536")) {
+            connection.setExtJson(ext("plc4xConnectionString", invalid));
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        }
+    }
+
+    @Test
+    void shouldRejectInvalidEtherNetIpAutoSettings() {
+        for (int port : List.of(0, -1, 65536)) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("plc.example");
+            connection.setPort(port);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+        }
+        for (Map<String, Object> settings : List.of(ext("maxFieldsPerRequest", 0),
+                ext("maxFieldsPerRequest", -1), ext("maxFieldsPerRequest", "invalid"),
+                ext("communicationPath", "["), ext("communicationPath", "abc"),
+                ext("communicationPath", "[1]"), ext("communicationPath", "[-1,0]"),
+                ext("backplane", -1), ext("slot", -1), ext("bigEndian", "wrong"))) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("plc.example");
+            connection.setExtJson(settings);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection), settings.toString());
+        }
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("plc.example");
+        connection.setExtJson(ext("communicationPath", "[1,4,2,192.168.0.1,1,1]",
+                "backplane", -1, "slot", -1));
+        assertDoesNotThrow(() -> validator.validate(device("dev-eip", "ETHERNET_IP"), connection));
+    }
 
     @Test
     void shouldAcceptUrlForNetworkProtocols() {
@@ -91,11 +135,40 @@ class ProtocolConnectionValidatorTest {
     }
 
     @Test
-    void shouldAcceptOpcUaRawConnectionStringWithoutEndpointFields() {
+    void shouldRejectOpcUaAliasRawPlc4xConnectionStringWithoutEndpoint() {
         DeviceConnection connection = new DeviceConnection();
         connection.setExtJson(ext("plc4xConnectionString", "opcua:tcp://127.0.0.1:4840"));
 
-        assertDoesNotThrow(() -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-opcua", "OPC_UA"), connection));
+    }
+
+    @Test
+    void shouldAcceptMiloEndpointFromEveryRuntimeSource() {
+        DeviceConnection url = new DeviceConnection();
+        url.setUrl("opc.tcp://127.0.0.1:4840");
+        DeviceConnection endpointUrl = new DeviceConnection();
+        endpointUrl.setExtJson(ext("endpointUrl", "opc.tcp://127.0.0.1:4840"));
+        DeviceConnection endpoint = new DeviceConnection();
+        endpoint.setExtJson(ext("endpoint", "opc.tcp://127.0.0.1:4840"));
+        DeviceConnection host = new DeviceConnection();
+        host.setHost("127.0.0.1");
+
+        for (String protocol : new String[]{"OPC_UA", "OPC_UA_MILO"}) {
+            DeviceInfo milo = device("dev-opcua", protocol);
+            for (DeviceConnection connection : new DeviceConnection[]{url, endpointUrl, endpoint, host}) {
+                assertDoesNotThrow(() -> validator.validate(milo, connection));
+            }
+        }
+    }
+
+    @Test
+    void shouldRejectMiloDeviceIpWithoutConnectionEndpoint() {
+        DeviceInfo milo = device("dev-opcua", "OPC_UA");
+        milo.setIpAddress("127.0.0.1");
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(milo, new DeviceConnection()));
     }
 
     @Test
@@ -357,7 +430,79 @@ class ProtocolConnectionValidatorTest {
     @Test
     void shouldAcceptS7WithRawConnectionStringOnly() {
         DeviceConnection connection = new DeviceConnection();
-        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10?controller-type=S7_1500"));
+        connection.setExtJson(ext("plc4xConnectionString", "s7://192.168.0.10:102?controller-type=S7_1500"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldAcceptS7ExplicitUriWithoutPortUsingPlc4xDefault() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example?controller-type=S7_1500",
+                "rack", "bad"));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldIgnoreGeneratedFieldsWhenExplicitS7UriIsSelected() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setPort(-2);
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example:102?controller-type=S7_1500",
+                "controllerType", "S7_200", "rack", "bad", "slot", -1, "pduSize", 0,
+                "ping", "bad", "retryTime", 5));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+    }
+
+    @Test
+    void shouldRejectMalformedOrWrongProtocolS7Overrides() {
+        for (String uri : List.of("modbus-tcp://plc:102", "s7://:102", "s7://plc:", "s7://plc:0",
+                "s7://plc:65536", "s7://plc:102/path", "s7://plc?retry-time=5",
+                "s7://plc:102?retry-time=5",
+                "s7://plc:102?retry%2Dtime=5", "s7://plc:102?bad=%GG")) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("127.0.0.1");
+            connection.setExtJson(ext("plc4xConnectionString", uri));
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection), uri);
+        }
+    }
+
+    @Test
+    void shouldNotIncludeS7OverrideInValidationError() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setExtJson(ext("plc4xConnectionString", "s7://plc.example:102?retry-time=5&secret=placeholder"));
+
+        CollectorException error = assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
+        assertFalse(error.getMessage().contains("placeholder"));
+        assertFalse(error.getMessage().contains("s7://"));
+    }
+
+    @Test
+    void shouldRejectInvalidS7NormalFieldsWithoutSilentDefault() {
+        for (Map<String, Object> fields : List.of(ext("rack", "bad"), ext("remoteRack", -1),
+                ext("rack", 8), ext("slot", 32), ext("remoteSlot", "bad"),
+                ext("remoteRack2", 8), ext("remoteSlot2", 32),
+                ext("pduSize", "bad"), ext("pduSize", 0), ext("pduSize", 65536),
+                ext("maxFieldsPerRequest", "bad"), ext("maxFieldsPerRequest", 0),
+                ext("controllerType", "S7_200"), ext("controllerType", ""),
+                ext("retryTime", 1), ext("retryTime", "bad"))) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setHost("127.0.0.1");
+            connection.setExtJson(fields);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection), fields.toString());
+        }
+    }
+
+    @Test
+    void shouldAllowDefaultS7ControllerAndSupportedNormalRoute() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("rack", 7, "slot", 31, "pduSize", 65535, "maxFieldsPerRequest", 64));
 
         assertDoesNotThrow(() -> validator.validate(device("dev-s7", "SIEMENS_S7"), connection));
     }
@@ -444,6 +589,129 @@ class ProtocolConnectionValidatorTest {
 
         assertThrows(CollectorException.class,
                 () -> validator.validate(device("dev-rtu", "IEC101"), connection));
+    }
+
+    @Test
+    void shouldAcceptSupportedIec104EncodingAndFieldLengths() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext(
+                "ioaEncodingMode", "SHIFT8_COMPAT",
+                "cotFieldLength", 2,
+                "commonAddressFieldLength", 1,
+                "ioaFieldLength", 3
+        ));
+
+        assertDoesNotThrow(() -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void shouldRejectUnknownIec104EncodingMode() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("ioaEncodingMode", "SHFIT8"));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void shouldRejectIec104FieldLengthOutsideDescriptorContract() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        connection.setExtJson(ext("ioaFieldLength", 4));
+
+        assertThrows(CollectorException.class,
+                () -> validator.validate(device("dev-iec104", "IEC104"), connection));
+    }
+
+    @Test
+    void mqttValidatorAcceptsVersionAliasesQosAndLegacyBrokerUrl() {
+        for (String version : List.of("v3", "3.1.1", "v5", "5")) {
+            DeviceConnection connection = new DeviceConnection();
+            connection.setExtJson(ext("brokerUrl", "tcp://127.0.0.1:1883",
+                    "version", version, "subscribeQos", "0", "publishQos", "2"));
+            assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection), version);
+        }
+    }
+
+    @Test
+    void mqttValidatorRejectsInvalidVersionAndEachInvalidQos() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        Map<String, Object> options = ext("version", "v4");
+        connection.setExtJson(options);
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.remove("version");
+        for (String key : List.of("subscribeQos", "publishQos", "willQos")) {
+            options.put(key, "3");
+            assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection), key);
+            options.remove(key);
+        }
+    }
+
+    @Test
+    void mqttValidatorRejectsConflictingBrokerUrlsAndTlsScheme() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        connection.setExtJson(ext("brokerUrl", "tcp://other-host:1883"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setExtJson(ext("brokerUrl", "tcp://127.0.0.1:1883"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setSslEnabled(true);
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        connection.setUrl("ssl://127.0.0.1:8883");
+        connection.setExtJson(ext("brokerUrl", "ssl://127.0.0.1:8883"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+    }
+
+    @Test
+    void mqttValidatorChecksSubscribeTopicsStringsAndCollections() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setUrl("tcp://127.0.0.1:1883");
+        Map<String, Object> options = ext("subscribeTopics", "devices/${deviceId}/#, other/{device_id}/+");
+        connection.setExtJson(options);
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${deviceId}/#", "other/{device_id}/+"));
+        assertDoesNotThrow(() -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${deviceId}/#/invalid"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+        options.put("subscribeTopics", List.of("devices/${unknown}/#"));
+        assertThrows(CollectorException.class, () -> validator.validate(device("dev-mqtt", "MQTT"), connection));
+    }
+
+    @Test
+    void mcRejectsExplicitInvalidFrameAndNumericConfiguration() {
+        DeviceConnection connection = new DeviceConnection();
+        connection.setHost("127.0.0.1");
+        Map<String, Object> options = new LinkedHashMap<>();
+        connection.setExtJson(options);
+        assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        for (String frame : List.of("3E_BINARY", "3E_ASCII", "4E_BINARY")) {
+            options.put("frameType", frame);
+            assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        }
+        for (String frame : List.of("", "3E", "BINARY", "4E_ASCII", "TEST")) {
+            options.put("frameType", frame);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), frame);
+        }
+        options.put("frameType", " 3e_ascii ");
+        assertDoesNotThrow(() -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection));
+        options.remove("frameType");
+        for (String field : List.of("networkNo", "pcNo", "ioNo", "stationNo", "monitoringTimer",
+                "maxWordsPerRequest", "maxBitsPerRequest", "maxRandomReadPoints", "maxRandomWritePoints")) {
+            options.put(field, -1);
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.put(field, "not-a-number");
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.put(field, "1e2");
+            assertThrows(CollectorException.class,
+                    () -> validator.validate(device("dev-mc", "MITSUBISHI_MC"), connection), field);
+            options.remove(field);
+        }
     }
 
     private DeviceInfo device(String deviceId, String protocolType) {

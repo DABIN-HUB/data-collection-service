@@ -25,6 +25,7 @@ class AlertNotificationTest {
                 .eventId("event-1")
                 .relatedEventId("event-0")
                 .startedAt(100L)
+                .lastOccurredAt(110L)
                 .durationMillis(20L)
                 .value(12.5d)
                 .unit("℃")
@@ -37,6 +38,7 @@ class AlertNotificationTest {
         assertTrue(json.contains("\"deviceId\""));
         assertTrue(json.contains("\"pointCode\""));
         assertTrue(json.contains("\"eventType\""));
+        assertEquals(110L, restored.getLastOccurredAt());
         assertEquals(notification, restored);
     }
 }

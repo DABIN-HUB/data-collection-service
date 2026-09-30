@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SCL xmlns="http://www.iec.ch/61850/2003/SCL">
+  <Header id="REF_IEC61850_DEVICE001" version="1" revision="1" nameStructure="IEDName"/>
+  <Communication>
+    <SubNetwork name="mms" type="8-MMS">
+      <ConnectedAP iedName="REFIED" apName="AP1">
+        <Address><P type="IP">127.0.0.1</P></Address>
+      </ConnectedAP>
+    </SubNetwork>
+  </Communication>
+  <IED name="REFIED" manufacturer="Reference" type="GGIO" configVersion="1">
+    <Services><GetDirectory/><GetDataObjectDefinition/><ReadWrite/></Services>
+    <AccessPoint name="AP1">
+      <Server>
+        <Authentication/>
+        <LDevice inst="LD0">
+          <LN0 lnClass="LLN0" inst="" lnType="REF_LLN0"/>
+          <LN lnClass="GGIO" inst="1" lnType="REF_GGIO"/>
+        </LDevice>
+      </Server>
+    </AccessPoint>
+  </IED>
+  <DataTypeTemplates>
+    <LNodeType id="REF_LLN0" lnClass="LLN0">
+      <DO name="NamPlt" type="REF_LPL"/>
+    </LNodeType>
+    <LNodeType id="REF_GGIO" lnClass="GGIO">
+      <DO name="AnIn1" type="REF_MV"/>
+      <DO name="AnIn2" type="REF_MV"/>
+      <DO name="AnIn3" type="REF_MV"/>
+      <DO name="AnIn4" type="REF_MV"/>
+      <DO name="AnIn5" type="REF_MV"/>
+      <DO name="AnIn6" type="REF_MV"/>
+      <DO name="AnIn7" type="REF_MV"/>
+      <DO name="AnIn8" type="REF_MV"/>
+    </LNodeType>
+    <DOType id="REF_LPL" cdc="LPL">
+      <DA name="vendor" bType="VisString255" fc="DC"/>
+    </DOType>
+    <DOType id="REF_MV" cdc="MV">
+      <DA name="mag" bType="Struct" type="REF_AnalogueValue" fc="MX" dchg="true"/>
+      <DA name="q" bType="Quality" fc="MX" qchg="true"/>
+      <DA name="t" bType="Timestamp" fc="MX"/>
+    </DOType>
+    <DAType id="REF_AnalogueValue">
+      <BDA name="f" bType="FLOAT32"/>
+    </DAType>
+  </DataTypeTemplates>
+</SCL>

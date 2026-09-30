@@ -1,0 +1,151 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "deviceId": "ref_mqtt_device001",
+        "deviceName": "REF_MQTT_DEVICE001",
+        "protocolType": "MQTT",
+        "connectionType": "MQTT",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 18830,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_mqtt_device001",
+        "connectionType": "MQTT",
+        "host": "127.0.0.1",
+        "port": 18830,
+        "url": "tcp://127.0.0.1:18830",
+        "clientId": "ref_mqtt_device001",
+        "extJson": {
+          "brokerUrl": "tcp://127.0.0.1:18830",
+          "version": "v3",
+          "subscribeTopics": "protoforge/device001/#",
+          "qos": 0,
+          "cleanSession": true
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_mqtt_device001-current_temp",
+          "pointCode": "current_temp",
+          "pointName": "current_temp",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/current_temp",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "°C",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/current_temp",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        },
+        {
+          "pointId": "ref_mqtt_device001-set_temp",
+          "pointCode": "set_temp",
+          "pointName": "set_temp",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/set_temp",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "°C",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/set_temp",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        },
+        {
+          "pointId": "ref_mqtt_device001-mode",
+          "pointCode": "mode",
+          "pointName": "mode",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/mode",
+          "dataType": "UINT16",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/mode",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        },
+        {
+          "pointId": "ref_mqtt_device001-fan_speed",
+          "pointCode": "fan_speed",
+          "pointName": "fan_speed",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/fan",
+          "dataType": "UINT16",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/fan",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        },
+        {
+          "pointId": "ref_mqtt_device001-power_on",
+          "pointCode": "power_on",
+          "pointName": "power_on",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/power",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/power",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        },
+        {
+          "pointId": "ref_mqtt_device001-humidity",
+          "pointCode": "humidity",
+          "pointName": "humidity",
+          "deviceId": "ref_mqtt_device001",
+          "address": "protoforge/device001/hvac/humidity",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "%RH",
+          "collectionMode": "SUBSCRIBE",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "topic": "protoforge/device001/hvac/humidity",
+            "jsonPath": "$.value",
+            "payloadEncoding": "JSON"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

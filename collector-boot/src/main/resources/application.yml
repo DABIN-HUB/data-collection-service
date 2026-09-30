@@ -25,7 +25,18 @@ management:
       base-path: /actuator
   endpoint:
     health:
-      show-details: ${MANAGEMENT_HEALTH_DETAILS:never}
+      show-details: ${MANAGEMENT_HEALTH_DETAILS:when_authorized}
+      probes:
+        enabled: true
+      status:
+        http-mapping:
+          down: 200
+          out-of-service: 200
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
   prometheus:
     metrics:
       export:
@@ -117,9 +128,10 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
   file:
-    name: logs/collector.log
+    name: ${COLLECTOR_LOG_FILE:logs/collector.log}
     max-size: 10MB
     max-history: 30
+    total-size-cap: 300MB
   access:
     enabled: true
     include-paths:
@@ -176,7 +188,8 @@ collector:
   auth:
     permit-all-paths:
       - /health
-      - /actuator/**
+      - /actuator/health
+      - /actuator/health/**
       - /desktop/**
       - /v3/api-docs/**
       - /swagger-ui/**
@@ -186,8 +199,17 @@ collector:
     default-ops-scopes: [VIEW, DEVICE_CONTROL, CONFIG_MANAGE, SECURITY_MANAGE]
     ops-scopes: {}
     access-rules:
+      - methods: [GET]
+        paths: [/actuator/metrics, /actuator/metrics/**, /actuator/prometheus]
+        required-scope: VIEW
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/device/**, /api/data/device/*/reset-adaptive]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/control/**]
+        required-scope: DEVICE_CONTROL
+      - methods: [POST, PUT, PATCH, DELETE]
+        paths: [/api/shadow/**]
         required-scope: DEVICE_CONTROL
       - methods: [POST, PUT, PATCH, DELETE]
         paths: [/api/config/**]
@@ -196,13 +218,16 @@ collector:
         paths: [/api/ops/network/diagnose]
         required-scope: SECURITY_MANAGE
       - methods: [POST]
+        paths: [/api/cloud/**]
+        required-scope: CLOUD_OPERATE
+      - methods: [POST]
         paths: [/api/ops/alarms/*/acknowledge]
         required-scope: DEVICE_CONTROL
       - methods: [GET]
         paths: [/api/config/export]
         required-scope: CONFIG_MANAGE
       - methods: [GET]
-        paths: [/api/**, /monitor/**]
+        paths: [/api/**, /monitor/**, /api/monitor/**]
         required-scope: VIEW
     allow-ip-authentication: false
     trusted-proxy-ranges: []
@@ -261,7 +286,7 @@ collector:
     tenant-id: 1
     api-token: ""
   cache:
-    type: local
+    type: multi-level
     local:
       max-size: 10000
       expire-after-write: 300

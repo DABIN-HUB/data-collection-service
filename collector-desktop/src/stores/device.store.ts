@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 
 import { deleteLocalDevice, getDeviceDiff, triggerFullConfigSync } from "@/api/config.api";
 import { getConfigDevices, getDeviceRuntime, getDeviceStatus, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
-import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceViewModel } from "@/types/device";
+import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceStatusResponse, DeviceViewModel } from "@/types/device";
 
 interface DeviceState {
   loading: boolean;
@@ -12,6 +12,7 @@ interface DeviceState {
   runtimeMap: Record<string, DeviceRuntimeSnapshot>;
   selectedDeviceId: string;
   lastUpdatedAt: number;
+  refreshGeneration: number;
 }
 
 export const useDeviceStore = defineStore("device", {
@@ -22,7 +23,8 @@ export const useDeviceStore = defineStore("device", {
     devices: [],
     runtimeMap: {},
     selectedDeviceId: "",
-    lastUpdatedAt: 0
+    lastUpdatedAt: 0,
+    refreshGeneration: 0
   }),
   getters: {
     selectedDevice: (state) => state.devices.find((device) => device.normalizedId === state.selectedDeviceId) || null,
@@ -33,6 +35,8 @@ export const useDeviceStore = defineStore("device", {
   },
   actions: {
     async refresh() {
+      const requestGeneration = this.refreshGeneration + 1;
+      this.refreshGeneration = requestGeneration;
       this.loading = true;
       this.error = "";
       try {
@@ -40,23 +44,34 @@ export const useDeviceStore = defineStore("device", {
           getConfigDevices(),
           getDeviceRuntime()
         ]);
+        if (requestGeneration !== this.refreshGeneration) {
+          return;
+        }
+        const nextRuntimeMap = runtimeResponse.status === "fulfilled"
+          ? buildRuntimeMap(runtimeResponse.value)
+          : this.runtimeMap;
         if (runtimeResponse.status === "fulfilled") {
-          this.runtimeMap = Object.fromEntries(runtimeResponse.value.map((item) => [item.deviceId, item]));
+          this.runtimeMap = nextRuntimeMap;
         }
         if (deviceResponse.status === "fulfilled") {
           const rawDevices = Array.isArray(deviceResponse.value.devices) ? deviceResponse.value.devices : [];
-          this.devices = rawDevices.map((device) => normalizeDeviceViewModel(device, this.runtimeMap));
+          this.devices = rawDevices.map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, nextRuntimeMap));
           if (!this.selectedDeviceId && this.devices.length > 0) {
             this.selectedDeviceId = this.devices[0].normalizedId;
           }
+          this.lastUpdatedAt = Date.now();
         } else {
           throw deviceResponse.reason;
         }
-        this.lastUpdatedAt = Date.now();
       } catch (error) {
+        if (requestGeneration !== this.refreshGeneration) {
+          return;
+        }
         this.error = error instanceof Error ? error.message : "设备列表加载失败";
       } finally {
-        this.loading = false;
+        if (requestGeneration === this.refreshGeneration) {
+          this.loading = false;
+        }
       }
     },
     selectDevice(deviceId: string) {
@@ -78,13 +93,19 @@ export const useDeviceStore = defineStore("device", {
     async syncConfig() {
       await this.operate(() => triggerFullConfigSync());
     },
+    async syncRemoteDevices() {
+      await this.operate(async () => {
+        await triggerFullConfigSync();
+        await reloadDevices();
+      });
+    },
     async deleteLocal(deviceId: string) {
       await this.operate(() => deleteLocalDevice(deviceId));
-      if (this.selectedDeviceId === deviceId) {
+      if (!this.error && this.selectedDeviceId === deviceId) {
         this.selectedDeviceId = this.devices[0]?.normalizedId || "";
       }
     },
-    async loadStatus(deviceId: string): Promise<unknown> {
+    async loadStatus(deviceId: string): Promise<DeviceStatusResponse> {
       return getDeviceStatus(deviceId);
     },
     async loadDiff(deviceId: string): Promise<unknown> {
@@ -94,8 +115,13 @@ export const useDeviceStore = defineStore("device", {
       this.operating = true;
       this.error = "";
       try {
-        await action();
+        const result = await action();
+        const runtime = extractOperationRuntime(result);
+        if (runtime?.deviceId) {
+          this.runtimeMap = { ...this.runtimeMap, [runtime.deviceId]: runtime };
+        }
         await this.refresh();
+        return result;
       } catch (error) {
         this.error = error instanceof Error ? error.message : "设备操作失败";
       } finally {
@@ -118,20 +144,38 @@ export function normalizeDeviceViewModel(device: DeviceInfo, runtimeMap: Record<
   };
 }
 
+export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, runtimeMap: Record<string, DeviceRuntimeSnapshot> = {}): DeviceViewModel {
+  const view = normalizeDeviceViewModel(device, runtimeMap);
+  const effectiveStatus = resolveDeviceStatus(view);
+  return {
+    ...view,
+    configStatus: view.status,
+    runtimeStatus: effectiveStatus,
+    status: effectiveStatus
+  };
+}
+
 export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" {
-  if (device.runtime?.reconnecting || device.runtime?.starting) {
-    return "CONNECTING";
+  const runtime = device.runtime;
+  switch (runtime?.phase) {
+    case "ONLINE": return "ONLINE";
+    case "DEGRADED":
+    case "FAILED": return "ERROR";
+    case "STARTING":
+    case "CONNECTING":
+    case "WAITING_FIRST_SAMPLE":
+    case "RECONNECTING": return "CONNECTING";
+    case "STOPPED": return "OFFLINE";
   }
-  if (device.runtime?.connected || device.runtime?.running || device.status === "ONLINE") {
-    return "ONLINE";
-  }
-  if (device.runtime?.degradedReason || device.status === "ERROR") {
-    return "ERROR";
-  }
-  if (device.status === "DISABLED") {
-    return "DISABLED";
-  }
+  if (device.status === "ERROR") return "ERROR";
+  if (device.status === "DISABLED") return "DISABLED";
   return "OFFLINE";
+}
+
+function extractOperationRuntime(result: unknown): DeviceRuntimeSnapshot | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const runtime = (result as { runtime?: unknown }).runtime;
+  return runtime && typeof runtime === "object" ? runtime as DeviceRuntimeSnapshot : undefined;
 }
 
 export function resolvePointCount(device: DeviceViewModel): number {
@@ -158,4 +202,8 @@ export function isLocalDevice(device: DeviceViewModel | undefined): boolean {
 
 export function resolveDeviceStartMode(device: DeviceViewModel | undefined): "local" | "remote" {
   return isLocalDevice(device) ? "local" : "remote";
+}
+
+function buildRuntimeMap(items: DeviceRuntimeSnapshot[]): Record<string, DeviceRuntimeSnapshot> {
+  return Object.fromEntries(items.map((item) => [item.deviceId, item]));
 }

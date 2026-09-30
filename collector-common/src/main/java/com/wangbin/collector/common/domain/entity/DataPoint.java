@@ -167,6 +167,7 @@ public class DataPoint {
      * 告警规则配置（JSON格式）
      * 示例: {"threshold": 100, "comparison": ">", "duration": 60}
      */
+    @JsonDeserialize(using = AlarmRuleJsonDeserializer.class)
     private String alarmRule;
 
     /**
@@ -631,6 +632,36 @@ public class DataPoint {
                 return MAPPER.readValue(text, TYPE);
             }
             return new LinkedHashMap<>();
+        }
+    }
+
+    /**
+     * 支持告警规则字符串、数组或对象的反序列化器。
+     *
+     * <p>后端响应会把 alarmRule 序列化为规则数组，页面编辑后可能原样提交回来；
+     * 实体内部仍使用 JSON 字符串保存，因此这里统一转回字符串。</p>
+     */
+    public static class AlarmRuleJsonDeserializer extends JsonDeserializer<String> {
+
+        private static final ObjectMapper MAPPER = new ObjectMapper();
+
+        /**
+         * 执行当前业务逻辑。
+         */
+        @Override
+        public String deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+            JsonNode node = p.getCodec().readTree(p);
+            if (node == null || node.isNull()) {
+                return null;
+            }
+            if (node.isTextual()) {
+                String text = node.asText();
+                return text == null || text.trim().isEmpty() ? null : text;
+            }
+            if (node.isArray() || node.isObject()) {
+                return MAPPER.writeValueAsString(node);
+            }
+            return node.asText();
         }
     }
 }

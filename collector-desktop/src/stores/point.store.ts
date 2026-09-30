@@ -1,43 +1,64 @@
 import { defineStore } from "pinia";
 
-import { getDevicePointConfig, saveDevicePointConfig } from "@/api/point.api";
-import { applyPointBatchEdit, buildIncrementalPoints, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/components/point/point-editor-utils";
+import { getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { ApiRequestError } from "@/api/http";
+import { applyPointBatchEdit, buildIncrementalPoints, defaultCollectionMode, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
+import type { DeviceConnection } from "@/types/config";
+import type { DeviceInfo } from "@/types/device";
 
 interface PointState {
-  loading: boolean;
-  saving: boolean;
-  error: string;
   pointsByDevice: Record<string, DataPoint[]>;
   selectedIdsByDevice: Record<string, string[]>;
+  loadGenerationByDevice: Record<string, number>;
+  loadingByDevice: Record<string, boolean>;
+  savingCountByDevice: Record<string, number>;
+  errorByDevice: Record<string, string>;
+  configVersionByDevice: Record<string, number>;
+  bundleDeviceByDevice: Record<string, DeviceInfo | undefined>;
+  bundleConnectionByDevice: Record<string, DeviceConnection | undefined>;
 }
 
 export const usePointStore = defineStore("point", {
   state: (): PointState => ({
-    loading: false,
-    saving: false,
-    error: "",
     pointsByDevice: {},
-    selectedIdsByDevice: {}
+    selectedIdsByDevice: {},
+    loadGenerationByDevice: {},
+    loadingByDevice: {},
+    savingCountByDevice: {},
+    errorByDevice: {},
+    configVersionByDevice: {},
+    bundleDeviceByDevice: {},
+    bundleConnectionByDevice: {}
   }),
   getters: {
     getPoints: (state) => (deviceId: string) => state.pointsByDevice[deviceId] || [],
-    getSelectedIds: (state) => (deviceId: string) => state.selectedIdsByDevice[deviceId] || []
+    getSelectedIds: (state) => (deviceId: string) => state.selectedIdsByDevice[deviceId] || [],
+    isLoading: (state) => (deviceId: string) => Boolean(state.loadingByDevice[deviceId]),
+    isSaving: (state) => (deviceId: string) => (state.savingCountByDevice[deviceId] || 0) > 0,
+    errorFor: (state) => (deviceId: string) => state.errorByDevice[deviceId] || ""
   },
   actions: {
     async load(deviceId: string) {
-      if (!deviceId) {
-        return;
-      }
-      this.loading = true;
-      this.error = "";
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) return;
+      const requestGeneration = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
+      this.loadGenerationByDevice[targetDeviceId] = requestGeneration;
+      this.loadingByDevice[targetDeviceId] = true;
+      this.errorByDevice[targetDeviceId] = "";
       try {
-        const response = await getDevicePointConfig(deviceId, true);
-        this.pointsByDevice[deviceId] = normalizePointRows(response.points || []);
+        const response = await getDeviceConfigBundle(targetDeviceId);
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
+        const mode = defaultCollectionMode(response.device?.protocolType);
+        this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || [], mode);
+        this.configVersionByDevice[targetDeviceId] = response.configVersion;
+        this.bundleDeviceByDevice[targetDeviceId] = response.device;
+        this.bundleConnectionByDevice[targetDeviceId] = response.connection;
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "点位配置加载失败";
+        if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
+        this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置加载失败";
       } finally {
-        this.loading = false;
+        if (requestGeneration === this.loadGenerationByDevice[targetDeviceId]) this.loadingByDevice[targetDeviceId] = false;
       }
     },
     setSelectedIds(deviceId: string, ids: string[]) {
@@ -49,6 +70,7 @@ export const usePointStore = defineStore("point", {
     addEmptyPoint(deviceId: string) {
       const rows = this.getPoints(deviceId);
       const nextIndex = rows.length + 1;
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
       this.pointsByDevice[deviceId] = normalizePointRows([
         ...rows,
         {
@@ -57,18 +79,21 @@ export const usePointStore = defineStore("point", {
           address: "40001",
           dataType: "FLOAT",
           readWrite: "R",
+          collectionMode: mode,
           unit: "-"
         }
-      ]);
+      ], mode);
     },
     appendGeneratedPoints(deviceId: string, options: BuildIncrementalPointsOptions) {
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
       this.pointsByDevice[deviceId] = normalizePointRows([
         ...this.getPoints(deviceId),
-        ...buildIncrementalPoints(options)
-      ]);
+        ...buildIncrementalPoints({ ...options, collectionMode: options.collectionMode || mode })
+      ], mode);
     },
     replacePoints(deviceId: string, points: DataPoint[]) {
-      this.pointsByDevice[deviceId] = normalizePointRows(points);
+      const mode = defaultCollectionMode(this.bundleDeviceByDevice[deviceId]?.protocolType);
+      this.pointsByDevice[deviceId] = normalizePointRows(points, mode);
       this.selectedIdsByDevice[deviceId] = [];
     },
     applyBatch(deviceId: string, payload: PointBatchEditPayload) {
@@ -79,17 +104,57 @@ export const usePointStore = defineStore("point", {
       this.pointsByDevice[deviceId] = this.getPoints(deviceId).filter((point) => !selected.has(point.pointId || ""));
       this.selectedIdsByDevice[deviceId] = [];
     },
+    clearError(deviceId: string) {
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) return;
+      this.errorByDevice[targetDeviceId] = "";
+    },
+    setError(deviceId: string, message: string) {
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) return;
+      this.errorByDevice[targetDeviceId] = message;
+    },
     async save(deviceId: string) {
-      this.saving = true;
-      this.error = "";
+      const targetDeviceId = normalizeDeviceId(deviceId);
+      if (!targetDeviceId) return;
+      const payload = clonePoints(this.getPoints(targetDeviceId));
+      const device = this.bundleDeviceByDevice[targetDeviceId];
+      const connection = this.bundleConnectionByDevice[targetDeviceId];
+      const baseVersion = this.configVersionByDevice[targetDeviceId] || 0;
+      if (!device || !connection) {
+        this.errorByDevice[targetDeviceId] = "设备完整配置尚未加载";
+        return;
+      }
+      this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
+      this.errorByDevice[targetDeviceId] = "";
       try {
-        await saveDevicePointConfig(deviceId, this.getPoints(deviceId));
-        await this.load(deviceId);
+        const bundlePayload = { baseVersion, device: clone(device), connection: clone(connection), points: payload };
+        const validation = await validateDeviceConfigBundle(targetDeviceId, bundlePayload);
+        if (!validation.valid) {
+          this.errorByDevice[targetDeviceId] = validation.errors?.join("；") || "设备配置校验失败";
+          return;
+        }
+        const result = await commitDeviceConfigBundle(targetDeviceId, bundlePayload);
+        this.configVersionByDevice[targetDeviceId] = result.configVersion;
+        await this.load(targetDeviceId);
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "点位配置保存失败";
+        this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && (error.machineCode === "CONFIG_VERSION_CONFLICT" || error.httpStatus === 409)
+          ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
+          : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {
-        this.saving = false;
+        this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);
       }
     }
   }
 });
+
+function normalizeDeviceId(deviceId: string): string {
+  return typeof deviceId === "string" ? deviceId.trim() : "";
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+function clonePoints(points: DataPoint[]): DataPoint[] {
+  return clone(points || []);
+}

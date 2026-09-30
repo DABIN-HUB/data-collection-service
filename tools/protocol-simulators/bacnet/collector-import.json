@@ -1,0 +1,106 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_bacnet_device101",
+        "deviceId": "ref_bacnet_device101",
+        "deviceName": "REF_BACNET_101",
+        "protocolType": "BACNET_IP",
+        "connectionType": "BACNET_IP",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 14781,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_bacnet_device101",
+        "connectionType": "BACNET_IP",
+        "host": "127.0.0.1",
+        "port": 14781,
+        "extJson": {
+          "remoteDeviceInstance": 101,
+          "localDeviceInstance": 4194302,
+          "useWhoIsDiscovery": true
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_bacnet_device101-circuit1_status",
+          "pointCode": "circuit1_status",
+          "pointName": "circuit1_status",
+          "deviceId": "ref_bacnet_device101",
+          "address": "BV:1",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "circuit1_status"
+          }
+        },
+        {
+          "pointId": "ref_bacnet_device101-circuit2_status",
+          "pointCode": "circuit2_status",
+          "pointName": "circuit2_status",
+          "deviceId": "ref_bacnet_device101",
+          "address": "BV:2",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "circuit2_status"
+          }
+        },
+        {
+          "pointId": "ref_bacnet_device101-total_power",
+          "pointCode": "total_power",
+          "pointName": "total_power",
+          "deviceId": "ref_bacnet_device101",
+          "address": "AV:1",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "kW",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "total_power"
+          }
+        },
+        {
+          "pointId": "ref_bacnet_device101-total_energy",
+          "pointCode": "total_energy",
+          "pointName": "total_energy",
+          "deviceId": "ref_bacnet_device101",
+          "address": "AV:2",
+          "dataType": "FLOAT32",
+          "readWrite": "RW",
+          "unit": "kWh",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "total_energy"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

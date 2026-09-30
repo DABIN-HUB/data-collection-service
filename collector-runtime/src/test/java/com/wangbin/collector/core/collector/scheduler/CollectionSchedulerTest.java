@@ -2,6 +2,8 @@ package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -9,6 +11,7 @@ import com.wangbin.collector.core.port.SystemResourceProbe;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -66,18 +70,7 @@ public class CollectionSchedulerTest {
         reconnectCoordinator = mock(ReconnectCoordinator.class);
         systemResourceProbe = mock(SystemResourceProbe.class);
         timeSliceScheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler = new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
-                collectorProperties,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                lifecycleCoordinator,
-                batchExecutor,
-                reconnectCoordinator,
-                timeSliceScheduler);
+        scheduler = schedulerWithExecutor(timeSliceScheduler, new AtomicLong(System.nanoTime()));
     }
 
     @Test
@@ -85,6 +78,101 @@ public class CollectionSchedulerTest {
         when(systemResourceProbe.getProcessCpuLoad()).thenReturn(75D);
 
         assertEquals(75D, scheduler.resolveProcessCpuLoad());
+    }
+
+    @Test
+    void destroyShouldCloseConfigRestartBeforeStoppingDevices() {
+        TimeSliceSchedulingCoordinator schedulingCoordinator = mock(TimeSliceSchedulingCoordinator.class);
+        TimeSliceExecutionCoordinator executionCoordinator = mock(TimeSliceExecutionCoordinator.class);
+        TimeSliceConfigCoordinator configCoordinator = mock(TimeSliceConfigCoordinator.class);
+        SchedulerMaintenanceCoordinator maintenanceCoordinator = mock(SchedulerMaintenanceCoordinator.class);
+        ConfigRestartCoordinator restartCoordinator = mock(ConfigRestartCoordinator.class);
+        CollectionScheduler localScheduler = new CollectionScheduler(
+                collectionManager,
+                mock(CollectionStatistics.class),
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                batchExecutor,
+                reconnectCoordinator,
+                schedulingCoordinator,
+                executionCoordinator,
+                configCoordinator,
+                maintenanceCoordinator,
+                restartCoordinator);
+
+        localScheduler.destroy();
+
+        InOrder inOrder = inOrder(restartCoordinator, lifecycleCoordinator);
+        inOrder.verify(restartCoordinator).cancelAll();
+        inOrder.verify(lifecycleCoordinator).stopAllDevices();
+    }
+
+    @Test
+    void runtimeReadyRequiresOnlinePhaseWithoutErasingFirstSample() {
+        String deviceId = "dev-runtime-ready";
+        long generation = 7L;
+        runtimeState.markRunning(deviceId, generation);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, generation);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+
+        DeviceRuntimeSnapshot waiting = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.WAITING_FIRST_SAMPLE, waiting.phase());
+        assertFalse(waiting.ready());
+        assertTrue(waiting.connected());
+
+        performanceMonitor.recordBatchSuccess(deviceId, generation, 1, 10L);
+        DeviceRuntimeSnapshot online = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.ONLINE, online.phase());
+        assertTrue(online.ready());
+        assertTrue(online.firstSampleAt() > 0);
+
+        performanceMonitor.recordBatchFailure(deviceId, generation);
+        DeviceRuntimeSnapshot degraded = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.DEGRADED, degraded.phase());
+        assertFalse(degraded.ready());
+        assertTrue(degraded.connected());
+        assertEquals(online.firstSampleAt(), degraded.firstSampleAt());
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            performanceMonitor.recordBatchFailure(deviceId, generation);
+        }
+        DeviceRuntimeSnapshot failed = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.FAILED, failed.phase());
+        assertFalse(failed.ready());
+        assertTrue(failed.connected());
+        assertEquals(online.firstSampleAt(), failed.firstSampleAt());
+
+        when(reconnectCoordinator.isReconnecting(deviceId)).thenReturn(true);
+        DeviceRuntimeSnapshot reconnecting = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.RECONNECTING, reconnecting.phase());
+        assertFalse(reconnecting.ready());
+        assertTrue(reconnecting.connected());
+        assertEquals(online.firstSampleAt(), reconnecting.firstSampleAt());
+    }
+
+    @Test
+    void runtimeReadyMustFollowConnectionAndCurrentGeneration() {
+        String deviceId = "dev-runtime-generation";
+        runtimeState.markRunning(deviceId, 3L);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, 3L);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        performanceMonitor.recordBatchSuccess(deviceId, 3L, 1, 10L);
+        assertTrue(scheduler.getDeviceRuntimeSnapshot(deviceId).ready());
+
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(false);
+        DeviceRuntimeSnapshot disconnected = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.FAILED, disconnected.phase());
+        assertFalse(disconnected.ready());
+        assertFalse(disconnected.connected());
+        assertTrue(disconnected.firstSampleAt() > 0);
+
+        runtimeState.markRunning(deviceId, 4L);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        DeviceRuntimeSnapshot newGeneration = scheduler.getDeviceRuntimeSnapshot(deviceId);
+        assertEquals(DeviceRuntimePhase.WAITING_FIRST_SAMPLE, newGeneration.phase());
+        assertFalse(newGeneration.ready());
+        assertEquals(0L, newGeneration.firstSampleAt());
     }
 
     @AfterEach
@@ -283,18 +371,7 @@ public class CollectionSchedulerTest {
         collectorProperties.getScheduler().setMaxTimeSliceCount(12);
         collectorProperties.getScheduler().setTargetTasksPerTimeSlice(8);
         ScheduledExecutorService manualScheduler = mock(ScheduledExecutorService.class);
-        scheduler = new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
-                collectorProperties,
-                systemResourceProbe,
-                runtimeState,
-                performanceMonitor,
-                lifecycleCoordinator,
-                batchExecutor,
-                reconnectCoordinator,
-                manualScheduler);
+        scheduler = schedulerWithExecutor(manualScheduler, new AtomicLong(System.nanoTime()));
         String deviceId = "dev-manual-replan";
         runtimeState.markRunning(deviceId, 1L);
         List<DeviceBatchTask> tasks = IntStream.range(0, 16)
@@ -899,19 +976,51 @@ public class CollectionSchedulerTest {
     }
 
     private CollectionScheduler schedulerWithExecutor(ScheduledExecutorService scheduledExecutor, AtomicLong nowNanos) {
-        return new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
+        TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
+                runtimeState,
+                performanceMonitor,
+                batchExecutor,
+                nowNanos::get);
+        TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
                 collectorProperties,
+                runtimeState,
+                performanceMonitor,
+                executionCoordinator,
+                scheduledExecutor,
+                nowNanos::get);
+        TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
+                collectorProperties,
+                configManager,
                 systemResourceProbe,
                 runtimeState,
                 performanceMonitor,
                 lifecycleCoordinator,
                 batchExecutor,
+                schedulingCoordinator);
+        SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
+                collectorProperties,
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                configCoordinator,
+                scheduledExecutor);
+        ConfigRestartCoordinator restartCoordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                configCoordinator,
+                scheduledExecutor);
+        return new CollectionScheduler(
+                collectionManager,
+                mock(CollectionStatistics.class),
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                batchExecutor,
                 reconnectCoordinator,
-                scheduledExecutor,
-                nowNanos::get);
+                schedulingCoordinator,
+                executionCoordinator,
+                configCoordinator,
+                maintenanceCoordinator,
+                restartCoordinator);
     }
 
     private List<Long> captureClaims(AtomicLong nowNanos) {

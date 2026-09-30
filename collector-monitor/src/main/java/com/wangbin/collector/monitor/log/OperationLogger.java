@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
@@ -31,6 +32,7 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
     private static final int MAX_MESSAGE_LENGTH = 4_000;
     private static final int DEFAULT_QUERY_LIMIT = 200;
     private static final int MAX_QUERY_LIMIT = 1_000;
+    private static final String MDC_REQUEST_ID = "requestId";
     private static final Pattern SENSITIVE_FIELD_PATTERN = Pattern.compile(
             "(?i)(password|passwd|pwd|token|secret|deviceKey|accessKey|authorization)(\\s*[:=]\\s*)([^\\s,;\\]}]+)");
     private static final Pattern BEARER_PATTERN = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/=-]+");
@@ -76,6 +78,7 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
                 event.getLevel() == null ? Level.INFO.levelStr : event.getLevel().levelStr,
                 safeText(event.getLoggerName()),
                 safeText(event.getThreadName()),
+                resolveRequestId(event),
                 sanitize(event.getFormattedMessage()));
         lock.lock();
         try {
@@ -144,9 +147,21 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
             return false;
         }
         return !StringUtils.hasText(keyword)
+                || normalize(entry.requestId()).contains(keyword)
                 || normalize(entry.message()).contains(keyword)
                 || normalize(entry.logger()).contains(keyword)
                 || normalize(entry.thread()).contains(keyword);
+    }
+
+    /**
+     * 解析或转换业务数据。
+     */
+    private String resolveRequestId(ILoggingEvent event) {
+        Map<String, String> mdc = event.getMDCPropertyMap();
+        if (mdc == null) {
+            return "";
+        }
+        return safeText(mdc.get(MDC_REQUEST_ID));
     }
 
     /**
@@ -193,6 +208,18 @@ public class OperationLogger extends AppenderBase<ILoggingEvent> {
                                     String level,
                                     String logger,
                                     String thread,
+                                    String requestId,
                                     String message) {
+
+        /**
+         * 创建当前组件实例。
+         */
+        public OperationLogEntry(long timestamp,
+                                 String level,
+                                 String logger,
+                                 String thread,
+                                 String message) {
+            this(timestamp, level, logger, thread, "", message);
+        }
     }
 }

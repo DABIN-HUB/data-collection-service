@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -85,7 +86,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
         OpcUaAddress address = resolveAddress(point);
-        return readValue(address);
+        return readValue(address, resolveNodeId(point));
     }
 
     /**
@@ -99,15 +100,10 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         List<NodeId> nodeIds = new ArrayList<>(points.size());
         for (DataPoint point : points) {
-            OpcUaAddress address = resolveAddress(point);
-            nodeIds.add(address.toNodeId());
+            resolveAddress(point);
+            nodeIds.add(resolveNodeId(point));
         }
-        List<DataValue> dataValues = client.readValues(0, TimestampsToReturn.Both, nodeIds);
-        for (int i = 0; i < points.size(); i++) {
-            DataValue value = dataValues.get(i);
-            values.put(points.get(i).getPointId(), value.getValue() != null ? value.getValue().getValue() : null);
-        }
-        return values;
+        return readValues(points, nodeIds);
     }
 
     /**
@@ -116,7 +112,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     @Override
     protected boolean doWritePoint(DataPoint point, Object value) throws Exception {
         OpcUaAddress address = resolveAddress(point);
-        return writeValue(address, value);
+        return writeValue(resolveNodeId(point), address.getDataType(), value);
     }
 
     /**
@@ -153,7 +149,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
             if (existing != null) {
                 removeMonitoredItem(point.getPointId(), existing);
             }
-            OpcUaMonitoredItem item = addMonitoredItem(subscription, address,
+            OpcUaMonitoredItem item = addMonitoredItem(subscription, address, resolveNodeId(point),
                     monitoredItem -> monitoredItem.setDataValueListener(
                             (monitored, value) -> handleNotification(point, address, value)));
             monitoredItems.put(point.getPointId(), item);
@@ -286,7 +282,12 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
      * 处理当前业务流程。
      */
     private void handleNotification(DataPoint point, OpcUaAddress address, DataValue value) {
-        Object payload = value != null && value.getValue() != null ? value.getValue().getValue() : null;
+        if (!isGoodRead(value)) {
+            log.warn("OPC UA 订阅点位读取失败: 设备={}，点位={}，状态={}",
+                    deviceInfo.getDeviceId(), point.getPointId(), readStatus(value));
+            return;
+        }
+        Object payload = value.getValue() != null ? value.getValue().getValue() : null;
         ingestPushedValue(point, payload);
         log.info("OPC UA push 设备={} 点位={} 值={}",
                 deviceInfo.getDeviceId(), point.getPointId(), payload);
@@ -302,17 +303,22 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         List<NodeId> readTargets = nodeIds.stream()
                 .map(this::safeParseNodeId)
+                .map(this::resolveNodeIdForCommand)
                 .collect(Collectors.toList());
         List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, readTargets);
+        if (values == null || values.size() != nodeIds.size()) {
+            throw new IllegalStateException("OPC UA 命令读取响应数量不匹配: requested=" + nodeIds.size()
+                    + ", received=" + (values == null ? "null" : values.size()));
+        }
         List<Map<String, Object>> response = new ArrayList<>(nodeIds.size());
         for (int i = 0; i < nodeIds.size(); i++) {
             DataValue value = values.get(i);
-            response.add(Map.of(
-                    "nodeId", nodeIds.get(i),
-                    "value", value.getValue() != null ? value.getValue().getValue() : null,
-                    "status", value.getStatusCode() != null ? value.getStatusCode().toString() : "null",
-                    "sourceTimestamp", value.getSourceTime() != null ? value.getSourceTime().getJavaDate() : null
-            ));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("nodeId", nodeIds.get(i));
+            item.put("value", isGoodRead(value) && value.getValue() != null ? value.getValue().getValue() : null);
+            item.put("status", readStatus(value));
+            item.put("sourceTimestamp", value != null && value.getSourceTime() != null ? value.getSourceTime().getJavaDate() : null);
+            response.add(item);
         }
         return response;
     }
@@ -331,14 +337,14 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         }
         OpcUaDataType dataType = OpcUaDataType.fromText(Objects.toString(params.get("dataType"), null));
         OpcUaAddress tempAddress = new OpcUaAddress(
-                safeParseNodeId(nodeIdText),
+                resolveNodeIdForCommand(safeParseNodeId(nodeIdText)),
                 dataType,
                 -1,
                 1,
                 -1,
                 false
         );
-        boolean success = writeValue(tempAddress, value);
+        boolean success = writeValue(tempAddress.toNodeId(), tempAddress.getDataType(), value);
         return Map.of("nodeId", nodeIdText, "status", success ? "success" : "error");
     }
 

@@ -147,8 +147,7 @@ public final class McAsciiCodecSupport {
     private static byte[] decodeWordPayload(McAddress address, byte[] payload) {
         int expected = address.getWordCount() * 4;
         if (payload.length < expected) {
-            throw new IllegalArgumentException("MC ASCII read payload is shorter than expected: expected="
-                    + expected + ", actual=" + payload.length);
+            throw new McPayloadLengthException("ASCII word read", expected, payload.length);
         }
         byte[] decoded = new byte[address.getWordCount() * 2];
         int targetOffset = 0;
@@ -181,8 +180,7 @@ public final class McAsciiCodecSupport {
     private static byte[] decodeBitPayload(McAddress address, byte[] payload) {
         int expectedBits = address.getReadUnitCount();
         if (payload.length < expectedBits) {
-            throw new IllegalArgumentException("MC ASCII bit payload is shorter than expected: expected="
-                    + expectedBits + ", actual=" + payload.length);
+            throw new McPayloadLengthException("ASCII bit read", expectedBits, payload.length);
         }
         byte[] decoded = new byte[(expectedBits + 1) / 2];
         for (int i = 0; i < expectedBits; i++) {

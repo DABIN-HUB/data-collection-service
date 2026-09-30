@@ -1,10 +1,16 @@
 package com.wangbin.collector.core.config.validator;
 
+import com.wangbin.collector.common.domain.ads.AdsConnectionContract;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.ethernetip.EtherNetIpConnectionContract;
+import com.wangbin.collector.common.domain.enums.FinsTransportMode;
 import com.wangbin.collector.common.exception.CollectorException;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Set;
 
@@ -39,7 +45,10 @@ public class ProtocolConnectionValidator {
         }
 
         switch (canonicalize(protocol)) {
-            case "HTTP", "MQTT", "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
+            case "HTTP" -> validateHttp(deviceInfo, connection);
+            case "MQTT" -> validateMqtt(deviceInfo, connection,
+                    "MQTT_SSL".equalsIgnoreCase(protocol.trim()));
+            case "WEBSOCKET", "COAP" -> requireUrlOrHostPort(deviceInfo, connection, protocol);
             case "MODBUS_TCP" -> requireHostPort(deviceInfo, connection, protocol);
             case "SIEMENS_S7" -> validateS7(deviceInfo, connection);
             case "MITSUBISHI_MC" -> validateMc(deviceInfo, connection);
@@ -47,17 +56,18 @@ public class ProtocolConnectionValidator {
             case "BACNET_IP" -> validateBacnetIp(deviceInfo, connection);
             case "BACNET_MSTP" -> validateBacnetMstp(deviceInfo, connection);
             case "BACNET_SC" -> validateBacnetSc(deviceInfo, connection);
-            case "ETHERNET_IP" -> requireHost(deviceInfo, connection, protocol);
+            case "ETHERNET_IP" -> validateEtherNetIp(deviceInfo, connection);
             case "ADS" -> validateAds(deviceInfo, connection);
             case "KNXNET_IP" -> validateKnxNetIp(deviceInfo, connection);
             case "SNMP" -> {
                 requireHost(deviceInfo, connection, protocol);
                 validateSnmp(deviceInfo, connection);
             }
-            case "IEC104", "IEC61850" -> requireHost(deviceInfo, connection, protocol);
+            case "IEC104" -> validateIec104(deviceInfo, connection);
+            case "IEC61850" -> requireHost(deviceInfo, connection, protocol);
             case "DLT645_2007" -> validateDlt645(deviceInfo, connection);
             case "IEC101" -> validateIec101(deviceInfo, connection);
-            case "OPC_UA" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA");
+            case "OPC_UA" -> validateMiloOpcUa(deviceInfo, connection);
             case "OPC_UA_PLC4X" -> validatePlc4xOpcUa(deviceInfo, connection, "OPC_UA_PLC4X");
             case "OPC_UA_MILO" -> validateMiloOpcUa(deviceInfo, connection);
             case "OPC_DA" -> validateOpcDa(deviceInfo, connection);
@@ -83,51 +93,120 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
+    private void validateHttp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireUrlOrHostPort(deviceInfo, connection, "HTTP");
+        try {
+            HttpConfigurationContract.validate(connection);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+        }
+    }
+
+    private void validateMqtt(DeviceInfo deviceInfo, DeviceConnection connection, boolean sslAlias) {
+        try {
+            MqttConfigurationContract.validate(connection, deviceInfo.getDeviceId(), !sslAlias);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+        }
+    }
+
+    private void validateEtherNetIp(DeviceInfo deviceInfo, DeviceConnection connection) {
+        try {
+            EtherNetIpConnectionContract.validate(deviceInfo, connection);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+        }
+    }
+
     private void validateS7(DeviceInfo deviceInfo, DeviceConnection connection) {
-        String connectionString = firstNonBlank(
-                connection.getStringConfig("plc4xConnectionString", null),
-                connection.getStringConfig("plc4x-connection-string", null));
-        if (isBlank(connectionString)) {
-            requireHost(deviceInfo, connection, "SIEMENS_S7");
+        String connectionString = connection.getStringConfig("plc4xConnectionString", null);
+        if (hasText(connectionString)) {
+            validateS7Uri(deviceInfo, connectionString);
+        } else {
+            String host = firstNonBlank(connection.getHost(), deviceInfo.getIpAddress());
+            if (isBlank(host) || !host.equals(host.trim()) || host.contains(" ")
+                    || host.contains(":") || host.contains("/") || host.contains("?")
+                    || host.contains("#") || host.contains("@")) {
+                fail(deviceInfo, "SIEMENS_S7 host is required and must be a host name or IPv4 address");
+            }
+            Integer port = firstNonNull(connection.getPort(), deviceInfo.getPort());
+            if (port != null && (port <= 0 || port > 65535)) {
+                fail(deviceInfo, "SIEMENS_S7 port must be between 1 and 65535");
+            }
+            s7Range(deviceInfo, connection, "rack", 0, 7);
+            s7Range(deviceInfo, connection, "remoteRack", 0, 7);
+            s7Range(deviceInfo, connection, "slot", 0, 31);
+            s7Range(deviceInfo, connection, "remoteSlot", 0, 31);
+            s7Range(deviceInfo, connection, "pduSize", 1, 65535);
+            s7Range(deviceInfo, connection, "localTsap", 1, 65535);
+            s7Range(deviceInfo, connection, "remoteTsap", 1, 65535);
+            s7Range(deviceInfo, connection, "remoteRack2", 0, 7);
+            s7Range(deviceInfo, connection, "remoteSlot2", 0, 31);
+            s7Range(deviceInfo, connection, "maxAmqCaller", 1, 65535);
+            s7Range(deviceInfo, connection, "maxAmqCallee", 1, 65535);
+            s7Range(deviceInfo, connection, "pingTime", 1, Integer.MAX_VALUE);
+            Integer retryTime = s7Range(deviceInfo, connection, "retryTime", 0, Integer.MAX_VALUE);
+            if (retryTime != null && retryTime > 0) {
+                fail(deviceInfo, "SIEMENS_S7 retryTime must be 0; the collector framework owns reconnection");
+            }
+            String controllerType = normalizeValue(connection.getStringConfig("controllerType", "S7_1200"));
+            if (!S7_CONTROLLER_TYPES.contains(controllerType)) {
+                fail(deviceInfo, "SIEMENS_S7 controllerType must be one of S7_300, S7_400, S7_1200, S7_1500, LOGO");
+            }
+            validateBooleanFlag(deviceInfo, connection.getProperty("ping"), "SIEMENS_S7 ping");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
+            validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
         }
-
-        Integer port = firstNonNull(connection.getPort(), deviceInfo.getPort());
-        if (port != null && (port <= 0 || port > 65535)) {
-            fail(deviceInfo, "SIEMENS_S7 port must be between 1 and 65535");
-        }
-
-        validateNonNegative(deviceInfo,
-                firstNonNull(connection.getIntConfig("rack", null), connection.getIntConfig("remoteRack", null)),
-                "SIEMENS_S7 rack");
-        validateNonNegative(deviceInfo,
-                firstNonNull(connection.getIntConfig("slot", null), connection.getIntConfig("remoteSlot", null)),
-                "SIEMENS_S7 slot");
-        validatePositive(deviceInfo, connection.getIntConfig("pduSize", null), "SIEMENS_S7 pduSize");
-        validatePositive(deviceInfo, connection.getIntConfig("maxFieldsPerRequest", null),
-                "SIEMENS_S7 maxFieldsPerRequest");
-        validatePositive(deviceInfo, connection.getIntConfig("localTsap", null), "SIEMENS_S7 localTsap");
-        validatePositive(deviceInfo, connection.getIntConfig("remoteTsap", null), "SIEMENS_S7 remoteTsap");
-        validateNonNegative(deviceInfo, connection.getIntConfig("remoteRack2", null), "SIEMENS_S7 remoteRack2");
-        validateNonNegative(deviceInfo, connection.getIntConfig("remoteSlot2", null), "SIEMENS_S7 remoteSlot2");
-        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCaller", null), "SIEMENS_S7 maxAmqCaller");
-        validatePositive(deviceInfo, connection.getIntConfig("maxAmqCallee", null), "SIEMENS_S7 maxAmqCallee");
-        validatePositive(deviceInfo, connection.getIntConfig("pingTime", null), "SIEMENS_S7 pingTime");
-        validatePositive(deviceInfo, connection.getIntConfig("retryTime", null), "SIEMENS_S7 retryTime");
+        // 批量大小和采集超时仍由采集侧使用，不随连接串覆盖失效。
+        s7Range(deviceInfo, connection, "maxFieldsPerRequest", 1, Integer.MAX_VALUE);
         validatePositive(deviceInfo, connection.getReadTimeout(), "SIEMENS_S7 readTimeout");
         validatePositive(deviceInfo, connection.getTimeout(), "SIEMENS_S7 timeout");
-
-        String controllerType = normalizeValue(firstNonBlank(
-                connection.getStringConfig("controllerType", null),
-                "S7_1200"));
-        if (!S7_CONTROLLER_TYPES.contains(controllerType)) {
-            fail(deviceInfo, "SIEMENS_S7 controllerType must be one of S7_300, S7_400, S7_1200, S7_1500, LOGO");
-        }
-
         validateBooleanFlag(deviceInfo, connection.getProperty("subscriptionEnabled"),
                 "SIEMENS_S7 subscriptionEnabled");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("localDeviceGroup"), "localDeviceGroup");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup"), "remoteDeviceGroup");
-        validateS7DeviceGroup(deviceInfo, connection.getProperty("remoteDeviceGroup2"), "remoteDeviceGroup2");
+    }
+
+    private void validateS7Uri(DeviceInfo deviceInfo, String connectionString) {
+        try {
+            URI uri = URI.create(connectionString.trim());
+            // 与适配器一致：PLC4X S7 TCP 可省略端口，但拒绝显式空端口。
+            if (!"s7".equals(uri.getScheme()) || uri.getHost() == null || uri.getHost().isBlank()
+                    || (uri.getPort() == -1 && !uri.getHost().equals(uri.getRawAuthority()))
+                    || uri.getPort() == 0 || uri.getPort() > 65535 || uri.getRawUserInfo() != null
+                    || (uri.getRawPath() != null && !uri.getRawPath().isEmpty()) || uri.getRawFragment() != null) {
+                fail(deviceInfo, "SIEMENS_S7 plc4xConnectionString must be s7://host[:port]");
+            }
+            String query = uri.getRawQuery();
+            if (query != null) {
+                for (String option : query.split("&")) {
+                    String decoded = URLDecoder.decode(option, StandardCharsets.UTF_8);
+                    String key = decoded.split("=", 2)[0].trim();
+                    if ("retry-time".equalsIgnoreCase(key) && !"retry-time=0".equals(decoded)) {
+                        fail(deviceInfo, "SIEMENS_S7 retry-time must be 0; the collector framework owns reconnection");
+                    }
+                }
+            }
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, "SIEMENS_S7 plc4xConnectionString is invalid");
+        }
+    }
+
+    private Integer s7Range(DeviceInfo deviceInfo, DeviceConnection connection,
+                            String key, int minimum, int maximum) {
+        Object raw = connection.getProperty(key);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw.toString().trim());
+            if (value >= minimum && value <= maximum) {
+                return value;
+            }
+        } catch (NumberFormatException ignored) {
+            // getIntConfig 会吞掉非法值，S7 显式配置必须拒绝而非回退默认值。
+        }
+        fail(deviceInfo, "SIEMENS_S7 " + key + " must be between " + minimum + " and " + maximum);
+        return null;
     }
 
     /**
@@ -136,23 +215,23 @@ public class ProtocolConnectionValidator {
     private void validateMc(DeviceInfo deviceInfo, DeviceConnection connection) {
         requireHost(deviceInfo, connection, "MITSUBISHI_MC");
 
-        Integer port = firstPositive(connection.getPort(), deviceInfo.getPort());
+        Integer port = connection.getPort() != null ? connection.getPort() : deviceInfo.getPort();
         if (port != null && (port <= 0 || port > 65535)) {
             fail(deviceInfo, "MITSUBISHI_MC port must be between 1 and 65535");
         }
 
-        validateMcRange(deviceInfo, connection.getIntConfig("networkNo", null), 0, 255, "networkNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("pcNo", null), 0, 255, "pcNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("ioNo", null), 0, 65535, "ioNo");
-        validateMcRange(deviceInfo, connection.getIntConfig("stationNo", null), 0, 255, "stationNo");
-        validatePositive(deviceInfo, connection.getIntConfig("monitoringTimer", null), "MITSUBISHI_MC monitoringTimer");
-        validatePositive(deviceInfo, connection.getIntConfig("maxRandomReadPoints", null), "MITSUBISHI_MC maxRandomReadPoints");
-        validatePositive(deviceInfo, connection.getIntConfig("maxRandomWritePoints", null), "MITSUBISHI_MC maxRandomWritePoints");
-        validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "MITSUBISHI_MC maxWordsPerRequest");
-        validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "MITSUBISHI_MC maxBitsPerRequest");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "networkNo"), 0, 255, "networkNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "pcNo"), 0, 255, "pcNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "ioNo"), 0, 65535, "ioNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "stationNo"), 0, 255, "stationNo");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "monitoringTimer"), 1, 65535, "monitoringTimer");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxRandomReadPoints"), 1, 255, "maxRandomReadPoints");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxRandomWritePoints"), 1, 255, "maxRandomWritePoints");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxWordsPerRequest"), 1, 960, "maxWordsPerRequest");
+        validateMcRange(deviceInfo, mcInteger(deviceInfo, connection, "maxBitsPerRequest"), 1, 3584, "maxBitsPerRequest");
         validatePositive(deviceInfo, connection.getReadTimeout(), "MITSUBISHI_MC readTimeout");
         validatePositive(deviceInfo, connection.getTimeout(), "MITSUBISHI_MC timeout");
-        validateMcFrameType(deviceInfo, connection.getStringConfig("frameType", null));
+        validateMcFrameType(deviceInfo, connection);
     }
 
     /**
@@ -172,13 +251,25 @@ public class ProtocolConnectionValidator {
             fail(deviceInfo, "OMRON_FINS requires localNode");
         }
 
+        FinsTransportMode mode;
+        try {
+            mode = FinsTransportMode.from(connection.getProperty("transport"));
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
+            return;
+        }
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNetwork", null), 0, 255, "plcNetwork");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcNode", null), 0, 255, "plcNode");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("plcUnit", null), 0, 255, "plcUnit");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNetwork", null), 0, 255, "localNetwork");
-        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNode", null), 0, 255, "localNode");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("localNode", null),
+                0, mode == FinsTransportMode.TCP ? 254 : 255, "localNode");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("localUnit", null), 0, 255, "localUnit");
         validateOmronFinsRange(deviceInfo, connection.getIntConfig("serviceIdSeed", null), 0, 255, "serviceIdSeed");
+        validatePositive(deviceInfo, connection.getConnectTimeout(), "OMRON_FINS connectTimeout");
+        validateOmronFinsRange(deviceInfo, connection.getBufferSize(), 14, 65507, "bufferSize");
+        validateOmronFinsRange(deviceInfo, connection.getIntConfig("maxFrameSize", null),
+                34, 1_048_576, "maxFrameSize");
         validatePositive(deviceInfo, connection.getIntConfig("maxWordsPerRequest", null), "OMRON_FINS maxWordsPerRequest");
         validatePositive(deviceInfo, connection.getIntConfig("maxBitsPerRequest", null), "OMRON_FINS maxBitsPerRequest");
         validatePositive(deviceInfo, connection.getReadTimeout(), "OMRON_FINS readTimeout");
@@ -349,6 +440,35 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
+    private void validateIec104(DeviceInfo deviceInfo, DeviceConnection connection) {
+        requireHost(deviceInfo, connection, "IEC104");
+        Object mode = connection.getProperty("ioaEncodingMode");
+        if (mode != null && !mode.toString().isBlank()) {
+            String normalized = mode.toString().trim().toUpperCase(Locale.ROOT);
+            if (!"STANDARD".equals(normalized) && !"SHIFT8_COMPAT".equals(normalized)) {
+                fail(deviceInfo, "IEC104 ioaEncodingMode must be STANDARD or SHIFT8_COMPAT");
+            }
+        }
+        validateIec104FieldLength(deviceInfo, connection, "cotFieldLength", 2, 2);
+        validateIec104FieldLength(deviceInfo, connection, "commonAddressFieldLength", 2, 2);
+        validateIec104FieldLength(deviceInfo, connection, "ioaFieldLength", 3, 3);
+    }
+
+    private void validateIec104FieldLength(DeviceInfo deviceInfo, DeviceConnection connection,
+                                           String key, int defaultValue, int maximum) {
+        Object raw = connection.getProperty(key);
+        String value = raw != null ? raw.toString().trim() : String.valueOf(defaultValue);
+        try {
+            int length = Integer.parseInt(value);
+            if (length >= 1 && length <= maximum) {
+                return;
+            }
+        } catch (NumberFormatException ignored) {
+            // Report invalid explicit values using the same configuration error contract.
+        }
+        fail(deviceInfo, "IEC104 " + key + " must be between 1 and " + maximum);
+    }
+
     private void validateIec101(DeviceInfo deviceInfo, DeviceConnection connection) {
         validateSerialConnection(deviceInfo, connection, "IEC101");
         String linkMode = connection.getStringConfig("linkMode", "UNBALANCED");
@@ -459,7 +579,7 @@ public class ProtocolConnectionValidator {
      */
     private void validatePlc4xOpcUa(DeviceInfo deviceInfo, DeviceConnection connection, String protocolLabel) {
         String connectionString = connection.getStringConfig("plc4xConnectionString", null);
-        if (!hasOpcUaEndpoint(deviceInfo, connection)
+        if (!hasOpcUaEndpoint(connection) && !hasText(deviceInfo.getIpAddress())
                 && isBlank(connectionString)) {
             fail(deviceInfo, protocolLabel + " requires plc4xConnectionString, url, endpointUrl, endpoint, or host");
         }
@@ -475,7 +595,7 @@ public class ProtocolConnectionValidator {
      * 校验业务条件和参数边界。
      */
     private void validateMiloOpcUa(DeviceInfo deviceInfo, DeviceConnection connection) {
-        if (!hasOpcUaEndpoint(deviceInfo, connection)) {
+        if (!hasOpcUaEndpoint(connection)) {
             fail(deviceInfo, "OPC_UA_MILO requires url, endpointUrl, endpoint, or host");
         }
         validateOpcUaSecurity(deviceInfo, connection, "OPC_UA_MILO", false);
@@ -629,34 +749,10 @@ public class ProtocolConnectionValidator {
      * 校验业务条件和参数边界。
      */
     private void validateAds(DeviceInfo deviceInfo, DeviceConnection connection) {
-        requireHost(deviceInfo, connection, "ADS");
-
-        String targetAmsNetId = firstNonBlank(
-                connection.getStringConfig("targetAmsNetId", null),
-                connection.getStringConfig("target-ams-net-id", null));
-        if (!isValidAmsNetId(targetAmsNetId)) {
-            fail(deviceInfo, "ADS requires valid targetAmsNetId");
-        }
-
-        Integer targetAmsPort = firstPositive(
-                connection.getIntConfig("targetAmsPort", null),
-                connection.getIntConfig("target-ams-port", null));
-        if (targetAmsPort == null) {
-            fail(deviceInfo, "ADS requires targetAmsPort");
-        }
-
-        String sourceAmsNetId = firstNonBlank(
-                connection.getStringConfig("sourceAmsNetId", null),
-                connection.getStringConfig("source-ams-net-id", null));
-        if (!isValidAmsNetId(sourceAmsNetId)) {
-            fail(deviceInfo, "ADS requires valid sourceAmsNetId");
-        }
-
-        Integer sourceAmsPort = firstPositive(
-                connection.getIntConfig("sourceAmsPort", null),
-                connection.getIntConfig("source-ams-port", null));
-        if (sourceAmsPort == null) {
-            fail(deviceInfo, "ADS requires sourceAmsPort");
+        try {
+            AdsConnectionContract.validate(deviceInfo, connection);
+        } catch (IllegalArgumentException exception) {
+            fail(deviceInfo, exception.getMessage());
         }
     }
 
@@ -745,12 +841,11 @@ public class ProtocolConnectionValidator {
     /**
      * 执行当前业务逻辑。
      */
-    private boolean hasOpcUaEndpoint(DeviceInfo deviceInfo, DeviceConnection connection) {
+    private boolean hasOpcUaEndpoint(DeviceConnection connection) {
         return hasText(connection.getUrl())
                 || hasText(connection.getStringConfig("endpointUrl", null))
                 || hasText(connection.getStringConfig("endpoint", null))
-                || hasText(connection.getHost())
-                || hasText(deviceInfo.getIpAddress());
+                || hasText(connection.getHost());
     }
 
     /**
@@ -811,6 +906,25 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
+    private Integer mcInteger(DeviceInfo deviceInfo, DeviceConnection connection, String key) {
+        Object raw = connection.getProperty(key);
+        if (raw == null) {
+            if (connection.getExtJson() != null && connection.getExtJson().containsKey(key)) {
+                fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+            }
+            return null;
+        }
+        if (raw instanceof Boolean) {
+            fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+        }
+        try {
+            return Integer.valueOf(raw.toString());
+        } catch (NumberFormatException invalid) {
+            fail(deviceInfo, "MITSUBISHI_MC " + key + " must be an integer");
+            return null;
+        }
+    }
+
     private void validateMcRange(DeviceInfo deviceInfo,
                                  Integer value,
                                  int min,
@@ -855,12 +969,15 @@ public class ProtocolConnectionValidator {
     /**
      * 校验业务条件和参数边界。
      */
-    private void validateMcFrameType(DeviceInfo deviceInfo, String value) {
-        if (isBlank(value)) {
+    private void validateMcFrameType(DeviceInfo deviceInfo, DeviceConnection connection) {
+        Object raw = connection.getProperty("frameType");
+        if (raw == null && (connection.getExtJson() == null
+                || !connection.getExtJson().containsKey("frameType"))) {
             return;
         }
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("3E_BINARY", "3E_ASCII", "4E_BINARY").contains(normalized)) {
+        if (!(raw instanceof String value)
+                || !Set.of("3E_BINARY", "3E_ASCII", "4E_BINARY")
+                        .contains(value.trim().toUpperCase(Locale.ROOT))) {
             fail(deviceInfo, "MITSUBISHI_MC frameType must be one of 3E_BINARY, 3E_ASCII, 4E_BINARY");
         }
     }
@@ -910,30 +1027,6 @@ public class ProtocolConnectionValidator {
         if (!S7_DEVICE_GROUPS.contains(normalized)) {
             fail(deviceInfo, "SIEMENS_S7 " + fieldName + " must be PG_OR_PC, OS, or OTHERS");
         }
-    }
-
-    /**
-     * 校验 ADS AMS Net ID 的六段数字格式。
-     */
-    private boolean isValidAmsNetId(String value) {
-        if (isBlank(value)) {
-            return false;
-        }
-        String[] segments = value.trim().split("\\.");
-        if (segments.length != 6) {
-            return false;
-        }
-        for (String segment : segments) {
-            try {
-                int numeric = Integer.parseInt(segment);
-                if (numeric < 0 || numeric > 255) {
-                    return false;
-                }
-            } catch (NumberFormatException exception) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

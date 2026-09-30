@@ -1,7 +1,10 @@
 package com.wangbin.collector.api.filter;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.api.filter.config.AuthProperties;
 import com.wangbin.collector.api.filter.config.AuthScope;
+import com.wangbin.collector.api.filter.config.AccessLogProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -18,10 +21,69 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
+import org.slf4j.MDC;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class AuthFilterTest {
+
+    @Test
+    void rejectedRequestSharesGeneratedIdAcrossHeaderAndErrorBody() throws Exception {
+        MockHttpServletRequest request = request("GET", "/api/config/devices", null);
+        MockHttpServletResponse response = correlatedAuth(new AuthProperties(), request);
+
+        assertError(response, 401, "AUTH_REQUIRED");
+        assertThat(new ObjectMapper().readTree(response.getContentAsString()).path("message").asText())
+                .isEqualTo("认证失败");
+        assertThat(MDC.get(RequestCorrelationFilter.MDC_REQUEST_ID)).isNull();
+    }
+
+    @Test
+    void deniedScopeIncludesRequiredScopeAndRequestId() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("view-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        MockHttpServletRequest request = request("POST", "/api/control/device/dev-1/point/p1", "view-token");
+        request.addHeader("X-Request-Id", "abc-123");
+
+        MockHttpServletResponse response = correlatedAuth(properties, request);
+
+        assertError(response, 403, "PERMISSION_DENIED");
+        assertThat(response.getHeader("X-Request-Id")).isEqualTo("abc-123");
+        assertThat(new ObjectMapper().readTree(response.getContentAsString()).path("data")
+                .path("requiredScope").asText()).isEqualTo("DEVICE_CONTROL");
+    }
+
+    @Test
+    void oversizedSignedBodyUsesSameErrorContract() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.setMaxSignedBodyBytes(1);
+        MockHttpServletRequest request = request("POST", "/api/config/device/dev-1", null);
+        request.addHeader(properties.getServiceHeader(), "client-1");
+        request.setContent("{}".getBytes(StandardCharsets.UTF_8));
+
+        assertError(correlatedAuth(properties, request), 413, "REQUEST_BODY_TOO_LARGE");
+    }
+
+    private MockHttpServletResponse correlatedAuth(AuthProperties properties, MockHttpServletRequest request)
+            throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        RequestCorrelationFilter correlation = new RequestCorrelationFilter(new AccessLogProperties());
+        AuthFilter auth = new AuthFilter(properties, Clock.systemUTC());
+        correlation.doFilter(request, response, (servletRequest, servletResponse) ->
+                auth.doFilter(servletRequest, servletResponse, new MockFilterChain()));
+        return response;
+    }
+
+    private void assertError(MockHttpServletResponse response, int code, String machineCode) throws Exception {
+        JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
+        assertThat(response.getStatus()).isEqualTo(code);
+        assertThat(body.path("code").asInt()).isEqualTo(code);
+        assertThat(body.path("status").asText()).isEqualTo("error");
+        assertThat(body.path("machineCode").asText()).isEqualTo(machineCode);
+        assertThat(body.path("extra").path("requestId").asText()).isNotBlank()
+                .isEqualTo(response.getHeader("X-Request-Id"));
+    }
 
     @Test
     void shouldAllowOpsToken() throws Exception {
@@ -217,6 +279,163 @@ class AuthFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
         assertThat(response.getContentAsString(StandardCharsets.UTF_8)).contains("权限不足");
+    }
+
+
+    @Test
+    void shouldHardenActuatorExposureAndKeepHealthPublic() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.getOpsTokens().put("view-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        AuthProperties.AccessRule rule = new AuthProperties.AccessRule();
+        rule.setMethods(List.of("GET"));
+        rule.setPaths(List.of("/actuator/metrics", "/actuator/metrics/**", "/actuator/prometheus", "/monitor/pipeline"));
+        rule.setRequiredScope(AuthScope.VIEW);
+        properties.setAccessRules(List.of(rule));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("GET", "/actuator/health", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/health/liveness", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/health/readiness", null))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/metrics", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/metrics/jvm.memory.used", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/prometheus", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/monitor/pipeline", null))).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(status(filter, request("GET", "/actuator/metrics", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/actuator/prometheus", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/monitor/pipeline", "view-token"))).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void rejectedActuatorRequestShouldStillHaveRequestIdWhenCorrelationFilterRunsFirst() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        AccessLogProperties accessLogProperties = new AccessLogProperties();
+        RequestCorrelationFilter correlationFilter = new RequestCorrelationFilter(accessLogProperties);
+        AuthFilter authFilter = new AuthFilter(properties, Clock.systemUTC());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/prometheus");
+        request.addHeader("X-Request-Id", "obs-053-denied");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        correlationFilter.doFilter(request, response, (servletRequest, servletResponse) ->
+                authFilter.doFilter(servletRequest, servletResponse, new MockFilterChain()));
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(response.getHeader("X-Request-Id")).isEqualTo("obs-053-denied");
+    }
+
+    @Test
+    void shouldProtectControlAndShadowWritesByDeviceControlScope() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.DEVICE_CONTROL));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/point/p1", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/points", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/command", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1/delta", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("GET", "/api/shadow/dev-1/history", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/shadow/dev-1/desired", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+        assertThat(status(filter, request("DELETE", "/api/shadow/dev-1/desired", "viewer-token")))
+                .isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/point/p1", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/points", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/control/device/dev-1/command", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("POST", "/api/shadow/dev-1/desired", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+        assertThat(status(filter, request("DELETE", "/api/shadow/dev-1/desired", "operator-token")))
+                .isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void shouldApplyControlAndShadowRulesAfterContextPath() throws Exception {
+        AuthProperties properties = controlAndShadowAuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.DEVICE_CONTROL));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        MockHttpServletRequest viewerRequest = request("POST", "/collector/api/control/device/dev-1/point/p1", "viewer-token");
+        viewerRequest.setContextPath("/collector");
+        assertThat(status(filter, viewerRequest)).isEqualTo(HttpServletResponse.SC_FORBIDDEN);
+
+        MockHttpServletRequest operatorRequest = request("POST", "/collector/api/control/device/dev-1/point/p1", "operator-token");
+        operatorRequest.setContextPath("/collector");
+        assertThat(status(filter, operatorRequest)).isEqualTo(HttpServletResponse.SC_OK);
+    }
+
+    @Test
+    void shouldSeparateCloudViewAndOperateScopes() throws Exception {
+        AuthProperties properties = new AuthProperties();
+        properties.getOpsTokens().put("viewer-token", "viewer");
+        properties.getOpsScopes().put("viewer", List.of(AuthScope.VIEW));
+        properties.getOpsTokens().put("cloud-operator-token", "operator");
+        properties.getOpsScopes().put("operator", List.of(AuthScope.VIEW, AuthScope.CLOUD_OPERATE));
+        properties.setAccessRules(List.of(
+                accessRule(List.of("POST"), List.of("/api/cloud/**"), AuthScope.CLOUD_OPERATE),
+                accessRule(List.of("GET"), List.of("/api/**", "/monitor/**"), AuthScope.VIEW)));
+        AuthFilter filter = new AuthFilter(properties, Clock.systemUTC());
+
+        assertThat(status(filter, request("GET", "/api/cloud/outbox", "viewer-token"))).isEqualTo(200);
+        assertThat(status(filter, request("GET", "/api/cloud/outbox/msg-1", "viewer-token"))).isEqualTo(200);
+        for (String path : List.of("/api/cloud/outbox/msg-1/replay", "/api/cloud/flush", "/api/cloud/test")) {
+            assertThat(status(filter, request("POST", path, "viewer-token"))).isEqualTo(403);
+            assertThat(status(filter, request("POST", path, "cloud-operator-token"))).isEqualTo(200);
+        }
+    }
+
+    private AuthProperties controlAndShadowAuthProperties() {
+        AuthProperties properties = new AuthProperties();
+        properties.setAccessRules(List.of(
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/device/**", "/api/data/device/*/reset-adaptive"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/control/**"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/shadow/**"), AuthScope.DEVICE_CONTROL),
+                accessRule(List.of("POST", "PUT", "PATCH", "DELETE"),
+                        List.of("/api/config/**"), AuthScope.CONFIG_MANAGE),
+                accessRule(List.of("GET"), List.of("/api/**", "/monitor/**"), AuthScope.VIEW)));
+        return properties;
+    }
+
+    private AuthProperties.AccessRule accessRule(List<String> methods,
+                                                  List<String> paths,
+                                                  AuthScope scope) {
+        AuthProperties.AccessRule rule = new AuthProperties.AccessRule();
+        rule.setMethods(methods);
+        rule.setPaths(paths);
+        rule.setRequiredScope(scope);
+        return rule;
+    }
+    private MockHttpServletRequest request(String method, String path, String token) {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
+        if (token != null) {
+            request.addHeader("X-Collector-Token", token);
+        }
+        return request;
+    }
+
+    private int status(AuthFilter filter, MockHttpServletRequest request) throws Exception {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response.getStatus();
     }
 
     private MockHttpServletRequest signedRequest(String timestamp,

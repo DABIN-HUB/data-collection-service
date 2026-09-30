@@ -4,7 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
+import com.wangbin.collector.core.collector.protocol.opc.ua.address.OpcUaNodeIdResolver;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
+import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaDataType;
 import com.wangbin.collector.core.collector.protocol.opc.ua.util.OpcUaAddressParser;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.OpcUaConnectionAdapter;
@@ -44,6 +46,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     protected String password;
     protected int requestTimeout = 5000;
     protected double subscriptionInterval = 1000;
+    private final OpcUaNodeIdResolver nodeIdResolver = new OpcUaNodeIdResolver();
 
     protected final Map<String, OpcUaSubscription> subscriptions = new ConcurrentHashMap<>();
 
@@ -64,6 +67,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
         this.connectionAdapter = opcUaAdapter;
         this.client = opcUaAdapter.getClient();
+        reportProtocolReady();
 
         log.info("OPC UA连接建立成功: end点位={} securityPolicy={}", endpointUrl, securityPolicy);
     }
@@ -94,40 +98,76 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     /**
      * 查询并返回业务数据。
      */
-    protected Object readValue(OpcUaAddress address) throws Exception {
-        NodeId nodeId = address.toNodeId();
+    protected Object readValue(OpcUaAddress address, NodeId nodeId) throws Exception {
         DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
-        return value.getValue().getValue();
+        if (!isGoodRead(value)) {
+            throw new IllegalStateException("OPC UA 读取失败: nodeId=" + nodeId + ", status=" + readStatus(value));
+        }
+        return value.getValue() != null ? value.getValue().getValue() : null;
     }
 
-    /**
-     * 查询并返回业务数据。
-     */
-    protected Map<String, Object> readValues(List<DataPoint> points) throws Exception {
-        List<NodeId> nodeIds = new ArrayList<>();
-        for (DataPoint point : points) {
-            OpcUaAddress address = OpcUaAddressParser.parse(point);
-            nodeIds.add(address.toNodeId());
+    protected boolean isGoodRead(DataValue value) {
+        return value != null && value.getStatusCode() != null && value.getStatusCode().isGood();
+    }
+
+    protected String readStatus(DataValue value) {
+        return value != null && value.getStatusCode() != null ? value.getStatusCode().toString() : "null";
+    }
+
+    protected NodeId resolveNodeId(DataPoint point) {
+        DeviceConnection connection = requireConnectionConfig();
+        NodeId resolved = nodeIdResolver.resolve(point, connection);
+        log.debug("OPC UA NodeId 解析：设备={}，点位={}，pointCode={}，address={}，additionalConfig.nodeId={}，additionalConfig.id={}，aliasMode={}，prefix={}，resolved={}",
+                deviceInfo != null ? deviceInfo.getDeviceId() : null,
+                point != null ? point.getPointId() : null,
+                point != null ? point.getPointCode() : null,
+                point != null ? point.getAddress() : null,
+                point != null ? point.getAdditionalConfig("nodeId") : null,
+                point != null ? point.getAdditionalConfig("id") : null,
+                connection.getString("nodeIdAliasMode", "NONE"),
+                connection.getString("nodeIdPrefix", ""), resolved);
+        return resolved;
+    }
+
+    protected NodeId resolveNodeIdForCommand(NodeId nodeId) {
+        return nodeIdResolver.resolve(nodeId, requireConnectionConfig());
+    }
+
+    protected List<DataValue> readValues(List<NodeId> nodeIds) throws Exception {
+        return client.readValues(0, TimestampsToReturn.Both, nodeIds);
+    }
+
+    protected Map<String, Object> readValues(List<DataPoint> points, List<NodeId> nodeIds) throws Exception {
+        List<DataValue> values = readValues(nodeIds);
+        if (values == null || values.size() != points.size()) {
+            throw new IllegalStateException("OPC UA 批量响应数量不匹配: requested=" + points.size()
+                    + ", received=" + (values == null ? "null" : values.size()));
         }
-        List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, nodeIds);
         Map<String, Object> result = new HashMap<>();
+        String firstFailure = null;
         for (int i = 0; i < points.size(); i++) {
             DataValue value = values.get(i);
-            result.put(points.get(i).getPointId(),
-                    value != null ? value.getValue().getValue() : null);
+            if (!isGoodRead(value)) {
+                String failure = "pointId=" + points.get(i).getPointId() + ", nodeId=" + nodeIds.get(i)
+                        + ", status=" + readStatus(value);
+                if (firstFailure == null) {
+                    firstFailure = failure;
+                }
+                log.warn("OPC UA 批量读取点位失败: {}", failure);
+                continue;
+            }
+            result.put(points.get(i).getPointId(), value.getValue() != null
+                    ? value.getValue().getValue() : null);
+        }
+        if (result.isEmpty() && firstFailure != null) {
+            throw new IllegalStateException("OPC UA 批量读取全部失败: " + firstFailure);
         }
         return result;
     }
 
-    /**
-     * 写入或持久化业务数据。
-     */
-    protected boolean writeValue(OpcUaAddress address, Object rawValue) throws Exception {
-        Variant variant = OpcUaAddressParser.toVariant(rawValue, address.getDataType());
-        List<StatusCode> results = client.writeValues(
-                List.of(address.toNodeId()),
-                List.of(DataValue.valueOnly(variant))
-        );
+    protected boolean writeValue(NodeId nodeId, OpcUaDataType dataType, Object rawValue) throws Exception {
+        Variant variant = OpcUaAddressParser.toVariant(rawValue, dataType);
+        List<StatusCode> results = client.writeValues(List.of(nodeId), List.of(DataValue.valueOnly(variant)));
         return !results.isEmpty() && results.get(0).isGood();
     }
 
@@ -149,8 +189,9 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      */
     protected OpcUaMonitoredItem addMonitoredItem(OpcUaSubscription subscription,
                                                    OpcUaAddress address,
+                                                   NodeId nodeId,
                                                    Consumer<OpcUaMonitoredItem> configurator) throws Exception {
-        OpcUaMonitoredItem item = OpcUaMonitoredItem.newDataItem(address.toNodeId(), MonitoringMode.Reporting);
+        OpcUaMonitoredItem item = OpcUaMonitoredItem.newDataItem(nodeId, MonitoringMode.Reporting);
 
         Double publishingInterval = subscription.getPublishingInterval();
         double sampling = address.getSamplingInterval() > 0

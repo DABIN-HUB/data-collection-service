@@ -3,18 +3,27 @@ export interface DeviceInfo {
   deviceId?: string;
   deviceName?: string;
   deviceAlias?: string;
+  productKey?: string;
+  productName?: string;
   groupId?: string;
   groupName?: string;
   protocolType?: string;
   connectionType?: string;
   ipAddress?: string;
   port?: number;
+  authConfig?: Record<string, unknown>;
   collectionInterval?: number;
   reportInterval?: number;
+  cloudTarget?: Record<string, unknown>;
   status?: string;
+  lastOnlineTime?: string | number;
+  lastOfflineTime?: string | number;
   lastError?: string;
   retryCount?: number;
   maxRetryCount?: number;
+  createTime?: string | number;
+  updateTime?: string | number;
+  remark?: string;
   configSource?: string;
   temporaryConfig?: boolean;
   pointCount?: number;
@@ -22,6 +31,7 @@ export interface DeviceInfo {
   [key: string]: unknown;
 }
 
+export type DeviceRuntimePhase = "STOPPED" | "STARTING" | "CONNECTING" | "WAITING_FIRST_SAMPLE" | "ONLINE" | "DEGRADED" | "RECONNECTING" | "FAILED";
 export interface DeviceRuntimeSnapshot {
   deviceId: string;
   phase?: string;
@@ -37,6 +47,61 @@ export interface DeviceRuntimeSnapshot {
   backoffUntil?: number;
   degradedReason?: string;
   generatedAt?: number;
+  ready?: boolean;
+  firstSampleAt?: number;
+  configuredPointCount?: number;
+  lastError?: string;
+  configVersion?: number;
+}
+
+export interface DeviceOperationResponse {
+  operationId: string;
+  deviceId: string;
+  action: string;
+  accepted: boolean;
+  acceptedAt: number;
+  completedAt: number;
+  runtime?: DeviceRuntimeSnapshot;
+}
+export interface DeviceStatisticsResponse {
+  deviceId?: string;
+  isRunning?: boolean;
+  runningDuration?: number;
+  totalExecutions?: number;
+  successfulExecutions?: number;
+  failedExecutions?: number;
+  totalPoints?: number;
+  currentTaskPoints?: number;
+  averageExecutionTime?: number;
+  successRate?: number;
+  lastExecutionTime?: number;
+}
+
+export interface DevicePerformanceResponse {
+  deviceId?: string;
+  totalPoints?: number;
+  successfulBatches?: number;
+  failedBatches?: number;
+  averageBatchTime?: number;
+  currentBatchSize?: number;
+  maxBatchSize?: number;
+  successRate?: number;
+  healthScore?: number;
+  failureRisk?: string;
+  consecutiveFailures?: number;
+  averageResponseTime?: number;
+  recentResponseTimes?: number[];
+}
+
+export interface DeviceStatusResponse {
+  deviceId?: string;
+  isRunning?: boolean;
+  isStarting?: boolean;
+  connected?: boolean;
+  reconnecting?: boolean;
+  reconnectNextRetryAt?: number;
+  statistics?: DeviceStatisticsResponse;
+  performance?: DevicePerformanceResponse;
 }
 
 export interface ConfigDeviceListResponse {

@@ -18,9 +18,17 @@ export interface CollectorProxyResponse {
   body: unknown;
 }
 
+export type RendererCollectorProxyRequest = Omit<CollectorProxyRequest, "serverUrl" | "token"> & {
+  serverUrl?: unknown;
+  token?: unknown;
+};
+
 const ALLOWED_REQUEST_HEADERS = new Set(["accept", "content-type"]);
 const DEFAULT_PROXY_TIMEOUT_MS = 8000;
 const MAX_PROXY_TIMEOUT_MS = 30000;
+export const MAX_PROXY_URL_BYTES = 64 * 1024;
+export const MAX_PROXY_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
+export const MAX_PROXY_RESPONSE_BODY_BYTES = 64 * 1024 * 1024;
 
 /**
  * 构造主进程代理请求地址，并限制只能访问当前采集服务上下文。
@@ -50,6 +58,7 @@ export function buildCollectorProxyUrl(serverUrl: string, rawUrl: string, params
     new URLSearchParams(query).forEach((value, key) => search.append(key, value));
     target.search = search.toString();
   }
+  assertByteLength(target.toString(), MAX_PROXY_URL_BYTES, "代理请求 URL 超过长度限制");
   return target;
 }
 
@@ -95,6 +104,18 @@ export function serializeQueryParams(params: Record<string, unknown> = {}): stri
   return query.toString();
 }
 
+export function withAuthoritativeProxyServerUrl(request: RendererCollectorProxyRequest, serverUrl: string): CollectorProxyRequest {
+  return {
+    url: request.url,
+    method: request.method,
+    params: request.params,
+    data: request.data,
+    headers: request.headers,
+    timeoutMs: request.timeoutMs,
+    serverUrl
+  };
+}
+
 /**
  * 执行受控 HTTP 代理请求，供 Electron IPC handler 调用。
  */
@@ -113,7 +134,7 @@ export async function executeCollectorProxyRequest(request: CollectorProxyReques
       body: method === "GET" || method === "HEAD" ? undefined : body,
       signal: controller.signal
     });
-    const responseText = await response.text();
+    const responseText = await readBoundedResponseText(response);
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
       responseHeaders[key] = value;
@@ -126,7 +147,7 @@ export async function executeCollectorProxyRequest(request: CollectorProxyReques
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("请求采集服务超时");
+      throw new Error("请求采集服务超时", { cause: error });
     }
     throw error;
   } finally {
@@ -165,12 +186,61 @@ function buildRequestBody(data: unknown, headers: Record<string, string>): BodyI
     return undefined;
   }
   if (typeof data === "string") {
+    assertByteLength(data, MAX_PROXY_REQUEST_BODY_BYTES, "代理请求体超过大小限制");
     return data;
   }
   if (!headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  return JSON.stringify(data);
+  const serialized = JSON.stringify(data);
+  assertByteLength(serialized, MAX_PROXY_REQUEST_BODY_BYTES, "代理请求体超过大小限制");
+  return serialized;
+}
+
+async function readBoundedResponseText(response: Response): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const length = Number(contentLength);
+    if (Number.isFinite(length) && length > MAX_PROXY_RESPONSE_BODY_BYTES) {
+      throw new Error("采集服务响应体超过大小限制");
+    }
+  }
+  if (!response.body) {
+    const text = await response.text();
+    assertByteLength(text, MAX_PROXY_RESPONSE_BODY_BYTES, "采集服务响应体超过大小限制");
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+      total += value.byteLength;
+      if (total > MAX_PROXY_RESPONSE_BODY_BYTES) {
+        await reader.cancel();
+        throw new Error("采集服务响应体超过大小限制");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  });
+  return new TextDecoder().decode(body);
 }
 
 function parseResponseBody(text: string): unknown {
@@ -190,4 +260,10 @@ function windowSafeTimeout(timeoutMs: unknown): number {
     return DEFAULT_PROXY_TIMEOUT_MS;
   }
   return Math.min(MAX_PROXY_TIMEOUT_MS, Math.floor(value));
+}
+
+function assertByteLength(value: string, maxBytes: number, message: string): void {
+  if (new TextEncoder().encode(value).byteLength > maxBytes) {
+    throw new Error(message);
+  }
 }

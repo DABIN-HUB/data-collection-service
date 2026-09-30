@@ -14,7 +14,7 @@ import org.springframework.validation.annotation.Validated;
 @Data
 public class CacheProperties {
 
-    private CacheMode type = CacheMode.LOCAL;
+    private CacheMode type = CacheMode.MULTI_LEVEL;
     @Valid
     private LocalCache local = new LocalCache();
 

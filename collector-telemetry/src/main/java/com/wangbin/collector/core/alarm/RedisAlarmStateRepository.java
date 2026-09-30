@@ -27,6 +27,7 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
     private final ObjectMapper objectMapper;
     private final AlarmStateProperties properties;
     private final ConcurrentMap<String, AlarmStateSnapshot> pendingSnapshots = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, String> pendingAlarmKeys = new ConcurrentHashMap<>();
 
     /**
      * 创建当前组件实例。
@@ -60,6 +61,33 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
         }
     }
 
+    /** 待写队列优先；持久化索引仅定位规则键，必须校验当前事件标识。 */
+    @Override
+    public Optional<AlarmStateSnapshot> findByAlarmId(String alarmId) {
+        if (alarmId == null) {
+            return Optional.empty();
+        }
+        String pendingKey = pendingAlarmKeys.get(alarmId);
+        if (pendingKey != null) {
+            Optional<AlarmStateSnapshot> pending = find(pendingKey)
+                    .filter(snapshot -> alarmId.equals(snapshot.getAlarmId()));
+            if (pending.isPresent()) {
+                return pending;
+            }
+        }
+        if (!properties.isEnabled()) {
+            return Optional.empty();
+        }
+        try {
+            String stateKey = redisTemplate.opsForValue().get(alarmIndexKey(alarmId));
+            return stateKey == null ? Optional.empty()
+                    : find(stateKey).filter(snapshot -> alarmId.equals(snapshot.getAlarmId()));
+        } catch (RuntimeException exception) {
+            log.warn("读取告警标识索引失败: alarmId={}", alarmId, exception);
+            return Optional.empty();
+        }
+    }
+
     /**
      * 写入或持久化业务数据。
      */
@@ -68,7 +96,14 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
         if (snapshot == null || snapshot.getStateKey() == null) {
             return;
         }
-        pendingSnapshots.put(snapshot.getStateKey(), snapshot);
+        AlarmStateSnapshot previous = pendingSnapshots.put(snapshot.getStateKey(), snapshot);
+        if (previous != null && previous.getAlarmId() != null
+                && !previous.getAlarmId().equals(snapshot.getAlarmId())) {
+            pendingAlarmKeys.remove(previous.getAlarmId(), snapshot.getStateKey());
+        }
+        if (snapshot.getAlarmId() != null) {
+            pendingAlarmKeys.put(snapshot.getAlarmId(), snapshot.getStateKey());
+        }
     }
 
     /**
@@ -88,7 +123,15 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
                         redisKey(entry.getKey()),
                         serialize(snapshot),
                         Duration.ofSeconds(Math.max(1L, properties.getTtlSeconds())));
+                if (snapshot.getAlarmId() != null) {
+                    redisTemplate.opsForValue().set(
+                            alarmIndexKey(snapshot.getAlarmId()), entry.getKey(),
+                            Duration.ofSeconds(Math.max(1L, properties.getTtlSeconds())));
+                }
                 pendingSnapshots.remove(entry.getKey(), snapshot);
+                if (snapshot.getAlarmId() != null) {
+                    pendingAlarmKeys.remove(snapshot.getAlarmId(), entry.getKey());
+                }
             } catch (RuntimeException exception) {
                 log.warn("持久化告警状态失败，保留本地快照等待重试: 状态键={}", entry.getKey(), exception);
                 return;
@@ -111,6 +154,10 @@ public class RedisAlarmStateRepository implements AlarmStateRepository {
     /**
      * 执行当前业务逻辑。
      */
+    private String alarmIndexKey(String alarmId) {
+        return redisKey("id:" + alarmId);
+    }
+
     private String serialize(AlarmStateSnapshot snapshot) {
         try {
             return objectMapper.writeValueAsString(snapshot);

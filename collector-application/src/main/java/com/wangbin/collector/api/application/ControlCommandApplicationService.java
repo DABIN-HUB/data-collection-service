@@ -9,18 +9,25 @@ import com.wangbin.collector.api.controller.dto.PointWriteResultResponse;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.common.web.result.ResultCode;
+import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.support.DevicePointResolver;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * 控制命令应用服务。
@@ -35,10 +42,17 @@ public class ControlCommandApplicationService {
     private static final String ERROR_POINT_NOT_WRITABLE = "点位不可写";
     private static final String ERROR_PENDING = "等待写入";
     private static final String ERROR_PROTOCOL_WRITE_FALSE = "协议写入返回失败";
+    private static final String ERROR_DUPLICATE_POINT_VALUE_CONFLICT = "同一批次重复映射到同一点位且写入值不一致";
 
     private final ConfigManager configManager;
     private final CollectionManager collectionManager;
     private final DevicePointResolver devicePointResolver;
+    private CollectionService collectionService;
+
+    @Autowired(required = false)
+    public void setCollectionService(CollectionService collectionService) {
+        this.collectionService = collectionService;
+    }
 
     /**
      * 写入单个点位。
@@ -63,17 +77,47 @@ public class ControlCommandApplicationService {
         if (!dataPoint.isWritable()) {
             return ApiResult.error(ResultCode.DATA_INVALID.getCode(), "点位不可写: " + pointRef);
         }
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止写入: " + deviceId);
+        }
 
+        long startedAt = System.currentTimeMillis();
+        String operationId = UUID.randomUUID().toString();
         boolean success = collectionManager.writePoint(deviceId, dataPoint, request.getValue());
+        Object readbackValue = null;
+        boolean readbackAttempted = false;
+        boolean readbackSuccess = false;
+        String message = success ? "点位写入成功" : "点位写入失败";
+        if (success && "RW".equalsIgnoreCase(dataPoint.getReadWrite())) {
+            readbackAttempted = true;
+            try {
+                readbackValue = collectionManager.readPoint(deviceId, dataPoint);
+                readbackSuccess = true;
+                message = "写入成功，读回验证成功";
+            } catch (Exception readbackException) {
+                message = "写入已完成，但读回验证失败";
+            }
+        }
         PointWriteResultResponse data = pointResult(dataPoint, request.getValue(), success,
                 success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+        data.setOperationId(operationId);
+        data.setDeviceId(deviceId);
+        data.setRequestedValue(request.getValue());
+        data.setAccepted(true);
+        data.setWriteSuccess(success);
+        data.setReadbackAttempted(readbackAttempted);
+        data.setReadbackSuccess(readbackSuccess);
+        data.setReadbackValue(readbackValue);
+        data.setStartedAt(startedAt);
+        data.setCompletedAt(System.currentTimeMillis());
+        data.setMessage(message);
         if (!success) {
             ApiResult<PointWriteResultResponse> result = ApiResult.error(
                     ResultCode.OPERATION_FAILED.getCode(), "点位写入失败");
             result.setData(data);
             return result;
         }
-        return ApiResult.success("点位写入成功", data);
+        return ApiResult.success(message, data);
     }
 
     /**
@@ -88,17 +132,23 @@ public class ControlCommandApplicationService {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "values 不能为空");
         }
 
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止控制操作");
+        }
+
         List<DataPoint> points = configManager.getDataPoints(deviceId);
         Map<DataPoint, Object> writePlan = new LinkedHashMap<>();
+        Map<DataPoint, List<String>> submittedFieldsByPoint = new LinkedHashMap<>();
+        Set<DataPoint> conflictPoints = new LinkedHashSet<>();
         Map<String, BatchPointWriteFieldResponse> fieldResults = new LinkedHashMap<>();
 
         for (Map.Entry<String, Object> entry : request.getValues().entrySet()) {
-            collectWritePlan(points, writePlan, fieldResults, entry);
+            collectWritePlan(points, writePlan, submittedFieldsByPoint, conflictPoints, fieldResults, entry);
         }
 
         if (!writePlan.isEmpty()) {
             Map<String, Boolean> writeResults = collectionManager.writePoints(deviceId, writePlan);
-            applyWriteResults(fieldResults, writePlan, writeResults);
+            applyWriteResults(fieldResults, writePlan, submittedFieldsByPoint, writeResults);
         }
 
         BatchPointWriteResponse data = BatchPointWriteResponse.builder()
@@ -130,6 +180,9 @@ public class ControlCommandApplicationService {
         if (request == null || !StringUtils.hasText(request.getCommand())) {
             return ApiResult.error(ResultCode.PARAM_ERROR.getCode(), "command 不能为空");
         }
+        if (!isControlAvailable(deviceId)) {
+            return ApiResult.error(ResultCode.OPERATION_FAILED.getCode(), "设备未运行或未连接，禁止控制操作");
+        }
         Map<String, Object> params = request.getParams() != null ? request.getParams() : Map.of();
         Object commandResult = collectionManager.executeCommand(deviceId, request.getCommand(), params);
 
@@ -147,11 +200,15 @@ public class ControlCommandApplicationService {
      *
      * @param points 设备点位列表
      * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
+     * @param conflictPoints 本批次存在值冲突的点位
      * @param fieldResults 提交字段结果
      * @param entry 用户提交字段
      */
     private void collectWritePlan(List<DataPoint> points,
                                   Map<DataPoint, Object> writePlan,
+                                  Map<DataPoint, List<String>> submittedFieldsByPoint,
+                                  Set<DataPoint> conflictPoints,
                                   Map<String, BatchPointWriteFieldResponse> fieldResults,
                                   Map.Entry<String, Object> entry) {
         String field = entry.getKey();
@@ -177,8 +234,49 @@ public class ControlCommandApplicationService {
             return;
         }
 
+        submittedFieldsByPoint.computeIfAbsent(point, ignored -> new ArrayList<>()).add(field);
+        if (conflictPoints.contains(point)) {
+            markConflict(point, writePlan, submittedFieldsByPoint, fieldResults, conflictPoints);
+            return;
+        }
+
+        if (writePlan.containsKey(point)) {
+            Object plannedValue = writePlan.get(point);
+            if (!Objects.equals(plannedValue, entry.getValue())) {
+                markConflict(point, writePlan, submittedFieldsByPoint, fieldResults, conflictPoints);
+            } else {
+                fieldResult.setError(ERROR_PENDING);
+            }
+            return;
+        }
+
         writePlan.put(point, entry.getValue());
         fieldResult.setError(ERROR_PENDING);
+    }
+
+    /**
+     * 标记同一点位多字段提交值冲突。
+     *
+     * @param point 点位配置
+     * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
+     * @param fieldResults 提交字段结果
+     * @param conflictPoints 本批次存在值冲突的点位
+     */
+    private void markConflict(DataPoint point,
+                              Map<DataPoint, Object> writePlan,
+                              Map<DataPoint, List<String>> submittedFieldsByPoint,
+                              Map<String, BatchPointWriteFieldResponse> fieldResults,
+                              Set<DataPoint> conflictPoints) {
+        conflictPoints.add(point);
+        writePlan.remove(point);
+        for (String submittedField : submittedFieldsByPoint.getOrDefault(point, List.of())) {
+            BatchPointWriteFieldResponse fieldResult = fieldResults.get(submittedField);
+            if (fieldResult != null) {
+                fieldResult.setSuccess(false);
+                fieldResult.setError(ERROR_DUPLICATE_POINT_VALUE_CONFLICT);
+            }
+        }
     }
 
     /**
@@ -186,36 +284,23 @@ public class ControlCommandApplicationService {
      *
      * @param fieldResults 提交字段结果
      * @param writePlan 实际写入计划
+     * @param submittedFieldsByPoint 点位对应的原始提交字段
      * @param writeResults 协议写入结果
      */
     private void applyWriteResults(Map<String, BatchPointWriteFieldResponse> fieldResults,
                                    Map<DataPoint, Object> writePlan,
+                                   Map<DataPoint, List<String>> submittedFieldsByPoint,
                                    Map<String, Boolean> writeResults) {
         for (DataPoint point : writePlan.keySet()) {
-            String field = resolveSubmittedField(fieldResults, point);
-            if (!StringUtils.hasText(field)) {
-                continue;
-            }
-            BatchPointWriteFieldResponse fieldResult = fieldResults.get(field);
             boolean success = resolveWriteSuccess(writeResults, point);
-            fieldResult.setSuccess(success);
-            fieldResult.setError(success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+            for (String submittedField : submittedFieldsByPoint.getOrDefault(point, List.of())) {
+                BatchPointWriteFieldResponse fieldResult = fieldResults.get(submittedField);
+                if (fieldResult != null) {
+                    fieldResult.setSuccess(success);
+                    fieldResult.setError(success ? null : ERROR_PROTOCOL_WRITE_FALSE);
+                }
+            }
         }
-    }
-
-    /**
-     * 根据点位反查用户提交字段。
-     *
-     * @param fieldResults 提交字段结果
-     * @param point 点位配置
-     * @return 用户提交字段
-     */
-    private String resolveSubmittedField(Map<String, BatchPointWriteFieldResponse> fieldResults, DataPoint point) {
-        return fieldResults.entrySet().stream()
-                .filter(entry -> point.getPointId() != null && point.getPointId().equals(entry.getValue().getPointId()))
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .orElse(null);
     }
 
     /**
@@ -229,9 +314,20 @@ public class ControlCommandApplicationService {
         if (writeResults == null || writeResults.isEmpty() || point == null) {
             return false;
         }
-        return Boolean.TRUE.equals(writeResults.get(point.getPointId()))
-                || Boolean.TRUE.equals(writeResults.get(point.getPointCode()))
-                || Boolean.TRUE.equals(writeResults.get(point.getReportField()));
+        return matchesWriteSuccess(writeResults, point.getPointId())
+                || matchesWriteSuccess(writeResults, point.getPointCode())
+                || matchesWriteSuccess(writeResults, point.getReportField());
+    }
+
+    /**
+     * 按协议返回字段判断单个点位是否写入成功。
+     *
+     * @param writeResults 协议写入结果
+     * @param resultKey 协议结果键
+     * @return 是否写入成功
+     */
+    private boolean matchesWriteSuccess(Map<String, Boolean> writeResults, String resultKey) {
+        return StringUtils.hasText(resultKey) && Boolean.TRUE.equals(writeResults.get(resultKey));
     }
 
     /**
@@ -243,6 +339,14 @@ public class ControlCommandApplicationService {
      * @param error 错误信息
      * @return 单点写入结果
      */
+    private boolean isControlAvailable(String deviceId) {
+        return configManager.getDevice(deviceId) != null
+                && collectionService != null
+                && collectionService.isDeviceRunning(deviceId)
+                && collectionManager.getCollector(deviceId) != null
+                && collectionManager.isDeviceConnected(deviceId);
+    }
+
     private PointWriteResultResponse pointResult(DataPoint point, Object value, boolean success, String error) {
         return PointWriteResultResponse.builder()
                 .pointId(point.getPointId())

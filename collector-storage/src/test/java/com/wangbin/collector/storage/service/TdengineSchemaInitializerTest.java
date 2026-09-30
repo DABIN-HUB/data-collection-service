@@ -60,6 +60,37 @@ class TdengineSchemaInitializerTest {
         verify(alarmRepository).addAlarmEventTypeColumn("wangbin_collector", "alarm_super");
     }
 
+    @Test
+    void existingLifecycleColumnsNeverAlteredTwice() {
+        TdengineProperties properties = createProperties();
+        when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(1L);
+        for (String column : List.of("alarm_event_type", "alarm_id", "related_alarm_id",
+                "alarm_started_at", "alarm_last_occurred_at", "alarm_duration_ms")) {
+            when(dataRepository.countColumn("wangbin_collector", "alarm_super", column)).thenReturn(1L);
+        }
+        TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
+        initializer.ensureAlarmSuperTable();
+        initializer.ensureAlarmSuperTable();
+        verify(alarmRepository, never()).addAlarmLifecycleColumn(
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void missingLifecycleColumnIsAddedOnlyOnce() {
+        TdengineProperties properties = createProperties();
+        when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(1L);
+        for (String column : List.of("alarm_event_type", "alarm_id", "related_alarm_id",
+                "alarm_started_at", "alarm_last_occurred_at")) {
+            when(dataRepository.countColumn("wangbin_collector", "alarm_super", column)).thenReturn(1L);
+        }
+        TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
+        initializer.ensureAlarmSuperTable();
+        initializer.ensureAlarmSuperTable();
+        verify(alarmRepository, org.mockito.Mockito.times(1)).addAlarmLifecycleColumn(
+                "wangbin_collector", "alarm_super", "alarm_duration_ms", "BIGINT");
+    }
+
     private TdengineProperties createProperties() {
         TdengineProperties properties = new TdengineProperties();
         properties.setEnabled(true);

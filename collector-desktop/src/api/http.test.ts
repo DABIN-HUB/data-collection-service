@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, resolveBrowserServerUrl, unwrapApiResponse } from "./http";
+import { ApiRequestError, configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, request, requestEnvelope, requestRaw, resolveBrowserServerUrl, unwrapApiResponse } from "./http";
+import type { ApiResult } from "@/types/api";
+import type { DeviceRealtimeDataResponse } from "@/types/monitor";
 
 const globalWindow = globalThis as unknown as { window?: unknown };
 const originalWindow = globalWindow.window;
@@ -15,7 +17,10 @@ function installDesktopProxy(proxyRequest: DesktopBridge["request"]): void {
       setServerConfig: vi.fn().mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL }),
       request: proxyRequest,
       openExternal: vi.fn().mockResolvedValue(true),
-      onNavigate: vi.fn().mockReturnValue(() => undefined)
+      onNavigate: vi.fn().mockReturnValue(() => undefined),
+      getCredentialStatus: vi.fn().mockResolvedValue({ hasCredential: false, remembered: false, storageAvailable: true, rememberUnavailable: false }),
+      setCredential: vi.fn().mockResolvedValue({ hasCredential: true, remembered: false, storageAvailable: true, rememberUnavailable: false }),
+      clearCredential: vi.fn().mockResolvedValue({ hasCredential: false, remembered: false, storageAvailable: true, rememberUnavailable: false })
     }
   };
 }
@@ -51,6 +56,65 @@ describe("http", () => {
 
   it("解析 ApiResult 成功响应", () => {
     expect(unwrapApiResponse({ code: 200, message: "成功", data: { ok: true } })).toEqual({ ok: true });
+    expect(unwrapApiResponse({ code: 200, data: { ok: true } }, "apiData")).toEqual({ ok: true });
+  });
+
+  it("RAW 模式保留业务 DTO 自身的 data 字段", () => {
+    const body: DeviceRealtimeDataResponse = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      data: {
+        "point-1": {
+          pointId: "point-1",
+          value: 10
+        }
+      },
+      timestamp: 123456
+    };
+
+    expect(unwrapApiResponse<DeviceRealtimeDataResponse>(body, "raw")).toEqual(body);
+  });
+
+  it("RAW 模式仍会把业务错误转换成异常", () => {
+    expect(() => unwrapApiResponse({ status: "error", message: "device not found" }, "raw")).toThrow(ApiRequestError);
+    expect(() => unwrapApiResponse({ status: "error", message: "device not found" }, "raw")).toThrow("device not found");
+  });
+
+  it("ENVELOPE 模式保留 ApiResult 顶层 metadata", () => {
+    const body: ApiResult<null> = {
+      status: "success",
+      deviceId: "device-1",
+      running: true,
+      timestamp: 123456
+    };
+
+    expect(unwrapApiResponse<ApiResult<null>>(body, "envelope")).toEqual(body);
+  });
+
+  it("业务错误保留 machineCode、requestId、code 和 HTTP 状态码", () => {
+    const body = {
+      status: "error",
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      message: "配置版本冲突",
+      extra: { requestId: "request-123" }
+    };
+
+    try {
+      unwrapApiResponse(body, 412);
+      throw new Error("should throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiRequestError);
+      expect(error).toMatchObject({
+        message: "配置版本冲突",
+        httpStatus: 412,
+        code: 409,
+        machineCode: "CONFIG_VERSION_CONFLICT",
+        requestId: "request-123",
+        body
+      });
+    }
   });
 
   it("把业务错误转换成包含状态码的异常", () => {
@@ -79,7 +143,7 @@ describe("http", () => {
     }
   });
 
-  it("Electron 环境优先通过 preload 代理请求后端，避免 file 协议跨域问题", async () => {
+  it("Electron 环境优先通过 preload 代理请求后端，且 HTTP IPC payload 不携带 token/serverUrl", async () => {
     const proxyRequest = vi.fn().mockResolvedValue({
       status: 200,
       statusText: "OK",
@@ -87,16 +151,61 @@ describe("http", () => {
       body: { status: "success", data: { ok: true } }
     });
     installDesktopProxy(proxyRequest);
-    configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "token-value" });
+    configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "[REDACTED]" });
 
     await expect(request<{ ok: boolean }>({ url: "/api/protocols", method: "GET", params: { limit: 1 } })).resolves.toEqual({ ok: true });
     expect(proxyRequest).toHaveBeenCalledWith(expect.objectContaining({
-      serverUrl: DEFAULT_SERVER_URL,
-      token: "token-value",
       url: "/api/protocols",
       method: "GET",
       params: { limit: 1 }
     }));
+    expect(proxyRequest).toHaveBeenCalledWith(expect.not.objectContaining({
+      serverUrl: expect.any(String)
+    }));
+    expect(proxyRequest).toHaveBeenCalledWith(expect.not.objectContaining({
+      token: expect.any(String)
+    }));
+  });
+
+  it("Electron 代理在 RAW 模式下保留 DTO 自身 data 字段", async () => {
+    const rawBody: DeviceRealtimeDataResponse = {
+      status: "success",
+      deviceId: "device-1",
+      dataCount: 1,
+      data: {
+        "point-1": {
+          pointId: "point-1",
+          value: 10
+        }
+      },
+      timestamp: 123456
+    };
+    const proxyRequest = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: rawBody
+    });
+    installDesktopProxy(proxyRequest);
+
+    await expect(requestRaw<DeviceRealtimeDataResponse>({ url: "/api/data/device/device-1", method: "GET" })).resolves.toEqual(rawBody);
+  });
+
+  it("requestEnvelope 能读取 ApiResult 顶层运行状态 metadata", async () => {
+    const proxyRequest = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: { status: "success", deviceId: "device-1", running: true, timestamp: 123456 }
+    });
+    installDesktopProxy(proxyRequest);
+
+    await expect(requestEnvelope<null>({ url: "/api/device/device-1/running", method: "GET" })).resolves.toEqual({
+      status: "success",
+      deviceId: "device-1",
+      running: true,
+      timestamp: 123456
+    });
   });
 
   it("Electron 代理返回鉴权错误时保持中文提示和响应体", async () => {
@@ -110,6 +219,30 @@ describe("http", () => {
     configureHttp({ serverUrl: DEFAULT_SERVER_URL, token: "" });
 
     await expect(request({ url: "/api/protocols", method: "GET" })).rejects.toThrow("接口访问令牌缺失或无效");
+  });
+
+  it("Electron 代理业务错误保留 machineCode、requestId、code", async () => {
+    const body = {
+      status: "error",
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      message: "配置版本冲突",
+      extra: { requestId: "request-456" }
+    };
+    installDesktopProxy(vi.fn().mockResolvedValue({
+      status: 409,
+      statusText: "Conflict",
+      headers: {},
+      body
+    }));
+
+    await expect(request({ url: "/api/config/devices", method: "POST" })).rejects.toMatchObject({
+      httpStatus: 409,
+      code: 409,
+      machineCode: "CONFIG_VERSION_CONFLICT",
+      requestId: "request-456",
+      body
+    });
   });
 
   it("Electron 代理返回非 ApiResult 的 HTTP 错误时也不会误判成功", async () => {

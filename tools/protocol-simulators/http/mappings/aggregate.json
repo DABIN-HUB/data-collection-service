@@ -1,0 +1,20 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/api/v1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "sensor": {
+        "temperature": 26.5,
+        "humidity": 61.2,
+        "pressure": 101.3,
+        "status": 1
+      }
+    }
+  }
+}

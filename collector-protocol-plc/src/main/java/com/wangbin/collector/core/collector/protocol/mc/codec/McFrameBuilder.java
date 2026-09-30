@@ -56,12 +56,13 @@ public final class McFrameBuilder {
      */
     public static byte[] buildRandomRead(McRandomReadRequest request, DeviceConnection config) {
         int wordCount = request != null ? request.getWordAddressCount() : 0;
-        byte[] frame = new byte[15 + (wordCount * 4)];
-        writeHeader(frame, 0, null, config, 6 + (wordCount * 4));
+        byte[] frame = new byte[17 + (wordCount * 4)];
+        writeHeader(frame, 0, null, config, 8 + (wordCount * 4));
         writeUInt16(frame, 11, RANDOM_READ_COMMAND);
-        frame[13] = (byte) (wordCount & 0xFF);
-        frame[14] = 0x00;
-        int offset = 15;
+        writeUInt16(frame, 13, WORD_UNIT_SUBCOMMAND);
+        frame[15] = (byte) (wordCount & 0xFF);
+        frame[16] = 0x00;
+        int offset = 17;
         if (request != null) {
             for (McAddress address : request.getWordAddresses()) {
                 writeDeviceSpec(frame, offset, address);
@@ -79,12 +80,13 @@ public final class McFrameBuilder {
         int payloadLength = request != null
                 ? request.getWordItems().stream().mapToInt(item -> 4 + item.getPayload().length).sum()
                 : 0;
-        byte[] frame = new byte[15 + payloadLength];
-        writeHeader(frame, 0, null, config, 6 + payloadLength);
+        byte[] frame = new byte[17 + payloadLength];
+        writeHeader(frame, 0, null, config, 8 + payloadLength);
         writeUInt16(frame, 11, RANDOM_WRITE_COMMAND);
-        frame[13] = (byte) (wordCount & 0xFF);
-        frame[14] = 0x00;
-        int offset = 15;
+        writeUInt16(frame, 13, WORD_UNIT_SUBCOMMAND);
+        frame[15] = (byte) (wordCount & 0xFF);
+        frame[16] = 0x00;
+        int offset = 17;
         if (request != null) {
             for (McRandomWriteItem item : request.getWordItems()) {
                 writeDeviceSpec(frame, offset, item.getAddress());
@@ -129,8 +131,8 @@ public final class McFrameBuilder {
                 .append("00");
         if (request != null) {
             for (McAddress address : request.getWordAddresses()) {
-                body.append(McAsciiCodecSupport.formatDeviceNumber(address))
-                        .append(McAsciiCodecSupport.deviceCodeText(address.getDeviceCode()));
+                body.append(McAsciiCodecSupport.deviceCodeText(address.getDeviceCode()))
+                        .append(McAsciiCodecSupport.formatDeviceNumber(address));
             }
         }
         return buildAsciiHeader(config, body.toString()).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
@@ -148,8 +150,8 @@ public final class McFrameBuilder {
                 .append("00");
         if (request != null) {
             for (McRandomWriteItem item : request.getWordItems()) {
-                body.append(McAsciiCodecSupport.formatDeviceNumber(item.getAddress()))
-                        .append(McAsciiCodecSupport.deviceCodeText(item.getAddress().getDeviceCode()))
+                body.append(McAsciiCodecSupport.deviceCodeText(item.getAddress().getDeviceCode()))
+                        .append(McAsciiCodecSupport.formatDeviceNumber(item.getAddress()))
                         .append(new String(item.getPayload(), java.nio.charset.StandardCharsets.US_ASCII));
             }
         }
@@ -196,12 +198,13 @@ public final class McFrameBuilder {
                                            DeviceConnection config,
                                            int serialNo) {
         int wordCount = request != null ? request.getWordAddressCount() : 0;
-        byte[] frame = new byte[19 + (wordCount * 4)];
-        write4eHeader(frame, config, serialNo, 6 + (wordCount * 4));
+        byte[] frame = new byte[21 + (wordCount * 4)];
+        write4eHeader(frame, config, serialNo, 8 + (wordCount * 4));
         writeUInt16(frame, 15, RANDOM_READ_COMMAND);
-        frame[17] = (byte) (wordCount & 0xFF);
-        frame[18] = 0x00;
-        int offset = 19;
+        writeUInt16(frame, 17, WORD_UNIT_SUBCOMMAND);
+        frame[19] = (byte) (wordCount & 0xFF);
+        frame[20] = 0x00;
+        int offset = 21;
         if (request != null) {
             for (McAddress address : request.getWordAddresses()) {
                 writeDeviceSpec(frame, offset, address);
@@ -221,12 +224,13 @@ public final class McFrameBuilder {
                 ? request.getWordItems().stream().mapToInt(item -> 4 + item.getPayload().length).sum()
                 : 0;
         int wordCount = request != null ? request.getWordItemCount() : 0;
-        byte[] frame = new byte[19 + payloadLength];
-        write4eHeader(frame, config, serialNo, 6 + payloadLength);
+        byte[] frame = new byte[21 + payloadLength];
+        write4eHeader(frame, config, serialNo, 8 + payloadLength);
         writeUInt16(frame, 15, RANDOM_WRITE_COMMAND);
-        frame[17] = (byte) (wordCount & 0xFF);
-        frame[18] = 0x00;
-        int offset = 19;
+        writeUInt16(frame, 17, WORD_UNIT_SUBCOMMAND);
+        frame[19] = (byte) (wordCount & 0xFF);
+        frame[20] = 0x00;
+        int offset = 21;
         if (request != null) {
             for (McRandomWriteItem item : request.getWordItems()) {
                 writeDeviceSpec(frame, offset, item.getAddress());
@@ -322,8 +326,8 @@ public final class McFrameBuilder {
         StringBuilder body = new StringBuilder()
                 .append(McAsciiCodecSupport.formatHex(command, 4))
                 .append(McAsciiCodecSupport.formatHex(subcommand, 4))
-                .append(McAsciiCodecSupport.formatDeviceNumber(address))
-                .append(McAsciiCodecSupport.deviceCodeText(address.getDeviceCode()));
+                .append(McAsciiCodecSupport.deviceCodeText(address.getDeviceCode()))
+                .append(McAsciiCodecSupport.formatDeviceNumber(address));
         if (trailing != null) {
             body.append(trailing);
         }

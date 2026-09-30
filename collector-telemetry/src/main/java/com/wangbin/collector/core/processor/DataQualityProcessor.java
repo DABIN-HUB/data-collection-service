@@ -158,7 +158,8 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                         point.getDeviceId(), point.getPointName(), rule.getRuleName(), doubleValue);
                 return new AlarmEvent(ALARM_EVENT_TYPE, level, message,
                         rule.getRuleId(), rule.getRuleName(), transition.alarmId(), null,
-                        transition.startedAt(), transition.occurredAt(), transition.durationMillis());
+                        transition.startedAt(), transition.occurredAt(), transition.durationMillis(),
+                        transition.lastOccurredAt());
             }
             if (transition.type() == AlarmTransitionType.RECOVERED) {
                 String message = rule.getDescription() != null
@@ -167,7 +168,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                 return new AlarmEvent(ALARM_RECOVERED_EVENT_TYPE, "INFO",
                         message, rule.getRuleId(), rule.getRuleName(), recoveryEventId,
                         transition.alarmId(), transition.startedAt(),
-                        transition.occurredAt(), transition.durationMillis());
+                        transition.occurredAt(), transition.durationMillis(), transition.lastOccurredAt());
             }
         }
         return null;
@@ -194,6 +195,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         if (event.startedAt > 0L) {
             result.addMetadata(AlarmMetadataKeys.ALARM_STARTED_AT, event.startedAt);
             result.addMetadata(AlarmMetadataKeys.ALARM_OCCURRED_AT, event.occurredAt);
+            result.addMetadata(AlarmMetadataKeys.ALARM_LAST_OCCURRED_AT, event.lastOccurredAt);
             result.addMetadata(AlarmMetadataKeys.ALARM_DURATION_MILLIS, event.durationMillis);
         }
         if (event.relatedEventId != null) {
@@ -249,6 +251,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                         .eventId(event.eventId)
                         .relatedEventId(event.relatedEventId)
                         .startedAt(event.startedAt)
+                        .lastOccurredAt(event.lastOccurredAt)
                         .durationMillis(event.durationMillis)
                         .message(event.message)
                         .value(result != null ? result.getFinalValue(rawValue) : rawValue)
@@ -303,6 +306,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
         private final String relatedEventId;
         private final long startedAt;
         private final long occurredAt;
+        private final long lastOccurredAt;
         private final long durationMillis;
 
         /**
@@ -314,7 +318,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                            String ruleId,
                            String ruleName) {
             this(type, level, message, ruleId, ruleName,
-                    null, null, 0L, 0L, 0L);
+                    null, null, 0L, 0L, 0L, 0L);
         }
 
         /**
@@ -329,7 +333,8 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                            String relatedEventId,
                            long startedAt,
                            long occurredAt,
-                           long durationMillis) {
+                           long durationMillis,
+                           long lastOccurredAt) {
             this.type = type;
             this.level = level;
             this.message = message;
@@ -339,6 +344,7 @@ public class DataQualityProcessor extends AbstractDataProcessor {
             this.relatedEventId = relatedEventId;
             this.startedAt = startedAt;
             this.occurredAt = occurredAt;
+            this.lastOccurredAt = lastOccurredAt;
             this.durationMillis = durationMillis;
         }
     }

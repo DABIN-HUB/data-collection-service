@@ -1,30 +1,46 @@
 import type { RouteRecordRaw } from "vue-router";
 
-import LegacyConsoleView from "@/views/legacy/LegacyConsoleView.vue";
+import { RouteNames } from "./route-names";
+
+const AppShell = () => import("@/app/AppShell.vue");
+const DashboardView = () => import("@/views/dashboard/DashboardView.vue");
+const RealtimeView = () => import("@/views/realtime/RealtimeView.vue");
+const HistoryView = () => import("@/views/history/HistoryView.vue");
+const LogView = () => import("@/views/log/LogView.vue");
+const AlarmView = () => import("@/views/alarm/AlarmView.vue");
+const NetworkView = () => import("@/views/network/NetworkView.vue");
+const CloudView = () => import("@/views/cloud/CloudView.vue");
+const DiagnosticView = () => import("@/views/diagnostic/DiagnosticView.vue");
+const CollectionView = () => import("@/views/collection/CollectionView.vue");
+const DeviceListView = () => import("@/views/device/DeviceListView.vue");
+const DeviceWorkbenchView = () => import("@/views/device/DeviceWorkbenchView.vue");
+const ControlView = () => import("@/views/control/ControlView.vue");
+const ShadowView = () => import("@/views/shadow/ShadowView.vue");
 
 export const appRouteDefinitions: RouteRecordRaw[] = [
   {
     path: "/login",
-    name: "login",
+    name: RouteNames.LOGIN,
     component: () => import("@/views/auth/LoginView.vue")
   },
   {
     path: "/",
-    component: LegacyConsoleView,
+    component: AppShell,
     children: [
       { path: "", redirect: "/dashboard" },
-      { path: "dashboard", name: "dashboard", component: LegacyConsoleView },
-      { path: "realtime", name: "realtime", component: LegacyConsoleView },
-      { path: "history", name: "history", component: LegacyConsoleView },
-      { path: "alarm", name: "alarm", component: LegacyConsoleView },
-      { path: "device", name: "device", component: LegacyConsoleView },
-      { path: "collect", name: "collect", component: LegacyConsoleView },
-      { path: "cloud", name: "cloud", component: LegacyConsoleView },
-      { path: "diagnostic", name: "diagnostic", component: LegacyConsoleView },
-      { path: "log", name: "log", component: LegacyConsoleView },
-      { path: "network", name: "network", component: LegacyConsoleView },
-      { path: "control", name: "control", component: LegacyConsoleView },
-      { path: "shadow", name: "shadow", component: LegacyConsoleView }
+      { path: "dashboard", name: RouteNames.DASHBOARD, component: DashboardView },
+      { path: "realtime", name: RouteNames.REALTIME, component: RealtimeView },
+      { path: "history", name: RouteNames.HISTORY, component: HistoryView },
+      { path: "alarm", name: RouteNames.ALARM, component: AlarmView },
+      { path: "device", name: RouteNames.DEVICE, component: DeviceListView },
+      { path: "device/workbench", name: RouteNames.DEVICE_WORKBENCH, component: DeviceWorkbenchView },
+      { path: "collect", name: RouteNames.COLLECTION, component: CollectionView },
+      { path: "cloud", name: RouteNames.CLOUD, component: CloudView },
+      { path: "diagnostic", name: RouteNames.DIAGNOSTIC, component: DiagnosticView },
+      { path: "log", name: RouteNames.LOG, component: LogView },
+      { path: "network", name: RouteNames.NETWORK, component: NetworkView },
+      { path: "control", name: RouteNames.CONTROL, component: ControlView },
+      { path: "shadow", name: RouteNames.SHADOW, component: ShadowView }
     ]
   },
   { path: "/:pathMatch(.*)*", redirect: "/" }

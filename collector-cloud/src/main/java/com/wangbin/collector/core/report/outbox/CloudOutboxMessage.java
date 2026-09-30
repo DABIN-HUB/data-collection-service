@@ -53,6 +53,18 @@ public class CloudOutboxMessage {
                 localDeviceId, shadowVersion, windowStart, windowEnd, properties));
     }
 
+    /** 判断消息是否包含指定本地设备的单设备或聚合提交。 */
+    public boolean containsLocalDevice(String localDeviceId) {
+        if (localDeviceId == null || localDeviceId.isBlank()) {
+            return false;
+        }
+        if (localDeviceId.equals(this.localDeviceId)) {
+            return true;
+        }
+        return resolveCommits().stream()
+                .anyMatch(commit -> commit != null && localDeviceId.equals(commit.getLocalDeviceId()));
+    }
+
     /**
      * 单个本地设备的影子提交信息。
      */

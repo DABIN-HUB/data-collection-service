@@ -80,7 +80,7 @@ class ConnectionAdapterProviderRegistryTest {
             "TCP", "HTTP", "MQTT", "WEBSOCKET", "COAP", "SIEMENS_S7",
             "BACNET_IP", "BACNET_MSTP", "BACNET_SC", "MITSUBISHI_MC", "OMRON_FINS",
             "ETHERNET_IP", "ADS", "KNXNET_IP", "MODBUS_TCP", "MODBUS_RTU", "SNMP",
-            "OPC_UA", "OPC_UA_PLC4X", "OPC_UA_MILO", "IEC104", "IEC61850", "IEC101",
+            "OPC_UA_PLC4X", "OPC_UA_MILO", "IEC104", "IEC61850", "IEC101",
             "DLT645_2007", "CUSTOM_TCP", "CUSTOM_UDP");
 
     @Test
@@ -287,7 +287,7 @@ class ConnectionAdapterProviderRegistryTest {
         adapters.put("MODBUS_TCP", Plc4xModbusTcpConnectionAdapter.class);
         adapters.put("MODBUS_RTU", Plc4xModbusRtuConnectionAdapter.class);
         adapters.put("SNMP", SnmpConnectionAdapter.class);
-        adapters.put("OPC_UA", Plc4xOpcUaConnectionAdapter.class);
+        adapters.put("OPC_UA", OpcUaConnectionAdapter.class);
         adapters.put("OPC_UA_PLC4X", Plc4xOpcUaConnectionAdapter.class);
         adapters.put("OPC_UA_MILO", OpcUaConnectionAdapter.class);
         adapters.put("IEC104", Iec104ConnectionAdapter.class);

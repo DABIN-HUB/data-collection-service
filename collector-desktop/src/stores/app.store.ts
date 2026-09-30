@@ -1,6 +1,9 @@
 import { defineStore } from "pinia";
 
-import { configureHttp, DEFAULT_SERVER_URL, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
+import { configureHttp, DEFAULT_SERVER_URL, isDesktopRuntime, normalizeServerUrl, resolveBrowserServerUrl } from "@/api/http";
+import { getSystemCapabilities } from "@/api/system.api";
+import { useWebSocketStore } from "@/stores/websocket.store";
+import type { SystemCapabilities } from "@/types/system";
 
 interface AppState {
   appName: string;
@@ -8,15 +11,29 @@ interface AppState {
   serverUrl: string;
   token: string;
   rememberToken: boolean;
+  hasCredential: boolean;
+  credentialRemembered: boolean;
+  credentialStorageAvailable: boolean;
+  credentialRememberUnavailable: boolean;
   currentUser: string;
   platform: string;
   configPath: string;
   backendManaged: boolean;
   initialized: boolean;
+  capabilities: SystemCapabilities | null;
+  capabilitiesError: string;
 }
 
 const TOKEN_KEY = "collector-desktop-token";
 const SERVER_KEY = "collector-desktop-server-url";
+let capabilitiesRequest: Promise<SystemCapabilities | null> | null = null;
+let capabilitiesEpoch = 0;
+
+function nextCapabilitiesEpoch(): number {
+  capabilitiesEpoch += 1;
+  capabilitiesRequest = null;
+  return capabilitiesEpoch;
+}
 
 export const useAppStore = defineStore("app", {
   state: (): AppState => ({
@@ -25,51 +42,136 @@ export const useAppStore = defineStore("app", {
     serverUrl: DEFAULT_SERVER_URL,
     token: "",
     rememberToken: false,
+    hasCredential: false,
+    credentialRemembered: false,
+    credentialStorageAvailable: false,
+    credentialRememberUnavailable: false,
     currentUser: "admin",
     platform: "browser",
     configPath: "",
     backendManaged: false,
-    initialized: false
+    initialized: false,
+    capabilities: null,
+    capabilitiesError: ""
   }),
   actions: {
+    invalidateCapabilities() {
+      nextCapabilitiesEpoch();
+      this.capabilities = null;
+      this.capabilitiesError = "";
+      const websocketStore = useWebSocketStore();
+      websocketStore.setSupported(false);
+      websocketStore.disableRealtime();
+    },
     async initialize() {
       if (this.initialized) {
         return;
       }
-      const savedServerUrl = localStorage.getItem(SERVER_KEY);
       const savedToken = localStorage.getItem(TOKEN_KEY);
-      if (window.collectorDesktop) {
-        const [appInfo, serverConfig] = await Promise.all([
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const [appInfo, serverConfig, credentialStatus] = await Promise.all([
           window.collectorDesktop.getAppInfo(),
-          window.collectorDesktop.getServerConfig()
+          window.collectorDesktop.getServerConfig(),
+          window.collectorDesktop.getCredentialStatus()
         ]);
         this.appName = appInfo.name || this.appName;
         this.appVersion = appInfo.version || this.appVersion;
         this.platform = appInfo.platform || this.platform;
         this.configPath = appInfo.configPath || "";
         this.backendManaged = Boolean(appInfo.backendManaged);
-        this.serverUrl = normalizeServerUrl(savedServerUrl || serverConfig.serverUrl || this.serverUrl);
+        this.serverUrl = normalizeServerUrl(serverConfig.serverUrl || this.serverUrl);
+        this.applyCredentialStatus(credentialStatus);
+        if (savedToken) {
+          if (credentialStatus.hasCredential) {
+            localStorage.removeItem(TOKEN_KEY);
+          } else {
+            const migrated = await window.collectorDesktop.setCredential({ token: savedToken, remember: true });
+            this.applyCredentialStatus(migrated);
+            if (migrated.hasCredential) {
+              localStorage.removeItem(TOKEN_KEY);
+            }
+          }
+        }
+        this.token = "";
+        this.rememberToken = this.credentialRemembered;
       } else {
+        const savedServerUrl = localStorage.getItem(SERVER_KEY);
         this.serverUrl = normalizeServerUrl(savedServerUrl || resolveBrowserServerUrl() || this.serverUrl);
-      }
-      if (savedToken) {
-        this.token = savedToken;
-        this.rememberToken = true;
+        if (savedToken) {
+          this.token = savedToken;
+          this.rememberToken = true;
+          this.hasCredential = true;
+          this.credentialRemembered = true;
+        }
       }
       configureHttp({ serverUrl: this.serverUrl, token: this.token });
       this.initialized = true;
-    },
-    async updateServerUrl(serverUrl: string) {
-      this.serverUrl = normalizeServerUrl(serverUrl);
-      localStorage.setItem(SERVER_KEY, this.serverUrl);
-      configureHttp({ serverUrl: this.serverUrl });
-      if (window.collectorDesktop) {
-        await window.collectorDesktop.setServerConfig({ serverUrl: this.serverUrl });
+      if (this.hasCredential) {
+        void this.refreshCapabilities();
       }
     },
-    setToken(token: string, remember: boolean) {
-      this.token = token.trim();
+    async refreshCapabilities(): Promise<SystemCapabilities | null> {
+      if (capabilitiesRequest) {
+        return capabilitiesRequest;
+      }
+      const requestEpoch = capabilitiesEpoch;
+      const requestServerUrl = this.serverUrl;
+      const request = getSystemCapabilities()
+        .then((capabilities) => {
+          if (requestEpoch !== capabilitiesEpoch || requestServerUrl !== this.serverUrl) return null;
+          this.capabilities = capabilities;
+          this.capabilitiesError = "";
+          useWebSocketStore().setSupported(Boolean(capabilities.realtime.websocketAvailable));
+          return capabilities;
+        })
+        .catch((error: unknown) => {
+          if (requestEpoch !== capabilitiesEpoch || requestServerUrl !== this.serverUrl) return null;
+          this.capabilities = null;
+          this.capabilitiesError = error instanceof Error ? error.message : "系统能力读取失败";
+          useWebSocketStore().setSupported(false);
+          return null;
+        })
+        .finally(() => {
+          if (capabilitiesRequest === request) capabilitiesRequest = null;
+        });
+      capabilitiesRequest = request;
+      return request;
+    },
+    async updateServerUrl(serverUrl: string) {
+      const candidate = normalizeServerUrl(serverUrl);
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const persisted = await window.collectorDesktop.setServerConfig({ serverUrl: candidate });
+        this.invalidateCapabilities();
+        this.serverUrl = normalizeServerUrl(persisted.serverUrl || this.serverUrl);
+      } else {
+        this.invalidateCapabilities();
+        this.serverUrl = candidate;
+      }
+      localStorage.setItem(SERVER_KEY, this.serverUrl);
+      configureHttp({ serverUrl: this.serverUrl });
+      if (this.hasCredential) {
+        await this.refreshCapabilities();
+      }
+    },
+    async setToken(token: string, remember: boolean) {
+      const normalizedToken = token.trim();
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        this.invalidateCapabilities();
+        const status = await window.collectorDesktop.setCredential({ token: normalizedToken, remember });
+        this.applyCredentialStatus(status);
+        this.token = "";
+        this.rememberToken = status.remembered;
+        configureHttp({ token: "" });
+        if (status.hasCredential) {
+          localStorage.removeItem(TOKEN_KEY);
+        }
+        return;
+      }
+      if (this.token !== normalizedToken) this.invalidateCapabilities();
+      this.token = normalizedToken;
       this.rememberToken = remember;
+      this.hasCredential = Boolean(this.token);
+      this.credentialRemembered = Boolean(remember && this.token);
       configureHttp({ token: this.token });
       if (remember && this.token) {
         localStorage.setItem(TOKEN_KEY, this.token);
@@ -77,12 +179,29 @@ export const useAppStore = defineStore("app", {
         localStorage.removeItem(TOKEN_KEY);
       }
     },
-    login(token: string, remember: boolean) {
-      this.setToken(token, remember);
+    async login(token: string, remember: boolean) {
+      await this.setToken(token, remember);
       this.currentUser = "admin";
+      await this.refreshCapabilities();
     },
-    logout() {
-      this.setToken("", false);
+    async logout() {
+      this.invalidateCapabilities();
+      if (isDesktopRuntime() && window.collectorDesktop) {
+        const status = await window.collectorDesktop.clearCredential();
+        this.applyCredentialStatus(status);
+        this.token = "";
+        this.rememberToken = false;
+        configureHttp({ token: "" });
+        localStorage.removeItem(TOKEN_KEY);
+        return;
+      }
+      await this.setToken("", false);
+    },
+    applyCredentialStatus(status: { hasCredential: boolean; remembered: boolean; storageAvailable: boolean; rememberUnavailable: boolean }) {
+      this.hasCredential = Boolean(status.hasCredential);
+      this.credentialRemembered = Boolean(status.remembered);
+      this.credentialStorageAvailable = Boolean(status.storageAvailable);
+      this.credentialRememberUnavailable = Boolean(status.rememberUnavailable);
     }
   }
 });

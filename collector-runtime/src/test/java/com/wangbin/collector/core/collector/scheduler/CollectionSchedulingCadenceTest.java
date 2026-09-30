@@ -442,19 +442,54 @@ class CollectionSchedulingCadenceTest {
                 }
                 return CompletableFuture.completedFuture(null);
             });
-            scheduler = new CollectionScheduler(
-                    mock(CollectionManager.class),
-                    configManager,
-                    mock(CollectionStatistics.class),
-                    new CollectorProperties(),
-                    null,
+            CollectorProperties properties = new CollectorProperties();
+            PerformanceMonitor performanceMonitor = new PerformanceMonitor();
+            ReconnectCoordinator reconnectCoordinator = mock(ReconnectCoordinator.class);
+            TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
                     runtimeState,
-                    new PerformanceMonitor(),
-                    lifecycleCoordinator,
+                    performanceMonitor,
                     batchExecutor,
-                    mock(ReconnectCoordinator.class),
+                    nowNanos::get);
+            TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
+                    properties,
+                    runtimeState,
+                    performanceMonitor,
+                    executionCoordinator,
                     timeSliceScheduler,
                     nowNanos::get);
+            TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
+                    properties,
+                    configManager,
+                    null,
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    batchExecutor,
+                    schedulingCoordinator);
+            SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
+                    properties,
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    configCoordinator,
+                    timeSliceScheduler);
+            ConfigRestartCoordinator configRestartCoordinator = new ConfigRestartCoordinator(
+                    lifecycleCoordinator,
+                    configCoordinator,
+                    timeSliceScheduler);
+            scheduler = new CollectionScheduler(
+                    mock(CollectionManager.class),
+                    mock(CollectionStatistics.class),
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    batchExecutor,
+                    reconnectCoordinator,
+                    schedulingCoordinator,
+                    executionCoordinator,
+                    configCoordinator,
+                    maintenanceCoordinator,
+                    configRestartCoordinator);
         }
 
         private DeviceBatchTask addTask(String deviceId, long intervalMs) {

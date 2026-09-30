@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * 定义当前模块的业务组件。
@@ -24,23 +26,61 @@ public class S7ReadPlanBuilder {
      * 创建并返回业务对象。
      */
     public List<S7ReadPlan> build(List<DataPoint> points, int maxFieldsPerRequest) {
+        return build(points, maxFieldsPerRequest, null);
+    }
+
+    /** 单点地址/跨度错误隔离，不吞掉批量配置错误。 */
+    public List<S7ReadPlan> buildIsolatingInvalidPoints(List<DataPoint> points,
+                                                         int maxFieldsPerRequest,
+                                                         Consumer<DataPoint> invalidPoint) {
+        if (invalidPoint == null) {
+            throw new IllegalArgumentException("invalidPoint handler is required");
+        }
+        return buildIsolatingInvalidPoints(points, maxFieldsPerRequest,
+                (point, reason) -> invalidPoint.accept(point));
+    }
+
+    /** 单点异常原因回传给配置诊断，避免运行期无声丢点。 */
+    public List<S7ReadPlan> buildIsolatingInvalidPoints(List<DataPoint> points,
+                                                         int maxFieldsPerRequest,
+                                                         BiConsumer<DataPoint, IllegalArgumentException> invalidPoint) {
+        if (invalidPoint == null) {
+            throw new IllegalArgumentException("invalidPoint handler is required");
+        }
+        return build(points, maxFieldsPerRequest, invalidPoint);
+    }
+
+    private List<S7ReadPlan> build(List<DataPoint> points,
+                                   int maxFieldsPerRequest,
+                                   BiConsumer<DataPoint, IllegalArgumentException> invalidPoint) {
+        if (maxFieldsPerRequest <= 0) {
+            throw new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
+        }
         if (points == null || points.isEmpty()) {
             return List.of();
         }
 
-        int batchLimit = Math.max(1, maxFieldsPerRequest);
+        int batchLimit = maxFieldsPerRequest;
         List<PlanCandidate> candidates = new ArrayList<>();
         for (DataPoint point : points) {
             if (point == null) {
                 continue;
             }
-            S7Address address = S7AddressParser.parse(point);
-            candidates.add(toCandidate(point, address));
+            try {
+                S7Address address = S7AddressParser.parse(point);
+                candidates.add(toCandidate(point, address));
+            } catch (IllegalArgumentException ex) {
+                if (invalidPoint == null) {
+                    throw ex;
+                }
+                invalidPoint.accept(point, ex);
+            }
         }
 
         candidates.sort(Comparator
                 .comparing(PlanCandidate::segmentKey)
-                .thenComparingInt(PlanCandidate::sortOffset)
+                .thenComparingInt(PlanCandidate::startOffset)
+                .thenComparingInt(PlanCandidate::bitOffset)
                 .thenComparing(candidate -> candidate.point().getPointId() == null ? "" : candidate.point().getPointId()));
 
         List<S7ReadPlan> plans = new ArrayList<>();
@@ -57,6 +97,7 @@ public class S7ReadPlanBuilder {
                     || !candidate.segmentKey().equals(currentSegmentKey)
                     || candidate.blockOptimizable() != currentBlockOptimizable
                     || currentCandidates.size() >= batchLimit
+                    || (candidate.blockOptimizable() && candidate.startOffset() > currentEndOffset)
                     || candidate.endOffsetExclusive() - currentStartOffset > DEFAULT_MAX_SEGMENT_SPAN_BYTES;
             if (startNewPlan) {
                 if (!currentCandidates.isEmpty()) {
@@ -117,10 +158,14 @@ public class S7ReadPlanBuilder {
      */
     private PlanCandidate toCandidate(DataPoint point, S7Address address) {
         AddressLocation location = resolveLocation(address);
-        int elementByteSize = estimateByteSize(address.getBasePlcType());
-        int totalByteSize = Math.max(1, elementByteSize * Math.max(1, address.getArraySize()));
-        int endOffsetExclusive = location.byteOffset() + totalByteSize;
-        boolean blockOptimizable = isBlockOptimizable(address, location);
+        int elementByteSize = estimateByteSize(address.getPlcType());
+        long totalByteSize = (long) elementByteSize * address.getArraySize();
+        long endOffsetExclusive = (long) location.byteOffset() + totalByteSize;
+        if (totalByteSize <= 0 || endOffsetExclusive > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("S7 read span exceeds address range: " + address.getRawAddress());
+        }
+        boolean blockOptimizable = totalByteSize <= DEFAULT_MAX_SEGMENT_SPAN_BYTES
+                && isBlockOptimizable(address, location);
         return new PlanCandidate(
                 point,
                 address,
@@ -129,8 +174,7 @@ public class S7ReadPlanBuilder {
                 location.dbNumber(),
                 location.byteOffset(),
                 location.bitOffset(),
-                location.byteOffset() * 8 + location.bitOffset(),
-                endOffsetExclusive,
+                (int) endOffsetExclusive,
                 blockOptimizable
         );
     }
@@ -210,10 +254,10 @@ public class S7ReadPlanBuilder {
         }
         String normalized = typeExpression.trim().toUpperCase(Locale.ROOT);
         if (normalized.startsWith("STRING(")) {
-            return parseLength(normalized, 254) + 2;
+            return checkedStringByteSize(normalized, 1, 2);
         }
         if (normalized.startsWith("WSTRING(")) {
-            return parseLength(normalized, 254) * 2 + 4;
+            return checkedStringByteSize(normalized, 2, 4);
         }
         return switch (normalized) {
             case "BOOL", "BYTE", "SINT", "USINT", "CHAR" -> 1;
@@ -222,6 +266,17 @@ public class S7ReadPlanBuilder {
             case "LWORD", "LINT", "ULINT", "LREAL", "LTIME", "DATE_AND_TIME" -> 8;
             default -> 1;
         };
+    }
+
+    /**
+     * 字符串头部和字符宽度均计入读取跨度，避免整数溢出后误判为可批读。
+     */
+    private int checkedStringByteSize(String typeExpression, int charWidth, int headerSize) {
+        long byteSize = (long) parseLength(typeExpression, 254) * charWidth + headerSize;
+        if (byteSize > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("S7 string byte span exceeds address range: " + typeExpression);
+        }
+        return (int) byteSize;
     }
 
     /**
@@ -260,7 +315,6 @@ public class S7ReadPlanBuilder {
                                  Integer dbNumber,
                                  int startOffset,
                                  int bitOffset,
-                                 int sortOffset,
                                  int endOffsetExclusive,
                                  boolean blockOptimizable) {
     }

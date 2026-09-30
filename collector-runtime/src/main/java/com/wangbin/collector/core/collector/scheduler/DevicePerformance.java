@@ -30,8 +30,10 @@ class DevicePerformance {
 
     double healthScore = 100.0;
     long lastHealthCheckTime = System.currentTimeMillis();
-    int consecutiveFailureCount = 0;
-    long lastSuccessTime;
+    volatile int consecutiveFailureCount = 0;
+    volatile long lastSuccessTime;
+    volatile long firstSuccessTime;
+    volatile long runtimeGeneration;
 
     final List<Long> recentResponseTimes = new ArrayList<>();
     static final int MAX_RESPONSE_TIME_HISTORY = 10;
@@ -60,26 +62,51 @@ class DevicePerformance {
      * 记录或统计业务状态。
      */
     void recordSuccess(int pointCount, long executionTime) {
+        recordSuccess(pointCount, executionTime, runtimeGeneration);
+    }
+
+    void recordSuccess(int pointCount, long executionTime, long generation) {
+        if (runtimeGeneration != generation) return;
         totalPoints.addAndGet(pointCount);
         successfulBatches.incrementAndGet();
         totalExecutionTime.addAndGet(executionTime);
         updateResponseTimeHistory(executionTime);
         consecutiveFailureCount = 0;
-        lastSuccessTime = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+        if (firstSuccessTime <= 0) firstSuccessTime = now;
+        lastSuccessTime = now;
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
-    void recordFailure() {
+    void recordDataSuccess(long generation, long collectTime) {
+        if (runtimeGeneration != generation) return;
+        consecutiveFailureCount = 0;
+        long sampleTime = collectTime > 0 ? collectTime : System.currentTimeMillis();
+        if (firstSuccessTime <= 0) firstSuccessTime = sampleTime;
+        lastSuccessTime = sampleTime;
+    }
+
+    void resetRuntimeWindow(long generation) {
+        runtimeGeneration = generation;
+        firstSuccessTime = 0L;
+        lastSuccessTime = 0L;
+        consecutiveFailureCount = 0;
+    }
+    void resetRuntimeWindow() {
+        resetRuntimeWindow(runtimeGeneration);
+    }
+
+
+    void recordFailure(long generation) {
+        if (runtimeGeneration != generation) return;
         failedBatches.incrementAndGet();
         consecutiveFailureCount++;
         updateResponseTimeHistory(-1);
     }
 
-    /**
-     * 记录或统计业务状态。
-     */
+    void recordFailure() {
+        recordFailure(runtimeGeneration);
+    }
+
     void recordDataProcessed() {
         // 预留后续扩展钩子。
     }

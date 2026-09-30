@@ -7,16 +7,24 @@ export const DEFAULT_SERVER_URL = "http://127.0.0.1:9090/collector";
 let currentServerUrl = DEFAULT_SERVER_URL;
 let currentToken = "";
 
+export function isDesktopRuntime(): boolean {
+  return typeof window !== "undefined" && typeof window.collectorDesktop?.request === "function";
+}
+
 export class ApiRequestError extends Error {
   httpStatus?: number;
   code?: number;
+  machineCode?: string;
+  requestId?: string;
   body?: unknown;
 
-  constructor(message: string, options: { httpStatus?: number; code?: number; body?: unknown } = {}) {
+  constructor(message: string, options: { httpStatus?: number; code?: number; machineCode?: string; requestId?: string; body?: unknown } = {}) {
     super(message);
     this.name = "ApiRequestError";
     this.httpStatus = options.httpStatus;
     this.code = options.code;
+    this.machineCode = options.machineCode;
+    this.requestId = options.requestId;
     this.body = options.body;
   }
 }
@@ -25,6 +33,12 @@ export interface ConnectionTestResult {
   healthOk: boolean;
   authOk: boolean;
   message: string;
+}
+
+export type ResponseMode = "apiData" | "raw" | "envelope";
+
+export interface RequestOptions {
+  responseMode?: ResponseMode;
 }
 
 export function normalizeServerUrl(serverUrl: string): string {
@@ -101,23 +115,20 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-export async function request<T>(config: AxiosRequestConfig): Promise<T> {
+export async function request<T>(config: AxiosRequestConfig, options: RequestOptions = {}): Promise<T> {
+  const responseMode = options.responseMode ?? "apiData";
   const desktopProxy = resolveDesktopProxy();
   if (desktopProxy) {
-    return requestThroughDesktopProxy<T>(desktopProxy, config);
+    return requestThroughDesktopProxy<T>(desktopProxy, config, responseMode);
   }
   try {
-    const response = await client.request<ApiResult<T> | T>(config);
-    return unwrapApiResponse<T>(response.data);
+    const response = await client.request<unknown>(config);
+    return unwrapApiResponse<T>(response.data, responseMode);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const httpStatus = error.response?.status;
       if (error.response?.data) {
-        try {
-          return unwrapApiResponse<T>(error.response.data as ApiResult<T> | T, httpStatus);
-        } catch (apiError) {
-          throw apiError;
-        }
+        return unwrapApiResponse<T>(error.response.data, responseMode, httpStatus);
       }
       throw new ApiRequestError(resolveNetworkMessage(error.message), { httpStatus });
     }
@@ -125,11 +136,21 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
   }
 }
 
-async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig): Promise<T> {
+export function requestApiData<T>(config: AxiosRequestConfig): Promise<T> {
+  return request<T>(config, { responseMode: "apiData" });
+}
+
+export function requestRaw<T>(config: AxiosRequestConfig): Promise<T> {
+  return request<T>(config, { responseMode: "raw" });
+}
+
+export function requestEnvelope<T>(config: AxiosRequestConfig): Promise<ApiResult<T>> {
+  return request<ApiResult<T>>(config, { responseMode: "envelope" });
+}
+
+async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["collectorDesktop"]>["request"], config: AxiosRequestConfig, responseMode: ResponseMode): Promise<T> {
   try {
     const response = await desktopProxy({
-      serverUrl: currentServerUrl,
-      token: currentToken,
       url: String(config.url || ""),
       method: String(config.method || "GET").toUpperCase(),
       params: normalizeProxyParams(config.params),
@@ -137,7 +158,7 @@ async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["c
       headers: normalizeProxyRequestHeaders(config.headers),
       timeoutMs: typeof config.timeout === "number" ? config.timeout : Number(client.defaults.timeout) || undefined
     });
-    return unwrapProxyResponse<T>(response.body, response.status);
+    return unwrapProxyResponse<T>(response.body, response.status, responseMode);
   } catch (error) {
     if (error instanceof ApiRequestError) {
       throw error;
@@ -146,16 +167,12 @@ async function requestThroughDesktopProxy<T>(desktopProxy: NonNullable<Window["c
   }
 }
 
-function unwrapProxyResponse<T>(body: unknown, httpStatus: number): T {
-  try {
-    const data = unwrapApiResponse<T>(body as ApiResult<T> | T, httpStatus);
-    if (httpStatus < 200 || httpStatus >= 300) {
-      throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
-    }
-    return data;
-  } catch (error) {
-    throw error;
+function unwrapProxyResponse<T>(body: unknown, httpStatus: number, responseMode: ResponseMode): T {
+  const data = unwrapApiResponse<T>(body, responseMode, httpStatus);
+  if (httpStatus < 200 || httpStatus >= 300) {
+    throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
   }
+  return data;
 }
 
 function resolveHttpErrorMessage(body: unknown, httpStatus: number): string {
@@ -166,10 +183,7 @@ function resolveHttpErrorMessage(body: unknown, httpStatus: number): string {
 }
 
 function resolveDesktopProxy(): NonNullable<Window["collectorDesktop"]>["request"] | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return typeof window.collectorDesktop?.request === "function" ? window.collectorDesktop.request : null;
+  return isDesktopRuntime() ? window.collectorDesktop?.request || null : null;
 }
 
 function normalizeProxyParams(params: unknown): Record<string, unknown> | undefined {
@@ -184,18 +198,17 @@ function normalizeProxyRequestHeaders(headers: AxiosRequestConfig["headers"]): R
   return Object.fromEntries(Object.entries(normalized).map(([key, value]) => [key, String(value)]));
 }
 
-export function unwrapApiResponse<T>(body: ApiResult<T> | T, httpStatus?: number): T {
+export function unwrapApiResponse<T>(body: unknown, httpStatus?: number): T;
+export function unwrapApiResponse<T>(body: unknown, responseMode: ResponseMode, httpStatus?: number): T;
+export function unwrapApiResponse<T>(body: unknown, responseModeOrHttpStatus: ResponseMode | number = "apiData", maybeHttpStatus?: number): T {
+  const responseMode = typeof responseModeOrHttpStatus === "string" ? responseModeOrHttpStatus : "apiData";
+  const httpStatus = typeof responseModeOrHttpStatus === "number" ? responseModeOrHttpStatus : maybeHttpStatus;
+  assertSuccessfulResponseBody(body, httpStatus);
+  if (responseMode === "raw" || responseMode === "envelope") {
+    return body as T;
+  }
   if (body && typeof body === "object") {
     const apiBody = body as ApiResult<T>;
-    const status = String(apiBody.status || "").toLowerCase();
-    const code = typeof apiBody.code === "number" ? apiBody.code : undefined;
-    if (status === "error" || (code !== undefined && code !== 200)) {
-      throw new ApiRequestError(localizeApiMessage(apiBody.message, httpStatus || code), {
-        httpStatus,
-        code,
-        body
-      });
-    }
     if (Object.prototype.hasOwnProperty.call(apiBody, "data")) {
       return apiBody.data as T;
     }
@@ -203,9 +216,32 @@ export function unwrapApiResponse<T>(body: ApiResult<T> | T, httpStatus?: number
   return body as T;
 }
 
+function assertSuccessfulResponseBody(body: unknown, httpStatus?: number): void {
+  if (body && typeof body === "object") {
+    const apiBody = body as ApiResult<unknown>;
+    const status = String(apiBody.status || "").toLowerCase();
+    const code = typeof apiBody.code === "number" ? apiBody.code : undefined;
+    if (status === "error" || (code !== undefined && code !== 200 && code !== 0)) {
+      const machineCode = typeof apiBody.machineCode === "string" ? apiBody.machineCode : undefined;
+      const requestId = apiBody.extra && typeof apiBody.extra === "object"
+        && typeof apiBody.extra.requestId === "string" ? apiBody.extra.requestId : undefined;
+      throw new ApiRequestError(localizeApiMessage(apiBody.message, httpStatus ?? code), {
+        httpStatus,
+        code,
+        machineCode,
+        requestId,
+        body
+      });
+    }
+  }
+  if (httpStatus !== undefined && (httpStatus < 200 || httpStatus >= 300)) {
+    throw new ApiRequestError(resolveHttpErrorMessage(body, httpStatus), { httpStatus, body });
+  }
+}
+
 export async function testServerConnection(): Promise<ConnectionTestResult> {
-  const health = await request<unknown>({ url: "/health", method: "GET" });
-  if (!currentToken) {
+  const health = await requestRaw<unknown>({ url: "/health", method: "GET" });
+  if (!currentToken && !isDesktopRuntime()) {
     return {
       healthOk: Boolean(health),
       authOk: false,

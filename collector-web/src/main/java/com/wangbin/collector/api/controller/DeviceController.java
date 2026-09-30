@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
+import com.wangbin.collector.api.controller.dto.DeviceOperationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceStatisticsResponse;
 import com.wangbin.collector.api.controller.dto.DeviceStatusResponse;
 import com.wangbin.collector.common.web.result.ApiResult;
@@ -38,7 +39,7 @@ public class DeviceController {
      * @return 设备启动结果
      */
     @PostMapping("/{deviceId}/start")
-    public ApiResult<Object> startDevice(
+    public ApiResult<DeviceOperationResponse> startDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -52,7 +53,7 @@ public class DeviceController {
      * @return 设备启动结果
      */
     @PostMapping("/{deviceId}/start-local")
-    public ApiResult<Object> startLocalDevice(
+    public ApiResult<DeviceOperationResponse> startLocalDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -66,7 +67,7 @@ public class DeviceController {
      * @return 设备停止结果
      */
     @PostMapping("/{deviceId}/stop")
-    public ApiResult<Object> stopDevice(
+    public ApiResult<DeviceOperationResponse> stopDevice(
             @PathVariable
             @Pattern(regexp = ApiValidationConstants.DEVICE_ID_PATTERN,
                     message = ApiValidationConstants.DEVICE_ID_MESSAGE) String deviceId) {
@@ -127,12 +128,13 @@ public class DeviceController {
         return deviceConsoleApplicationService.getDeviceRuntimeSnapshots();
     }
 
-    /**
-     * 查询指定设备是否正在运行。
-     *
-     * @param deviceId 本地设备唯一标识
-     * @return 设备运行状态响应
-     */
+    @GetMapping("/{deviceId}/runtime")
+    public ApiResult<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshot(
+            @PathVariable String deviceId) {
+        return deviceConsoleApplicationService.getDeviceRuntimeSnapshot(deviceId);
+    }
+
+
     @GetMapping("/{deviceId}/running")
     public ApiResult<Object> isDeviceRunning(
             @PathVariable

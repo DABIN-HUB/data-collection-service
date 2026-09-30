@@ -46,6 +46,8 @@ public class SystemResourceSnapshot {
         private final int maxPoolSize;
         private final int activeCount;
         private final int queueSize;
+        private final int queueCapacity;
+        private final double queueUtilization;
         private final long completedTaskCount;
         private final long rejectedCount;
     }

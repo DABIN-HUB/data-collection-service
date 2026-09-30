@@ -1,6 +1,6 @@
 package com.wangbin.collector.api.application;
 
-import com.wangbin.collector.api.controller.dto.ConfigBundle;
+import com.alibaba.fastjson2.JSON;
 import com.wangbin.collector.api.controller.dto.ConfigCacheStatsResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDeviceListResponse;
 import com.wangbin.collector.api.controller.dto.ConfigDiffResponse;
@@ -9,7 +9,11 @@ import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
 import com.wangbin.collector.api.controller.dto.ConfigImportResult;
 import com.wangbin.collector.api.controller.dto.ConfigSummaryResponse;
 import com.wangbin.collector.api.controller.dto.ConfigSyncStatusResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleRequest;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigCommitResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConfigDetailResponse;
+import com.wangbin.collector.api.controller.dto.DeviceConfigValidationResponse;
 import com.wangbin.collector.api.controller.dto.DeviceConnectionConfigResponse;
 import com.wangbin.collector.api.controller.dto.DeviceIdResponse;
 import com.wangbin.collector.api.controller.dto.DevicePointConfigResponse;
@@ -20,36 +24,29 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.web.result.ApiResult;
-import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
-import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * 配置控制台应用服务。
  *
- * <p>集中承接配置查询、本地临时设备、同步触发、导入导出和差异计算编排，避免控制器承载业务细节。</p>
+ * <p>保留控制台配置 API 的稳定入口，直接处理通用查询、更新和同步用例，
+ * 本地临时设备、配置导入导出与差异计算委托给对应应用组件。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -57,9 +54,11 @@ public class ConfigConsoleApplicationService {
 
     private final ConfigManager configManager;
     private final ConfigSyncService configSyncService;
-    private final CollectionService collectionService;
     private final SensitiveConfigSanitizer sensitiveConfigSanitizer;
     private final PointRuntimeStateService pointRuntimeStateService;
+    private final LocalDeviceConfigApplicationService localDeviceConfigApplicationService;
+    private final ConfigImportExportApplicationService configImportExportApplicationService;
+    private final ConfigDiffCalculator configDiffCalculator;
 
     /**
      * 查询配置管理概览。
@@ -104,7 +103,7 @@ public class ConfigConsoleApplicationService {
      * @return 保存结果
      */
     public ApiResult<LocalDeviceConfigResponse> createLocalDevice(LocalDeviceConfigRequest request) {
-        return saveLocalDevice(request, null, request != null && request.isOverwrite());
+        return localDeviceConfigApplicationService.createLocalDevice(request);
     }
 
     /**
@@ -116,7 +115,7 @@ public class ConfigConsoleApplicationService {
      */
     public ApiResult<LocalDeviceConfigResponse> updateLocalDevice(String deviceId,
                                                                     LocalDeviceConfigRequest request) {
-        return saveLocalDevice(request, deviceId, true);
+        return localDeviceConfigApplicationService.updateLocalDevice(deviceId, request);
     }
 
     /**
@@ -126,21 +125,7 @@ public class ConfigConsoleApplicationService {
      * @return 本地临时设备配置响应
      */
     public ApiResult<LocalDeviceConfigResponse> getLocalDevice(String deviceId) {
-        if (!configManager.isLocalTemporaryDevice(deviceId)) {
-            return error("只能读取本地临时设备配置: " + deviceId);
-        }
-        ConfigBundle bundle = ConfigBundle.builder()
-                .device(configManager.getDevice(deviceId))
-                .connection(configManager.getConnectionConfig(deviceId))
-                .points(configManager.getDataPoints(deviceId))
-                .build();
-        LocalDeviceConfigResponse response = LocalDeviceConfigResponse.builder()
-                .deviceId(deviceId)
-                .configSource(ConfigManager.CONFIG_SOURCE_LOCAL)
-                .temporaryConfig(true)
-                .bundle(bundle)
-                .build();
-        return success(response);
+        return localDeviceConfigApplicationService.getLocalDevice(deviceId);
     }
 
     /**
@@ -150,24 +135,7 @@ public class ConfigConsoleApplicationService {
      * @return 删除结果
      */
     public ApiResult<DeviceIdResponse> deleteLocalDevice(String deviceId) {
-        try {
-            if (!configManager.isLocalTemporaryDevice(deviceId)) {
-                return error("只能删除本地临时设备配置: " + deviceId);
-            }
-            if (collectionService.isDeviceRunning(deviceId) && !collectionService.stopDevice(deviceId)) {
-                return error("设备正在运行且停止失败，未删除: " + deviceId);
-            }
-            boolean deleted = configManager.deleteLocalDeviceConfig(deviceId);
-            DeviceIdResponse response = DeviceIdResponse.builder()
-                    .deviceId(deviceId)
-                    .configSource(ConfigManager.CONFIG_SOURCE_LOCAL)
-                    .temporaryConfig(true)
-                    .build();
-            return deleted ? success("本地临时设备已删除", response)
-                    : error("本地临时设备不存在: " + deviceId);
-        } catch (RuntimeException exception) {
-            return error(exception.getMessage());
-        }
+        return localDeviceConfigApplicationService.deleteLocalDevice(deviceId);
     }
 
     /**
@@ -191,13 +159,62 @@ public class ConfigConsoleApplicationService {
         return success(response);
     }
 
-    /**
-     * 查询设备点位配置。
-     *
-     * @param deviceId 本地设备唯一标识
-     * @param includeAdaptive 是否包含运行期自适应字段
-     * @return 设备点位配置响应
-     */
+    public ApiResult<DeviceConfigBundleResponse> getDeviceBundle(String deviceId) {
+        if (!configManager.containsDevice(deviceId)) return notFound("设备不存在: " + deviceId);
+        DeviceInfo device = configManager.getDevice(deviceId);
+        DeviceConnection connection = sensitiveConfigSanitizer.sanitize(configManager.getConnectionConfig(deviceId));
+        return success(DeviceConfigBundleResponse.builder()
+                .deviceId(deviceId)
+                .configVersion(configManager.getDeviceConfigVersion(deviceId))
+                .device(device)
+                .connection(connection)
+                .points(configManager.getDataPoints(deviceId))
+                .configSource(configManager.isLocalTemporaryDevice(deviceId) ? ConfigManager.CONFIG_SOURCE_LOCAL : "remote")
+                .temporaryConfig(configManager.isLocalTemporaryDevice(deviceId))
+                .build());
+    }
+
+    public ApiResult<DeviceConfigValidationResponse> validateDeviceBundle(String deviceId, DeviceConfigBundleRequest request) {
+        long currentVersion = configManager.getDeviceConfigVersion(deviceId);
+        try {
+            normalizeBundle(deviceId, request);
+            sensitiveConfigSanitizer.restoreMaskedValues(request.getConnection(), configManager.getConnectionConfig(deviceId));
+            configManager.validateDeviceContext(deviceId, request.getDevice(), request.getConnection(), request.getPoints());
+            return success(DeviceConfigValidationResponse.builder().valid(true).currentVersion(currentVersion).build());
+        } catch (RuntimeException exception) {
+            return success(DeviceConfigValidationResponse.builder().valid(false).currentVersion(currentVersion)
+                    .errors(List.of(exception.getMessage() == null ? "配置校验失败" : exception.getMessage())).build());
+        }
+    }
+
+    public ApiResult<DeviceConfigCommitResponse> commitDeviceBundle(String deviceId, DeviceConfigBundleRequest request) {
+        normalizeBundle(deviceId, request);
+        sensitiveConfigSanitizer.restoreMaskedValues(request.getConnection(), configManager.getConnectionConfig(deviceId));
+        try {
+            ConfigManager.DeviceConfigCommitResult result = configManager.replaceDeviceContextAtomically(
+                    deviceId, request.getDevice(), request.getConnection(), request.getPoints(), request.getBaseVersion());
+            return success("完整设备配置已保存，配置版本 v" + result.configVersion(),
+                    DeviceConfigCommitResponse.builder().deviceId(deviceId).previousVersion(result.previousVersion())
+                            .configVersion(result.configVersion()).pointCount(result.pointCount()).build());
+        } catch (ConfigVersionConflictException exception) {
+            throw new ConfigApiException(HttpStatus.CONFLICT,
+                    "设备配置已被其他操作更新，请刷新后重新确认修改",
+                    Map.of("deviceId", deviceId, "expectedVersion", exception.getExpectedVersion(),
+                            "currentVersion", exception.getCurrentVersion()));
+        } catch (IllegalArgumentException exception) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, exception.getMessage(), null);
+        }
+    }
+
+    private void normalizeBundle(String deviceId, DeviceConfigBundleRequest request) {
+        if (request == null || request.getDevice() == null || request.getConnection() == null) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, "配置 Bundle 不能为空", null);
+        }
+        request.getDevice().setDeviceId(deviceId);
+        request.getConnection().setDeviceId(deviceId);
+        if (request.getPoints() != null) request.getPoints().forEach(point -> { if (point != null) point.setDeviceId(deviceId); });
+    }
+    /** 查询设备点位配置。 */
     public ApiResult<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
         if (!configManager.containsDevice(deviceId)) {
             return notFound("设备不存在: " + deviceId);
@@ -250,7 +267,7 @@ public class ConfigConsoleApplicationService {
         List<DataPoint> remotePoints = configSyncService.getPointConfigs()
                 .getOrDefault(deviceId, Collections.emptyList());
 
-        ConfigDiffResponse response = buildDiffResponse(local, remote, localConn, remoteConn,
+        ConfigDiffResponse response = configDiffCalculator.calculate(local, remote, localConn, remoteConn,
                 localPoints, remotePoints);
         return success(response);
     }
@@ -388,18 +405,7 @@ public class ConfigConsoleApplicationService {
      * @return 配置导出响应
      */
     public ApiResult<ConfigExportResponse> exportConfigs() {
-        List<DeviceContext> contexts = configManager.getAllDeviceContexts();
-        List<ConfigBundle> bundles = contexts.stream()
-                .map(ctx -> ConfigBundle.builder()
-                        .device(ctx.getDeviceInfo())
-                        .connection(sensitiveConfigSanitizer.sanitize(ctx.getConnectionConfig()))
-                        .points(ctx.getDataPoints())
-                        .build())
-                .collect(Collectors.toList());
-        ConfigExportResponse response = ConfigExportResponse.builder()
-                .bundles(bundles)
-                .build();
-        return success(response);
+        return configImportExportApplicationService.exportConfigs();
     }
 
     /**
@@ -409,66 +415,7 @@ public class ConfigConsoleApplicationService {
      * @return 配置导入结果
      */
     public ApiResult<ConfigImportResult> importConfigs(ConfigImportRequest request) {
-        if (request == null || CollectionUtils.isEmpty(request.getBundles())) {
-            return error("导入内容不能为空");
-        }
-        List<DeviceContext> importContexts = new ArrayList<>();
-        List<String> deviceIds = new ArrayList<>();
-        for (ConfigBundle bundle : request.getBundles()) {
-            ApiResult<ConfigImportResult> invalidResponse = appendImportContext(bundle, importContexts, deviceIds);
-            if (invalidResponse != null) {
-                return invalidResponse;
-            }
-        }
-
-        boolean imported = configManager.replaceDeviceContextsAtomically(importContexts);
-        if (!imported) {
-            ConfigImportResult result = ConfigImportResult.builder()
-                    .total(request.getBundles().size())
-                    .success(0)
-                    .failedDevices(deviceIds)
-                    .build();
-            return error("导入失败，现有配置未发生变化", result);
-        }
-        if (request.isReloadAfterImport()) {
-            collectionService.reloadAllDevices();
-        }
-
-        ConfigImportResult result = ConfigImportResult.builder()
-                .total(request.getBundles().size())
-                .success(request.getBundles().size())
-                .failedDevices(Collections.emptyList())
-                .build();
-        return success("导入完成", result);
-    }
-
-    /**
-     * 补充导入配置上下文。
-     */
-    private ApiResult<ConfigImportResult> appendImportContext(ConfigBundle bundle,
-                                                                List<DeviceContext> importContexts,
-                                                                List<String> deviceIds) {
-        String deviceId = resolveDeviceId(bundle);
-        if (!StringUtils.hasText(deviceId)) {
-            return error("导入内容存在缺少设备 ID 的配置");
-        }
-        DeviceInfo device = bundle.getDevice() != null ? bundle.getDevice() : configManager.getDevice(deviceId);
-        if (device == null) {
-            return error("导入设备不存在且未提供设备基础信息: " + deviceId);
-        }
-        device.setDeviceId(deviceId);
-
-        DeviceConnection connection = bundle.getConnection() != null
-                ? bundle.getConnection() : configManager.getConnectionConfig(deviceId);
-        if (connection != null) {
-            connection.setDeviceId(deviceId);
-            sensitiveConfigSanitizer.restoreMaskedValues(connection, configManager.getConnectionConfig(deviceId));
-        }
-        List<DataPoint> points = CollectionUtils.isEmpty(bundle.getPoints())
-                ? configManager.getDataPoints(deviceId) : bundle.getPoints();
-        importContexts.add(DeviceContext.of(device, connection, points));
-        deviceIds.add(deviceId);
-        return null;
+        return configImportExportApplicationService.importConfigs(request);
     }
 
     /**
@@ -481,6 +428,7 @@ public class ConfigConsoleApplicationService {
     private DataPoint withRuntimeState(String deviceId, DataPoint point) {
         DataPoint response = new DataPoint();
         BeanUtils.copyProperties(point, response);
+        response.setAlarmRule(JSON.toJSONString(point.getAlarmRule()));
         PointRuntimeStateSnapshot state = pointRuntimeStateService.snapshot(deviceId, point);
         response.setCurrentCollectionInterval(state.currentCollectionInterval());
         response.setStableCount(state.stableCount());
@@ -490,123 +438,6 @@ public class ConfigConsoleApplicationService {
         return response;
     }
 
-    /**
-     * 构建本地与远端配置差异。
-     */
-    private ConfigDiffResponse buildDiffResponse(DeviceInfo localDevice,
-                                                 DeviceInfo remoteDevice,
-                                                 DeviceConnection localConn,
-                                                 DeviceConnection remoteConn,
-                                                 List<DataPoint> localPoints,
-                                                 List<DataPoint> remotePoints) {
-        Map<String, DataPoint> localMap = indexPoints(localPoints);
-        Map<String, DataPoint> remoteMap = indexPoints(remotePoints);
-
-        Set<String> missing = new LinkedHashSet<>(remoteMap.keySet());
-        missing.removeAll(localMap.keySet());
-
-        Set<String> extra = new LinkedHashSet<>(localMap.keySet());
-        extra.removeAll(remoteMap.keySet());
-
-        List<String> changed = localMap.entrySet().stream()
-                .filter(entry -> remoteMap.containsKey(entry.getKey())
-                        && !Objects.equals(entry.getValue(), remoteMap.get(entry.getKey())))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
-
-        return ConfigDiffResponse.builder()
-                .deviceChanged(!Objects.equals(localDevice, remoteDevice))
-                .connectionChanged(!Objects.equals(localConn, remoteConn))
-                .missingPointCodes(new ArrayList<>(missing))
-                .extraPointCodes(new ArrayList<>(extra))
-                .changedPointCodes(changed)
-                .build();
-    }
-
-    /**
-     * 按点位编码索引点位配置。
-     *
-     * @param points 点位配置列表
-     * @return 点位编码到点位配置的映射
-     */
-    private Map<String, DataPoint> indexPoints(List<DataPoint> points) {
-        if (CollectionUtils.isEmpty(points)) {
-            return Collections.emptyMap();
-        }
-        return points.stream()
-                .filter(Objects::nonNull)
-                .filter(point -> StringUtils.hasText(point.getPointCode()))
-                .collect(Collectors.toMap(DataPoint::getPointCode,
-                        Function.identity(),
-                        (left, right) -> left,
-                        HashMap::new));
-    }
-
-    /**
-     * 从配置包中解析设备标识。
-     *
-     * @param bundle 配置包
-     * @return 本地设备唯一标识
-     */
-    private String resolveDeviceId(ConfigBundle bundle) {
-        if (bundle == null) {
-            return null;
-        }
-        if (bundle.getDevice() != null && StringUtils.hasText(bundle.getDevice().getDeviceId())) {
-            return bundle.getDevice().getDeviceId();
-        }
-        if (bundle.getConnection() != null && StringUtils.hasText(bundle.getConnection().getDeviceId())) {
-            return bundle.getConnection().getDeviceId();
-        }
-        return null;
-    }
-
-    /**
-     * 保存本地临时设备配置。
-     */
-    private ApiResult<LocalDeviceConfigResponse> saveLocalDevice(LocalDeviceConfigRequest request,
-                                                                   String pathDeviceId,
-                                                                   boolean overwrite) {
-        if (request == null || request.getDevice() == null) {
-            return error("本地设备配置不能为空");
-        }
-        DeviceInfo device = request.getDevice();
-        if (StringUtils.hasText(pathDeviceId)) {
-            device.setDeviceId(pathDeviceId);
-        }
-        if (!StringUtils.hasText(device.getDeviceId())) {
-            return error("deviceId 不能为空");
-        }
-        try {
-            boolean saved = configManager.saveLocalDeviceConfig(
-                    device,
-                    request.getConnection(),
-                    request.getPoints(),
-                    overwrite || request.isOverwrite());
-            if (!saved) {
-                return error("保存本地临时设备失败: " + device.getDeviceId());
-            }
-
-            boolean started = false;
-            if (request.isStartAfterSave()) {
-                started = collectionService.startLocalDevice(device.getDeviceId());
-            }
-
-            LocalDeviceConfigResponse response = LocalDeviceConfigResponse.builder()
-                    .deviceId(device.getDeviceId())
-                    .configSource(ConfigManager.CONFIG_SOURCE_LOCAL)
-                    .temporaryConfig(true)
-                    .started(started)
-                    .pointCount(request.getPoints() != null ? request.getPoints().size() : 0)
-                    .build();
-            String message = request.isStartAfterSave() && !started
-                    ? "本地临时设备已保存，但启动失败"
-                    : "本地临时设备已保存";
-            return success(message, response);
-        } catch (RuntimeException exception) {
-            return error(exception.getMessage());
-        }
-    }
 
     /**
      * 构建成功响应。

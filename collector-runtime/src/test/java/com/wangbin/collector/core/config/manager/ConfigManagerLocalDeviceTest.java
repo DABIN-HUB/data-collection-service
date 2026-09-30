@@ -7,20 +7,31 @@ import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
+import com.wangbin.collector.core.config.validator.ProtocolPointValidator;
+import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
+import org.springframework.beans.factory.ObjectProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.stream.Stream;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +51,122 @@ class ConfigManagerLocalDeviceTest {
                 eventPublisher,
                 new FieldUniquenessValidator(),
                 null);
+    }
+
+    @Test
+    void shouldNotRestoreRemovedDeviceFromConcurrentFullRefresh() throws Exception {
+        assertTrue(configManager.updateDeviceConfig(device("removed")));
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(configSyncService.loadAllDevices()).thenAnswer(invocation -> {
+            reading.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS));
+            return List.of(device("removed"));
+        });
+        CompletableFuture<Void> refresh = CompletableFuture.runAsync(() ->
+                ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig"));
+        try {
+            assertTrue(reading.await(5, TimeUnit.SECONDS));
+            assertTrue(configManager.clearDeviceConfig("removed"));
+        } finally {
+            resume.countDown();
+        }
+        refresh.get(5, TimeUnit.SECONDS);
+        assertFalse(configManager.containsDevice("removed"));
+    }
+
+    @Test
+    void shouldNotOverwriteConcurrentConnectionReload() throws Exception {
+        assertTrue(configManager.updateDeviceConfig(device("reloaded")));
+        DeviceConnection changed = connection("reloaded");
+        changed.setHost("192.0.2.15");
+        when(configSyncService.loadConnectionConfig("reloaded")).thenReturn(changed);
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        when(configSyncService.loadAllDevices()).thenAnswer(invocation -> {
+            reading.countDown();
+            assertTrue(resume.await(5, TimeUnit.SECONDS));
+            return List.of(device("reloaded"));
+        });
+        CompletableFuture<Void> refresh = CompletableFuture.runAsync(() ->
+                ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig"));
+        try {
+            assertTrue(reading.await(5, TimeUnit.SECONDS));
+            ReflectionTestUtils.invokeMethod(configManager, "reloadConnectionConfig", "reloaded");
+        } finally {
+            resume.countDown();
+        }
+        refresh.get(5, TimeUnit.SECONDS);
+        assertEquals("192.0.2.15", configManager.getConnectionConfig("reloaded").getHost());
+    }
+
+    @Test
+    void shouldKeepCommittedBundleAndLegacyUpdateAfterEventFailure() {
+        assertTrue(configManager.updateDeviceConfig(device("event-failure")));
+        long version = configManager.getDeviceConfigVersion("event-failure");
+        doThrow(new IllegalStateException("listener failed")).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any());
+        DeviceInfo replacement = device("event-failure");
+        replacement.setDeviceName("committed");
+        assertTrue(configManager.updateDeviceConfig(replacement));
+        assertEquals("committed", configManager.getDevice("event-failure").getDeviceName());
+        long nextVersion = configManager.getDeviceConfigVersion("event-failure");
+        assertTrue(nextVersion > version);
+        DeviceInfo bundleDevice = device("event-failure");
+        bundleDevice.setDeviceName("bundle committed");
+        configManager.replaceDeviceContextAtomically("event-failure", bundleDevice, null, List.of(), nextVersion);
+        assertEquals("bundle committed", configManager.getDevice("event-failure").getDeviceName());
+        assertTrue(configManager.getDeviceConfigVersion("event-failure") > nextVersion);
+    }
+
+    @Test
+    void shouldDefaultNewMqttPointsToSubscribeWithoutChangingExplicitMode() {
+        DeviceInfo mqtt = device("mqtt-local");
+        mqtt.setProtocolType("MQTT");
+        DeviceConnection broker = connection("mqtt-local");
+        broker.setConnectionType("MQTT");
+        DataPoint defaultPoint = point("mqtt-local");
+        defaultPoint.setCollectionMode(null);
+        assertTrue(configManager.saveLocalDeviceConfig(mqtt, broker, List.of(defaultPoint), false));
+        assertEquals("SUBSCRIBE", configManager.getDataPoints("mqtt-local").get(0).getCollectionMode());
+        assertNull(defaultPoint.getCollectionMode());
+
+        DeviceInfo second = device("mqtt-explicit");
+        second.setProtocolType("MQTT");
+        DataPoint polling = point("mqtt-explicit");
+        polling.setCollectionMode("POLLING");
+        assertTrue(configManager.saveLocalDeviceConfig(second, connection("mqtt-explicit"),
+                List.of(polling), false));
+        assertEquals("POLLING", configManager.getDataPoints("mqtt-explicit").get(0).getCollectionMode());
+    }
+
+    @Test
+    void shouldDefaultImportedMqttPointToSubscribe() {
+        DeviceInfo mqtt = device("mqtt-import");
+        mqtt.setProtocolType("MQTT");
+        DataPoint point = point("mqtt-import");
+        point.setCollectionMode(null);
+        assertTrue(configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(mqtt, connection("mqtt-import"), List.of(point)))));
+        assertEquals("SUBSCRIBE", configManager.getDataPoints("mqtt-import").get(0).getCollectionMode());
+    }
+
+    @Test
+    void shouldRollBackLocalPartialUpdateWhenPersistenceFails() {
+        LocalDeviceConfigStore store = mock(LocalDeviceConfigStore.class);
+        ConfigManager manager = new ConfigManager(configSyncService, eventPublisher,
+                new FieldUniquenessValidator(), store);
+        assertTrue(manager.saveLocalDeviceConfig(device("rollback"), connection("rollback"),
+                List.of(point("rollback")), false));
+        long oldVersion = manager.getDeviceConfigVersion("rollback");
+        DeviceContext oldContext = manager.getDeviceContext("rollback");
+        DataPoint replacement = point("rollback");
+        replacement.setAddress("40002");
+        doThrow(new IllegalStateException("磁盘不可用")).when(store).save(org.mockito.ArgumentMatchers.anyList());
+
+        assertFalse(manager.updateDataPoints("rollback", List.of(replacement)));
+        assertEquals("40001", manager.getDataPoints("rollback").get(0).getAddress());
+        assertSame(oldContext, manager.getDeviceContext("rollback"));
+        assertEquals(oldVersion, manager.getDeviceConfigVersion("rollback"));
     }
 
     @Test
@@ -108,6 +235,195 @@ class ConfigManagerLocalDeviceTest {
     }
 
     @Test
+    void shouldPreserveAllLiveCachesAndVersionWhenCandidatePointLoadFails() {
+        DeviceInfo original = device("stable-1");
+        assertTrue(configManager.updateDeviceConfig(original));
+        assertTrue(configManager.updateConnectionConfig("stable-1", connection("stable-1")));
+        assertTrue(configManager.updateDataPoints("stable-1", List.of(point("stable-1"))));
+        long originalVersion = configManager.getDeviceConfigVersion("stable-1");
+        DeviceInfo originalDevice = configManager.getDevice("stable-1");
+        DeviceConnection originalConnection = configManager.getConnectionConfig("stable-1");
+        List<DataPoint> originalPoints = configManager.getDataPoints("stable-1");
+        DeviceContext originalContext = configManager.getDeviceContext("stable-1");
+
+        when(configSyncService.loadAllDevices()).thenReturn(List.of(device("new-a"), device("new-b")));
+        when(configSyncService.loadDataPoints("new-a")).thenReturn(List.of(point("new-a")));
+        when(configSyncService.loadDataPoints("new-b")).thenThrow(new IllegalStateException("points down"));
+        when(configSyncService.loadConnectionConfig("new-a")).thenReturn(connection("new-a"));
+
+        ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig");
+
+        assertSame(originalDevice, configManager.getDevice("stable-1"));
+        assertSame(originalConnection, configManager.getConnectionConfig("stable-1"));
+        assertEquals(originalPoints, configManager.getDataPoints("stable-1"));
+        assertSame(originalContext, configManager.getDeviceContext("stable-1"));
+        assertEquals(originalVersion, configManager.getDeviceConfigVersion("stable-1"));
+        assertFalse(configManager.containsDevice("new-a"));
+        assertFalse(configManager.containsDevice("new-b"));
+    }
+
+    @Test
+    void shouldPreserveLiveCachesWhenCandidateConnectionLoadFails() {
+        assertTrue(configManager.updateDeviceConfig(device("stable-2")));
+        assertTrue(configManager.updateConnectionConfig("stable-2", connection("stable-2")));
+        assertTrue(configManager.updateDataPoints("stable-2", List.of(point("stable-2"))));
+        long originalVersion = configManager.getDeviceConfigVersion("stable-2");
+        DeviceContext originalContext = configManager.getDeviceContext("stable-2");
+
+        when(configSyncService.loadAllDevices()).thenReturn(List.of(device("new-c")));
+        when(configSyncService.loadDataPoints("new-c")).thenReturn(List.of(point("new-c")));
+        when(configSyncService.loadConnectionConfig("new-c")).thenThrow(new IllegalStateException("connection down"));
+
+        ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig");
+
+        assertSame(originalContext, configManager.getDeviceContext("stable-2"));
+        assertEquals(originalVersion, configManager.getDeviceConfigVersion("stable-2"));
+        assertFalse(configManager.containsDevice("new-c"));
+    }
+
+    @Test
+    void shouldRefreshLocalTemporaryDeviceFromCacheWithoutRemoteAccess() {
+        when(configSyncService.loadDevice("local-1")).thenReturn(null);
+        configManager.saveLocalDeviceConfig(
+                device("local-1"),
+                connection("local-1"),
+                List.of(point("local-1")),
+                false);
+
+        assertTrue(configManager.refreshDeviceConfig("local-1"));
+
+        verify(configSyncService, never()).loadDevice("local-1");
+        verify(configSyncService, never()).loadDataPoints("local-1");
+        verify(configSyncService, never()).loadConnectionConfig("local-1");
+        assertTrue(configManager.containsDevice("local-1"));
+        assertTrue(configManager.isLocalTemporaryDevice("local-1"));
+        assertNotNull(configManager.getConnectionConfig("local-1"));
+        assertFalse(configManager.getDataPoints("local-1").isEmpty());
+        assertNotNull(configManager.getDeviceContext("local-1"));
+    }
+
+    @Test
+    void shouldPreserveExactLocalConfigDuringRefresh() {
+        configManager.saveLocalDeviceConfig(
+                device("local-exact"),
+                connection("local-exact"),
+                List.of(point("local-exact")),
+                false);
+
+        assertTrue(configManager.refreshDeviceConfig("local-exact"));
+
+        DeviceConnection savedConnection = configManager.getConnectionConfig("local-exact");
+        DataPoint savedPoint = configManager.getDataPoints("local-exact").get(0);
+        DeviceContext savedContext = configManager.getDeviceContext("local-exact");
+        assertEquals("127.0.0.1", savedConnection.getHost());
+        assertEquals(502, savedConnection.getPort());
+        assertEquals("temperature", savedPoint.getPointCode());
+        assertEquals("40001", savedPoint.getAddress());
+        assertNotNull(savedContext);
+        assertNotNull(savedContext.getConnectionConfig());
+        assertEquals("temperature", savedContext.getDataPoints().get(0).getPointCode());
+    }
+
+    @Test
+    void shouldReplaceLocalPointsInCacheAndContextWhenOverwriting() {
+        configManager.saveLocalDeviceConfig(
+                device("local-replace"),
+                connection("local-replace"),
+                List.of(point("local-replace")),
+                false);
+
+        DataPoint replacement = point("local-replace");
+        replacement.setPointCode("spindle_speed");
+        replacement.setAddress("40004");
+        assertTrue(configManager.saveLocalDeviceConfig(
+                device("local-replace"),
+                connection("local-replace"),
+                List.of(replacement),
+                true));
+
+        assertEquals("spindle_speed", configManager.getDataPoints("local-replace").get(0).getPointCode());
+        assertEquals("40004", configManager.getDataPoints("local-replace").get(0).getAddress());
+        assertEquals("spindle_speed", configManager.getDeviceContext("local-replace").getDataPoints().get(0).getPointCode());
+    }
+
+    @Test
+    void shouldLoadHistoricalRemotePointsWithoutRejectingValidSiblings() {
+        ProtocolPointValidator validator = new ProtocolPointValidator() {
+            @Override
+            public boolean supports(DeviceInfo device) {
+                return "OMRON_FINS".equals(device.getProtocolType());
+            }
+
+            @Override
+            public void validate(List<DataPoint> points) {
+                for (DataPoint point : points) {
+                    if ("bad".equals(point.getAddress())) {
+                        throw new IllegalArgumentException("无效的 FINS 地址");
+                    }
+                }
+            }
+        };
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ProtocolPointValidator> provider = mock(ObjectProvider.class);
+        when(provider.orderedStream()).thenReturn(Stream.of(validator));
+        ConfigManager manager = new ConfigManager(configSyncService, eventPublisher,
+                new FieldUniquenessValidator(), null, null, provider);
+        DeviceInfo remote = device("fins-history");
+        remote.setProtocolType("OMRON_FINS");
+        DataPoint bad = point("fins-history");
+        bad.setPointId("bad");
+        bad.setAddress("bad");
+        DataPoint good = point("fins-history");
+        good.setPointId("good");
+        good.setPointCode("good");
+        good.setAddress("D100");
+        when(configSyncService.loadDevice("fins-history")).thenReturn(remote);
+        when(configSyncService.loadDataPoints("fins-history")).thenReturn(List.of(bad, good));
+
+        assertTrue(manager.refreshDeviceConfig("fins-history"));
+        assertEquals(2, manager.getDataPoints("fins-history").size());
+        assertEquals("bad", manager.getDataPoints("fins-history").get(0).getAddress());
+        assertEquals("D100", manager.getDataPoints("fins-history").get(1).getAddress());
+    }
+
+    @Test
+    void shouldRefreshRemoteDeviceFromRemoteSource() {
+        DeviceInfo remoteDevice = device("remote-refresh");
+        DeviceConnection remoteConnection = connection("remote-refresh");
+        DataPoint remotePoint = point("remote-refresh");
+        when(configSyncService.loadDevice("remote-refresh")).thenReturn(remoteDevice);
+        when(configSyncService.loadDataPoints("remote-refresh")).thenReturn(List.of(remotePoint));
+        when(configSyncService.loadConnectionConfig("remote-refresh")).thenReturn(remoteConnection);
+
+        assertTrue(configManager.refreshDeviceConfig("remote-refresh"));
+
+        verify(configSyncService).loadDevice("remote-refresh");
+        verify(configSyncService).loadDataPoints("remote-refresh");
+        verify(configSyncService).loadConnectionConfig("remote-refresh");
+        assertTrue(configManager.containsDevice("remote-refresh"));
+        assertFalse(configManager.isLocalTemporaryDevice("remote-refresh"));
+        assertEquals("127.0.0.1", configManager.getConnectionConfig("remote-refresh").getHost());
+    }
+
+    @Test
+    void shouldNotResurrectConnectionCacheAfterRemoteDeviceDeletion() {
+        assertTrue(configManager.updateDeviceConfig(device("deleted-remote")));
+        assertTrue(configManager.updateConnectionConfig("deleted-remote", connection("deleted-remote")));
+        assertTrue(configManager.updateDataPoints("deleted-remote", List.of(point("deleted-remote"))));
+        when(configSyncService.loadDevice("deleted-remote")).thenReturn(null);
+        when(configSyncService.loadConnectionConfig("deleted-remote")).thenReturn(connection("deleted-remote"));
+
+        assertFalse(configManager.refreshDeviceConfig("deleted-remote"));
+        assertFalse(configManager.containsDevice("deleted-remote"));
+        assertNull(configManager.getConnectionConfig("deleted-remote"));
+        assertNull(configManager.getDeviceContext("deleted-remote"));
+        assertEquals(0L, configManager.getDeviceConfigVersion("deleted-remote"));
+        ReflectionTestUtils.invokeMethod(configManager, "handleConfigChange",
+                ConfigUpdateEvent.createConnectionUpdateEvent("deleted-remote"));
+        assertNull(configManager.getConnectionConfig("deleted-remote"));
+    }
+
+    @Test
     void shouldRemoveConnectionCacheWhenRemoteConnectionIsDeleted() {
         assertTrue(configManager.updateDeviceConfig(device("remote-1")));
         assertTrue(configManager.updateConnectionConfig("remote-1", connection("remote-1")));
@@ -129,6 +445,31 @@ class ConfigManagerLocalDeviceTest {
         verify(eventPublisher, times(1)).publishEvent(argThat((Object event) ->
                 event instanceof ConfigUpdateEvent updateEvent
                         && ConfigUpdateType.ALL.getValue().equals(updateEvent.getConfigType())));
+    }
+
+    @Test
+    void shouldValidateBundleWithoutChangingCallerOrCachedObjects() {
+        DeviceInfo existing = device("valid-target");
+        assertTrue(configManager.updateDeviceConfig(existing));
+        DeviceInfo candidate = device("other-device");
+        DataPoint point = point("other-device");
+        configManager.validateDeviceContext("valid-target", candidate, null, List.of(point));
+
+        assertEquals("other-device", candidate.getDeviceId());
+        assertEquals("other-device", point.getDeviceId());
+        assertEquals("valid-target", configManager.getDevice("valid-target").getDeviceId());
+    }
+
+    @Test
+    void shouldBindImportedPointIdentityToTargetDevice() {
+        DeviceInfo imported = device("import-target");
+        DataPoint sourcePoint = point("other-device");
+        sourcePoint.setPointId("point-1");
+        assertTrue(configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(imported, connection("import-target"), List.of(sourcePoint)))));
+
+        assertEquals("import-target", configManager.getDataPoints("import-target").get(0).getDeviceId());
+        assertEquals("other-device", sourcePoint.getDeviceId());
     }
 
     @Test

@@ -60,6 +60,42 @@ class McResponseParserTest {
         assertEquals("MC 4E response serial mismatch: request=0x1234, response=0x1235", exception.getMessage());
     }
 
+    @Test
+    void rejectsCrossFrameOrWrongRouteRepliesBeforePayloadUse() {
+        com.wangbin.collector.common.domain.entity.DeviceConnection config = new com.wangbin.collector.common.domain.entity.DeviceConnection();
+        com.wangbin.collector.core.collector.protocol.mc.domain.McAddress address =
+                new com.wangbin.collector.core.collector.protocol.mc.domain.McAddress("D100", "D100",
+                        com.wangbin.collector.core.collector.protocol.mc.domain.McDeviceCode.D, 100,
+                        com.wangbin.collector.core.collector.protocol.mc.domain.McDriverType.UINT16, 1, null, null);
+        byte[] binaryRequest = McFrameBuilder.buildBatchRead(address, config);
+        byte[] binaryResponse = response(0, new byte[]{1, 0});
+        new Mc3eBinaryFrameCodec().validateResponse(binaryRequest, binaryResponse);
+        binaryResponse[3] = 0;
+        assertThrows(IllegalArgumentException.class,
+                () -> new Mc3eBinaryFrameCodec().validateResponse(binaryRequest, binaryResponse));
+        byte[] asciiRequest = McFrameBuilder.buildAsciiBatchRead(address, config);
+        byte[] asciiReply = asciiResponse(0, "0001".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        new Mc3eAsciiFrameCodec().validateResponse(asciiRequest, asciiReply);
+        asciiReply[4] = 'F';
+        assertThrows(IllegalArgumentException.class,
+                () -> new Mc3eAsciiFrameCodec().validateResponse(asciiRequest, asciiReply));
+        byte[] request4e = McFrameBuilder.build4eBatchRead(address, config, 0x1234);
+        byte[] reply4e = response4e(0, new byte[]{1, 0});
+        reply4e[6] = request4e[6];
+        reply4e[7] = request4e[7];
+        reply4e[8] = request4e[8];
+        reply4e[9] = request4e[9];
+        reply4e[10] = request4e[10];
+        new Mc4eBinaryFrameCodec().validateResponse(request4e, reply4e);
+        reply4e[7] = 0;
+        assertThrows(IllegalArgumentException.class,
+                () -> new Mc4eBinaryFrameCodec().validateResponse(request4e, reply4e));
+        reply4e[7] = request4e[7];
+        reply4e[2]++;
+        assertThrows(IllegalArgumentException.class,
+                () -> new Mc4eBinaryFrameCodec().validateResponse(request4e, reply4e));
+    }
+
     private byte[] response(int endCode, byte[] payload) {
         byte[] safePayload = payload != null ? payload : new byte[0];
         int dataLength = 2 + safePayload.length;

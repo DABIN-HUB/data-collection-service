@@ -80,23 +80,22 @@ public class MessageBatchDispatcher<T> implements AutoCloseable {
     /**
      * 执行当前业务逻辑。
      */
-    public void enqueue(T item) throws InterruptedException {
+    public boolean enqueue(T item) throws InterruptedException {
         if (item == null) {
-            return;
+            return false;
         }
         switch (overflowStrategy) {
             case DROP_LATEST:
-                queue.offer(item);
-                break;
+                return queue.offer(item);
             case DROP_OLDEST:
                 while (!queue.offer(item)) {
                     queue.poll();
                 }
-                break;
+                return true;
             case BLOCK:
             default:
                 queue.put(item);
-                break;
+                return true;
         }
     }
 

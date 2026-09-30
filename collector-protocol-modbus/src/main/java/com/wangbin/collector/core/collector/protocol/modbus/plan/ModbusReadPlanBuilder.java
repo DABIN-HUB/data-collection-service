@@ -6,6 +6,7 @@ import com.wangbin.collector.core.collector.protocol.modbus.domain.*;
 import com.wangbin.collector.core.collector.protocol.modbus.utils.ModbusGroupingUtil;
 
 import java.util.*;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -22,9 +23,15 @@ public class ModbusReadPlanBuilder {
     public static List<ModbusReadPlan> build(String deviceId,List<DataPoint> points,
                                              Function<DataPoint, Integer> unitIdResolver,
                                              Function<String, ModbusAddress> addressParser) {
+        return build(deviceId, points, unitIdResolver, (point, ignored) -> addressParser.apply(point.getAddress()));
+    }
+
+    public static List<ModbusReadPlan> build(String deviceId, List<DataPoint> points,
+                                             Function<DataPoint, Integer> unitIdResolver,
+                                             BiFunction<DataPoint, String, ModbusAddress> addressParser) {
         Map<Integer, Map<RegisterType, List<GroupedPoint>>> grouped = new HashMap<>();
         for (DataPoint p : points) {
-            ModbusAddress addr = addressParser.apply(p.getAddress());
+            ModbusAddress addr = addressParser.apply(p, p.getAddress());
             int unitId = unitIdResolver.apply(p);
             grouped.computeIfAbsent(unitId, k -> new EnumMap<>(RegisterType.class))
                     .computeIfAbsent(addr.getRegisterType(), k -> new ArrayList<>())
@@ -82,9 +89,9 @@ public class ModbusReadPlanBuilder {
                 continue;
             }
 
-            int expectedAddress = chunkStart + chunkQuantity;
-            boolean contiguous = address == expectedAddress;
-            boolean exceedsLimit = chunkQuantity + registerCount > limit;
+            int pointEnd = address + registerCount;
+            boolean contiguous = address <= chunkStart + chunkQuantity;
+            boolean exceedsLimit = pointEnd - chunkStart > limit;
 
             if (!contiguous || exceedsLimit) {
                 plans.add(buildPlan(deviceId, unitId, type, chunkStart, chunkQuantity, chunk));
@@ -94,7 +101,7 @@ public class ModbusReadPlanBuilder {
                 chunkQuantity = registerCount;
             } else {
                 chunk.add(gp);
-                chunkQuantity += registerCount;
+                chunkQuantity = Math.max(chunkQuantity, pointEnd - chunkStart);
             }
         }
 

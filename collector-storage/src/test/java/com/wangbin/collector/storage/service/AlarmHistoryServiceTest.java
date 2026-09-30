@@ -52,6 +52,7 @@ class AlarmHistoryServiceTest {
                 .message("temperature high")
                 .value(12.5)
                 .unit("C")
+                .lastOccurredAt(1100L)
                 .timestamp(1234L)
                 .build();
 
@@ -77,8 +78,55 @@ class AlarmHistoryServiceTest {
                 eq(12L),
                 eq(null),
                 eq("C"),
-                anyString()
+                anyString(),
+                eq(null), eq(null), eq(null), eq(1100L), eq(0L)
         );
+    }
+
+    @Test
+    void recoveryLookupRejectsOversizedBatchesAndReturnsEmptyForBlankIds() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        AlarmHistoryService service = new AlarmHistoryService(alarmRepository, dataRepository,
+                properties, objectMapper, directExecutor);
+        assertThat(service.queryRecoveriesByAlarmIds(List.of("", " "))).isEmpty();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.queryRecoveriesByAlarmIds(
+                java.util.stream.IntStream.range(0, 201).mapToObj(String::valueOf).toList()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void migratesMissingLifecycleColumnsAndReadsLegacyPayload() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        Map<String, Object> row = new HashMap<>();
+        row.put("alarm_event_type", "ALARM");
+        row.put("alarm_id", "structured-1");
+        row.put("payload_json", "{\"eventId\":\"legacy-1\",\"relatedEventId\":\"related-1\",\"startedAt\":123,\"lastOccurredAt\":124,\"durationMillis\":10}");
+        when(alarmRepository.queryRecentAlarmActivations(eq("wangbin_collector"), eq("alarm_super"),
+                eq(null), eq(null), eq(null), eq(null), eq(null), eq(null), eq(null), eq(10))).thenReturn(List.of(row));
+        AlarmHistoryService service = new AlarmHistoryService(alarmRepository, dataRepository,
+                properties, objectMapper, directExecutor);
+        List<Map<String, Object>> result = service.queryRecentAlarmActivations(null, null, null, null, null, null, null, 10);
+        verify(alarmRepository).addAlarmLifecycleColumn("wangbin_collector", "alarm_super", "alarm_id", "NCHAR(128)");
+        verify(alarmRepository).addAlarmLifecycleColumn("wangbin_collector", "alarm_super", "alarm_duration_ms", "BIGINT");
+        assertThat(result.get(0)).containsEntry("alarmId", "structured-1")
+                .containsEntry("relatedAlarmId", "related-1")
+                .containsEntry("alarmStartedAt", 123)
+                .containsEntry("alarmLastOccurredAt", 124)
+                .containsEntry("alarmDurationMs", 10);
+    }
+
+    @Test
+    void recoveryLookupDeduplicatesIdsBeforeMapperQuery() {
+        TdengineProperties properties = new TdengineProperties();
+        properties.setEnabled(true);
+        AlarmHistoryService service = new AlarmHistoryService(alarmRepository, dataRepository,
+                properties, objectMapper, directExecutor);
+        when(alarmRepository.queryRecoveriesByAlarmIds("wangbin_collector", "alarm_super", List.of("a-1")))
+                .thenReturn(List.of());
+        assertThat(service.queryRecoveriesByAlarmIds(List.of(" a-1 ", "a-1"))).isEmpty();
+        verify(alarmRepository).queryRecoveriesByAlarmIds("wangbin_collector", "alarm_super", List.of("a-1"));
     }
 
     @Test

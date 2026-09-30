@@ -1,0 +1,56 @@
+{
+  "bundles": [
+    {
+      "device": {
+        "id": "ref_fins_case_c",
+        "deviceId": "ref_fins_case_c",
+        "deviceName": "REF_FINS_CASE_C",
+        "protocolType": "OMRON_FINS",
+        "connectionType": "OMRON_FINS",
+        "ipAddress": "127.0.0.1",
+        "host": "127.0.0.1",
+        "port": 19600,
+        "collectionInterval": 1000,
+        "configSource": "local",
+        "temporaryConfig": true,
+        "status": "OFFLINE"
+      },
+      "connection": {
+        "deviceId": "ref_fins_case_c",
+        "connectionType": "OMRON_FINS",
+        "host": "127.0.0.1",
+        "port": 19600,
+        "extJson": {
+          "plcNode": 1,
+          "localNode": 0,
+          "plcUnit": 0,
+          "localUnit": 0,
+          "plcNetwork": 0,
+          "localNetwork": 0,
+          "transport": "UDP"
+        }
+      },
+      "points": [
+        {
+          "pointId": "ref_fins_case_c-run_status",
+          "pointCode": "run_status",
+          "pointName": "run_status",
+          "deviceId": "ref_fins_case_c",
+          "address": "CIO0",
+          "dataType": "BOOLEAN",
+          "readWrite": "RW",
+          "unit": "",
+          "collectionMode": "POLLING",
+          "status": 1,
+          "cacheEnabled": 1,
+          "alarmEnabled": 0,
+          "additionalConfig": {
+            "reportEnabled": true,
+            "reportField": "run_status"
+          }
+        }
+      ]
+    }
+  ],
+  "reloadAfterImport": false
+}

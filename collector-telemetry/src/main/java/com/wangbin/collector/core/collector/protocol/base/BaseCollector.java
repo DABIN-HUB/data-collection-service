@@ -14,8 +14,11 @@ import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.runtime.SubscriptionFallbackStrategy;
 import com.wangbin.collector.core.collector.runtime.SubscriptionRuntimeMode;
+import com.wangbin.collector.core.port.DeviceDataActivityReporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.wangbin.collector.core.cache.aspect.InvocationProcessResultSource;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.port.ExceptionReporter;
@@ -27,7 +30,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -54,6 +56,33 @@ public abstract class BaseCollector implements ProtocolCollector,
     protected DataQualityProcessor dataQualityProcessor;
     protected ExceptionReporter exceptionReporter;
     protected TelemetryIngressService telemetryIngressService;
+    protected DeviceDataActivityReporter deviceDataActivityReporter;
+    private AcquisitionRuntimeTracker acquisitionRuntimeTracker;
+
+    @Autowired(required = false)
+    public void setAcquisitionRuntimeTracker(AcquisitionRuntimeTracker tracker) {
+        this.acquisitionRuntimeTracker = tracker;
+    }
+
+    /** 子类仅在真实协议握手/订阅确认后调用，代次不匹配的旧采集器事件会被忽略。 */
+    protected void reportProtocolReady() {
+        if (acquisitionRuntimeTracker != null && deviceInfo != null) {
+            acquisitionRuntimeTracker.recordProtocolReady(deviceInfo.getDeviceId(), runtimeGeneration);
+        }
+    }
+
+    /** 子类在局部请求失败且仍有其他点可继续采集时报告逐点失败。 */
+    protected void reportPointFailure(DataPoint point, String reason) {
+        if (acquisitionRuntimeTracker != null && deviceInfo != null && point != null) {
+            acquisitionRuntimeTracker.recordPointFailure(deviceInfo.getDeviceId(), runtimeGeneration,
+                    point.getPointId(), reason, System.currentTimeMillis());
+        }
+    }
+
+    @Autowired(required = false)
+    public void setDeviceDataActivityReporter(DeviceDataActivityReporter reporter) {
+        this.deviceDataActivityReporter = reporter;
+    }
 
     /**
      * 注入采集器通用依赖。
@@ -78,6 +107,13 @@ protected volatile boolean connected = false;
     protected volatile long lastConnectTime;
     protected volatile long lastDisconnectTime;
     protected volatile long lastActivityTime;
+    protected volatile long runtimeGeneration;
+
+    @Override
+    public void setRuntimeGeneration(long generation) {
+        this.runtimeGeneration = generation;
+    }
+
 
     // 统计信息
     protected AtomicLong totalReadCount = new AtomicLong(0);
@@ -126,6 +162,9 @@ protected volatile boolean connected = false;
 
         try {
             log.info("开始连接设备:  {}", deviceInfo.getDeviceId());
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.resetProtocolReady(deviceInfo.getDeviceId(), runtimeGeneration);
+            }
             connectionStatus = "CONNECTING";
 
             // 执行实际连接逻辑
@@ -320,8 +359,7 @@ protected volatile boolean connected = false;
             lastError = e.getMessage();
             log.error("批量点位读取失败: {}", deviceInfo.getDeviceId(), e);
             recordException(e, null);
-            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(),
-                    null, DataQuality.DEVICE_ERROR);
+            throw new CollectorException("批量点位读取失败", deviceInfo.getDeviceId(), null, e);
         }
     }
 
@@ -806,10 +844,13 @@ protected volatile boolean connected = false;
                         resolvedDeviceId, point.getPointName(), processResult.getMessage());
             }
 
-            lastActivityTime = System.currentTimeMillis();
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, processResult);
+                telemetryIngressService.append(resolvedDeviceId, point, processResult, runtimeGeneration);
             }
+            if (processResult.isSuccess() && deviceDataActivityReporter != null) {
+                deviceDataActivityReporter.recordSuccessfulData(resolvedDeviceId, runtimeGeneration, collectTime);
+            }
+            lastActivityTime = System.currentTimeMillis();
             return processResult;
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
@@ -822,7 +863,7 @@ protected volatile boolean connected = false;
             enrichTelemetryMetadata(error, rawValue, null, collectTime, "PUSH");
             lastProcessResults.put(point.getPointId(), error);
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, error);
+                telemetryIngressService.append(resolvedDeviceId, point, error, runtimeGeneration);
             }
             return error;
         }

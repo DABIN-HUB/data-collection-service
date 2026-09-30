@@ -1,9 +1,15 @@
 package com.wangbin.collector.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.api.application.ConfigDiffCalculator;
 import com.wangbin.collector.api.application.ConfigConsoleApplicationService;
+import com.wangbin.collector.api.application.ConfigImportExportApplicationService;
+import com.wangbin.collector.api.application.LocalDeviceConfigApplicationService;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
+import com.wangbin.collector.api.filter.RequestCorrelationFilter;
+import com.wangbin.collector.api.exception.ConfigApiException;
+import com.wangbin.collector.api.exception.ConfigApiExceptionHandler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -17,6 +23,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -38,7 +46,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(ConfigController.class)
-@Import({ConfigConsoleApplicationService.class, SensitiveConfigSanitizer.class})
+@Import({ConfigConsoleApplicationService.class,
+        LocalDeviceConfigApplicationService.class,
+        ConfigImportExportApplicationService.class,
+        ConfigDiffCalculator.class,
+        SensitiveConfigSanitizer.class})
 class ConfigControllerTest {
 
     @Autowired
@@ -73,7 +85,7 @@ class ConfigControllerTest {
 
         mockMvc.perform(get("/api/config/summary"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.cacheStats.deviceCount", is(1)))
                 .andExpect(jsonPath("$.data.cacheStats.pointCount", is(2)))
@@ -144,6 +156,7 @@ class ConfigControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsBytes(request)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.configSource", is("local")))
                 .andExpect(jsonPath("$.data.temporaryConfig", is(true)))
@@ -157,10 +170,13 @@ class ConfigControllerTest {
     void shouldRejectDeleteForNonLocalDevice() throws Exception {
         when(configManager.isLocalTemporaryDevice("remote-1")).thenReturn(false);
 
-        mockMvc.perform(delete("/api/config/local/device/remote-1"))
+        mockMvc.perform(delete("/api/config/local/device/remote-1")
+                        .requestAttr(RequestCorrelationFilter.ATTR_REQUEST_ID, "config-400"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").doesNotExist())
-                .andExpect(jsonPath("$.status", is("error")));
+                .andExpect(jsonPath("$.code", is(400)))
+                .andExpect(jsonPath("$.status", is("error")))
+                .andExpect(jsonPath("$.machineCode", is("CONFIG_OPERATION_FAILED")))
+                .andExpect(jsonPath("$.extra.requestId", is("config-400")));
     }
 
     @Test
@@ -170,6 +186,25 @@ class ConfigControllerTest {
         mockMvc.perform(get("/api/config/device/missing/connection"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status", is("error")));
+    }
+
+    @Test
+    void configConflictIncludesStatusCodeAndRequestId() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setAttribute(RequestCorrelationFilter.ATTR_REQUEST_ID, "config-409");
+        var response = new ConfigApiExceptionHandler().handleConfigApiException(
+                new ConfigApiException(HttpStatus.CONFLICT, "配置版本冲突",
+                        Map.of("deviceId", "dev-1", "expectedVersion", 1, "currentVersion", 2)), request);
+        var json = objectMapper.readTree(objectMapper.writeValueAsString(response.getBody()));
+
+        org.assertj.core.api.Assertions.assertThat(response.getStatusCode().value()).isEqualTo(409);
+        org.assertj.core.api.Assertions.assertThat(json.path("code").asInt()).isEqualTo(409);
+        org.assertj.core.api.Assertions.assertThat(json.path("status").asText()).isEqualTo("error");
+        org.assertj.core.api.Assertions.assertThat(json.path("machineCode").asText())
+                .isEqualTo("CONFIG_VERSION_CONFLICT");
+        org.assertj.core.api.Assertions.assertThat(json.path("data").path("currentVersion").asInt()).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(json.path("extra").path("requestId").asText())
+                .isEqualTo("config-409");
     }
 
     private DeviceInfo device(String deviceId) {

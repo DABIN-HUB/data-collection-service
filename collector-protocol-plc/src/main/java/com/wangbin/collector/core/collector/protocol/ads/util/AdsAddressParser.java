@@ -5,271 +5,208 @@ import com.wangbin.collector.core.collector.protocol.ads.domain.AdsAddress;
 import com.wangbin.collector.core.collector.protocol.ads.domain.AdsPlcType;
 
 import java.util.Collections;
-import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 定义当前模块的业务组件。
+ * 校验 ADS 地址、类型及点位配置，并生成 PLC4X 0.13 可解析的地址。
  */
 public final class AdsAddressParser {
+    private static final String NUMBER = "(?:0[xX][0-9a-fA-F]+|\\d+)";
+    private static final Pattern DIRECT = Pattern.compile("^(" + NUMBER + ")/(" + NUMBER
+            + ")(?:\u003a([A-Za-z][A-Za-z0-9_]*)(?:\\(([^()]*)\\))?(?:\\[([^\\[\\]]*)])?)?$");
+    private static final Pattern SYMBOLIC = Pattern.compile("^[A-Za-z_][A-Za-z_0-9]*(?:\\[\\d+])?(?:\\.[A-Za-z_0-9]+(?:\\[\\d+])?)*$");
+    private static final Pattern STRING_TYPE = Pattern.compile("^(STRING|WSTRING)(?:\\(([^()]*)\\))?$", Pattern.CASE_INSENSITIVE);
+    private static final String[] DRIVER_KEYS = {"driverDataType", "adsType", "plc4xType", "plcType"};
 
-    private static final Pattern DIRECT_TYPED_PATTERN = Pattern.compile(
-            "^((0[xX][0-9a-fA-F]+)|\\d+)/((0[xX][0-9a-fA-F]+)|\\d+):([A-Z][A-Z0-9_]*)(?:\\[(\\d+)])?$",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern DIRECT_STRING_PATTERN = Pattern.compile(
-            "^((0[xX][0-9a-fA-F]+)|\\d+)/((0[xX][0-9a-fA-F]+)|\\d+):(STRING|WSTRING)\\((\\d{1,3})\\)(?:\\[(\\d+)])?$",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern DIRECT_BASE_PATTERN = Pattern.compile(
-            "^((0[xX][0-9a-fA-F]+)|\\d+)/((0[xX][0-9a-fA-F]+)|\\d+)$",
-            Pattern.CASE_INSENSITIVE);
-
-    /**
-     * 创建当前组件实例。
-     */
     private AdsAddressParser() {
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
     public static AdsAddress parse(String address) {
         return parse(address, null, Collections.emptyMap());
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
     public static AdsAddress parse(DataPoint point) {
         if (point == null) {
             throw new IllegalArgumentException("DataPoint cannot be null");
         }
-        String address = firstNonBlank(
-                point.getAddress(),
-                asString(point.getAdditionalConfig("plc4xAddress")),
-                asString(point.getAdditionalConfig("adsAddress")),
-                asString(point.getAdditionalConfig("amsAddress"))
-        );
+        String address = firstNonBlank(point.getAddress(), asString(point.getAdditionalConfig("plc4xAddress")),
+                asString(point.getAdditionalConfig("adsAddress")), asString(point.getAdditionalConfig("amsAddress")));
         return parse(address, point.getDataType(), point.getAdditionalConfig());
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
     private static AdsAddress parse(String address, String dataType, Map<String, Object> config) {
         if (address == null || address.isBlank()) {
             throw new IllegalArgumentException("ADS address cannot be empty");
         }
-
-        String rawAddress = address.trim();
-        Map<String, Object> effectiveConfig = config != null ? config : Collections.emptyMap();
-
-        Matcher directStringMatcher = DIRECT_STRING_PATTERN.matcher(rawAddress);
-        if (directStringMatcher.matches()) {
-            String plcType = directStringMatcher.group(5).toUpperCase(Locale.ROOT)
-                    + "(" + Integer.parseInt(directStringMatcher.group(6)) + ")";
-            int arraySize = parseArraySize(directStringMatcher.group(7), effectiveConfig);
-            return new AdsAddress(rawAddress, normalizeDirectStringAddress(directStringMatcher, arraySize),
-                    "DIRECT", plcType, arraySize, Integer.parseInt(directStringMatcher.group(6)));
+        String raw = address.trim();
+        Map<String, Object> options = config == null ? Collections.emptyMap() : config;
+        Matcher direct = DIRECT.matcher(raw);
+        if (direct.matches()) {
+            // 驱动把两段数值作为 long 解析，但 ADS 索引组和偏移在线路上均为无符号 32 位。
+            checkIndex(direct.group(1), "indexGroup");
+            checkIndex(direct.group(2), "indexOffset");
+            String driverType = configuredDriverType(options);
+            String type;
+            Integer length = null;
+            if (direct.group(3) != null) {
+                AdsPlcType explicit = AdsPlcType.fromDriverText(direct.group(3));
+                if (driverType != null && AdsPlcType.fromDriverText(driverType) != explicit) {
+                    throw new IllegalArgumentException("ADS address type conflicts with driverDataType");
+                }
+                if (explicit == AdsPlcType.STRING || explicit == AdsPlcType.WSTRING) {
+                    length = stringLength(direct.group(4), driverType, options);
+                    type = explicit.name() + "(" + length + ")";
+                } else {
+                    if (direct.group(4) != null) {
+                        throw new IllegalArgumentException("ADS string length requires STRING or WSTRING");
+                    }
+                    type = explicit.toTypeExpression();
+                }
+            } else {
+                type = inferredType(dataType, driverType, options);
+                length = typeLength(type);
+            }
+            int count = arraySize(direct.group(5), options);
+            String normalized = direct.group(1) + "/" + direct.group(2) + ":" + type
+                    + (direct.group(5) != null || count > 1 ? "[" + count + "]" : "");
+            return new AdsAddress(raw, normalized, "DIRECT", type, count, length);
         }
-
-        Matcher directTypedMatcher = DIRECT_TYPED_PATTERN.matcher(rawAddress);
-        if (directTypedMatcher.matches()) {
-            String plcType = normalizeTypeExpression(AdsPlcType.fromDriverText(directTypedMatcher.group(5)), effectiveConfig);
-            Integer stringLength = resolveStringLengthIfNeeded(plcType);
-            int arraySize = parseArraySize(directTypedMatcher.group(6), effectiveConfig);
-            return new AdsAddress(rawAddress, normalizeDirectTypedAddress(directTypedMatcher, plcType, arraySize),
-                    "DIRECT", plcType, arraySize, stringLength);
+        if (!SYMBOLIC.matcher(raw).matches()) {
+            throw new IllegalArgumentException("Invalid ADS address format");
         }
-
-        Matcher directBaseMatcher = DIRECT_BASE_PATTERN.matcher(rawAddress);
-        if (directBaseMatcher.matches()) {
-            String inferredType = inferTypeExpression(dataType, effectiveConfig);
-            Integer stringLength = resolveStringLengthIfNeeded(inferredType);
-            int arraySize = resolveArraySize(effectiveConfig, 1);
-            return new AdsAddress(rawAddress, buildInferredDirectAddress(directBaseMatcher, inferredType, arraySize),
-                    "DIRECT", inferredType, arraySize, stringLength);
+        String type = inferredTypeOrNull(dataType, configuredDriverType(options), options);
+        int count = arraySize(null, options);
+        if (count != 1) {
+            // 0.13 符号标签只接受符号路径，点位计数不能转为驱动数组请求。
+            throw new IllegalArgumentException("ADS symbolic address does not support numberOfElements");
         }
-
-        String symbolicType = inferTypeExpressionOrNull(dataType, effectiveConfig);
-        int arraySize = resolveArraySize(effectiveConfig, 1);
-        return new AdsAddress(rawAddress, rawAddress, "SYMBOLIC", symbolicType, arraySize,
-                resolveStringLengthIfNeeded(symbolicType));
+        return new AdsAddress(raw, raw, "SYMBOLIC", type, count, typeLength(type));
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static String normalizeDirectStringAddress(Matcher matcher, int arraySize) {
-        StringBuilder builder = new StringBuilder()
-                .append(matcher.group(1))
-                .append('/')
-                .append(matcher.group(3))
-                .append(':')
-                .append(matcher.group(5).toUpperCase(Locale.ROOT))
-                .append('(')
-                .append(Integer.parseInt(matcher.group(6)))
-                .append(')');
-        if (arraySize > 1) {
-            builder.append('[').append(arraySize).append(']');
+    private static void checkIndex(String value, String field) {
+        try {
+            long parsed = value.startsWith("0x") || value.startsWith("0X")
+                    ? Long.parseLong(value.substring(2), 16) : Long.parseLong(value);
+            if (parsed > 0xffff_ffffL) {
+                throw new IllegalArgumentException("ADS " + field + " exceeds unsigned 32-bit range");
+            }
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid ADS " + field, e);
         }
-        return builder.toString();
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static String normalizeDirectTypedAddress(Matcher matcher, String plcType, int arraySize) {
-        StringBuilder builder = new StringBuilder()
-                .append(matcher.group(1))
-                .append('/')
-                .append(matcher.group(3))
-                .append(':')
-                .append(plcType);
-        if (arraySize > 1) {
-            builder.append('[').append(arraySize).append(']');
+    private static String configuredDriverType(Map<String, Object> config) {
+        String selected = null;
+        for (String key : DRIVER_KEYS) {
+            String candidate = asString(config.get(key));
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            if (selected != null && !selected.equalsIgnoreCase(candidate.trim())) {
+                throw new IllegalArgumentException("Conflicting ADS driver type settings");
+            }
+            selected = candidate.trim();
         }
-        return builder.toString();
+        return selected;
     }
 
-    /**
-     * 创建并返回业务对象。
-     */
-    private static String buildInferredDirectAddress(Matcher matcher, String plcType, int arraySize) {
-        StringBuilder builder = new StringBuilder()
-                .append(matcher.group(1))
-                .append('/')
-                .append(matcher.group(3))
-                .append(':')
-                .append(plcType);
-        if (arraySize > 1) {
-            builder.append('[').append(arraySize).append(']');
-        }
-        return builder.toString();
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static String inferTypeExpression(String dataType, Map<String, Object> config) {
-        String inferred = inferTypeExpressionOrNull(dataType, config);
+    private static String inferredType(String dataType, String driverType, Map<String, Object> config) {
+        String inferred = inferredTypeOrNull(dataType, driverType, config);
         if (inferred == null) {
             throw new IllegalArgumentException("ADS direct address requires explicit or inferable data type");
         }
         return inferred;
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static String inferTypeExpressionOrNull(String dataType, Map<String, Object> config) {
-        String overrideType = firstNonBlank(
-                asString(config.get("driverDataType")),
-                asString(config.get("adsType")),
-                asString(config.get("plc4xType")),
-                asString(config.get("plcType"))
-        );
-        if (overrideType != null) {
-            return normalizeTypeExpression(AdsPlcType.fromDriverText(overrideType), config);
+    private static String inferredTypeOrNull(String dataType, String driverType, Map<String, Object> config) {
+        if (driverType != null) {
+            AdsPlcType plcType = AdsPlcType.fromDriverText(driverType);
+            if (plcType == AdsPlcType.STRING || plcType == AdsPlcType.WSTRING) {
+                Matcher matcher = STRING_TYPE.matcher(driverType);
+                if (!matcher.matches()) {
+                    throw new IllegalArgumentException("Invalid ADS string type expression");
+                }
+                return plcType.name() + "(" + stringLength(null, driverType, config) + ")";
+            }
+            return plcType.toTypeExpression();
         }
         if (dataType == null || dataType.isBlank()) {
             return null;
         }
-        return normalizeTypeExpression(AdsPlcType.fromPlatformDataType(dataType), config);
-    }
-
-    /**
-     * 解析或转换业务数据。
-     */
-    private static String normalizeTypeExpression(AdsPlcType plcType, Map<String, Object> config) {
-        if (plcType == AdsPlcType.STRING) {
-            return "STRING(" + resolveStringLength(config, 80) + ")";
-        }
-        if (plcType == AdsPlcType.WSTRING) {
-            return "WSTRING(" + resolveStringLength(config, 80) + ")";
+        AdsPlcType plcType = AdsPlcType.fromPlatformDataType(dataType);
+        if (plcType == AdsPlcType.STRING || plcType == AdsPlcType.WSTRING) {
+            return plcType.name() + "(" + stringLength(null, null, config) + ")";
         }
         return plcType.toTypeExpression();
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static Integer resolveStringLengthIfNeeded(String plcType) {
-        if (plcType == null) {
+    private static int stringLength(String rawLength, String driverType, Map<String, Object> config) {
+        Integer result = rawLength == null ? null : positive(rawLength, "stringLength", 999);
+        if (driverType != null) {
+            Matcher matcher = STRING_TYPE.matcher(driverType);
+            if (matcher.matches() && matcher.group(2) != null) {
+                result = merge(result, positive(matcher.group(2), "driverDataType stringLength", 999), "stringLength");
+            }
+        }
+        result = merge(result, configuredNumber(config, "stringLength", 999), "stringLength");
+        result = merge(result, configuredNumber(config, "adsStringLength", 999), "stringLength");
+        if (result == null) {
+            throw new IllegalArgumentException("ADS STRING/WSTRING requires explicit stringLength");
+        }
+        return result;
+    }
+
+    private static Integer typeLength(String type) {
+        if (type == null) {
             return null;
         }
-        int start = plcType.indexOf('(');
-        int end = plcType.indexOf(')');
-        if (start < 0 || end <= start + 1) {
+        int open = type.indexOf('(');
+        return open < 0 ? null : Integer.parseInt(type.substring(open + 1, type.length() - 1));
+    }
+
+    private static int arraySize(String rawCount, Map<String, Object> config) {
+        Integer result = rawCount == null ? null : positive(rawCount, "arraySize", Integer.MAX_VALUE);
+        result = merge(result, configuredNumber(config, "arraySize", Integer.MAX_VALUE), "arraySize");
+        result = merge(result, configuredNumber(config, "numberOfElements", Integer.MAX_VALUE), "arraySize");
+        return result == null ? 1 : result;
+    }
+
+    private static Integer configuredNumber(Map<String, Object> config, String key, int max) {
+        if (!config.containsKey(key)) {
             return null;
         }
-        return Integer.parseInt(plcType.substring(start + 1, end));
+        Object value = config.get(key);
+        if (value == null || value instanceof Float || value instanceof Double) {
+            throw new IllegalArgumentException("Invalid ADS " + key);
+        }
+        return positive(value.toString().trim(), key, max);
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static int resolveStringLength(Map<String, Object> config, int defaultValue) {
-        Object value = firstPresent(config, "stringLength", "adsStringLength");
-        if (value instanceof Number number) {
-            return Math.max(1, number.intValue());
+    private static int positive(String text, String field, int max) {
+        if (!text.matches("[0-9]+")) {
+            throw new IllegalArgumentException("Invalid ADS " + field);
         }
-        if (value != null) {
-            try {
-                return Math.max(1, Integer.parseInt(value.toString().trim()));
-            } catch (NumberFormatException ignored) {
+        try {
+            int value = Integer.parseInt(text);
+            if (value <= 0 || value > max) {
+                throw new IllegalArgumentException("ADS " + field + " out of range");
             }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid ADS " + field, e);
         }
-        return defaultValue;
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static int resolveArraySize(Map<String, Object> config, int defaultValue) {
-        Object value = firstPresent(config, "arraySize", "numberOfElements");
-        if (value instanceof Number number) {
-            return Math.max(1, number.intValue());
+    private static Integer merge(Integer first, Integer second, String field) {
+        if (first != null && second != null && !first.equals(second)) {
+            throw new IllegalArgumentException("Conflicting ADS " + field);
         }
-        if (value != null) {
-            try {
-                return Math.max(1, Integer.parseInt(value.toString().trim()));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return defaultValue;
+        return first != null ? first : second;
     }
 
-    /**
-     * 解析或转换业务数据。
-     */
-    private static int parseArraySize(String arrayPart, Map<String, Object> config) {
-        if (arrayPart != null && !arrayPart.isBlank()) {
-            return Math.max(1, Integer.parseInt(arrayPart.trim()));
-        }
-        return resolveArraySize(config, 1);
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private static Object firstPresent(Map<String, Object> config, String... keys) {
-        for (String key : keys) {
-            if (config.containsKey(key)) {
-                return config.get(key);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
     private static String firstNonBlank(String... values) {
-        if (values == null) {
-            return null;
-        }
         for (String value : values) {
             if (value != null && !value.isBlank()) {
                 return value.trim();
@@ -278,10 +215,7 @@ public final class AdsAddressParser {
         return null;
     }
 
-    /**
-     * 执行当前业务逻辑。
-     */
     private static String asString(Object value) {
-        return value != null ? value.toString() : null;
+        return value == null ? null : value.toString();
     }
 }

@@ -1,0 +1,1 @@
+function i(u){let n=0,e=null;function r(t){return e!==null&&t.generation===e.generation}return{begin(t){return e={context:t,generation:++n},e},invalidate(){n+=1,e=null},isLatest:r,canCommit(t,a){return r(t)&&u(t.context,a)}}}function l(u,n,e,r){return u&&r(n,e)}export{i as c,l as s};

@@ -30,6 +30,13 @@ export interface DataPoint {
   additionalConfig?: Record<string, unknown>;
   baseCollectionInterval?: number;
   currentCollectionInterval?: number;
+  minCollectionInterval?: number;
+  maxCollectionInterval?: number;
+  pointChangeThreshold?: number;
+  stableCount?: number;
+  lastValue?: unknown;
+  changeRate?: number;
+  lastAdjustTime?: number;
   [key: string]: unknown;
 }
 

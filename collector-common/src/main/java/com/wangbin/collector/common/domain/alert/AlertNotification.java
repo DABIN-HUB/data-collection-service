@@ -23,6 +23,7 @@ public class AlertNotification {
     String eventId;
     String relatedEventId;
     long startedAt;
+    long lastOccurredAt;
     long durationMillis;
     Object value;
     String unit;

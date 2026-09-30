@@ -1,5 +1,7 @@
 package com.wangbin.collector.api.filter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.wangbin.collector.api.error.ApiErrorWriter;
 import com.wangbin.collector.api.filter.config.AuthProperties;
 import com.wangbin.collector.api.filter.config.AuthScope;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -58,6 +60,7 @@ public class AuthFilter extends OncePerRequestFilter {
     private final Clock clock;
     private final StringRedisTemplate stringRedisTemplate;
     private final MeterRegistry meterRegistry;
+    private final ApiErrorWriter errorWriter;
     private final AntPathMatcher matcher = new AntPathMatcher();
     private final ConcurrentMap<String, Long> localNonces = new ConcurrentHashMap<>();
 
@@ -109,6 +112,7 @@ public class AuthFilter extends OncePerRequestFilter {
         this.clock = clock;
         this.stringRedisTemplate = stringRedisTemplate;
         this.meterRegistry = meterRegistry;
+        this.errorWriter = new ApiErrorWriter(new ObjectMapper());
     }
 
     /**
@@ -137,25 +141,16 @@ public class AuthFilter extends OncePerRequestFilter {
         AuthDecision decision = authorize(securedRequest);
         recordAuthentication(decision);
         if (!decision.isAllowed()) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter()
-                    .append("{\"status\":\"error\",\"message\":\"")
-                    .append(decision.getMessage())
-                    .append("\"}");
+            log.debug("认证失败，拒绝原因={}", decision.getMessage());
+            errorWriter.write(request, response, HttpServletResponse.SC_UNAUTHORIZED,
+                    "AUTH_REQUIRED", "认证失败", null);
             return;
         }
         AuthScope requiredScope = resolveRequiredScope(securedRequest);
         if (requiredScope != null && (decision.getPrincipal() == null
                 || !decision.getPrincipal().getScopes().contains(requiredScope))) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json;charset=UTF-8");
-            String quote = Character.toString((char) 34);
-            response.getWriter()
-                    .append("{").append(quote).append("status").append(quote)
-                    .append(":").append(quote).append("error").append(quote)
-                    .append(",").append(quote).append("message").append(quote)
-                    .append(":").append(quote).append("权限不足").append(quote).append("}");
+            errorWriter.write(request, response, HttpServletResponse.SC_FORBIDDEN,
+                    "PERMISSION_DENIED", "权限不足", Map.of("requiredScope", requiredScope.name()));
             return;
         }
         if (decision.getPrincipal() != null) {
@@ -189,12 +184,14 @@ public class AuthFilter extends OncePerRequestFilter {
         }
         int maximumBodyBytes = Math.max(0, properties.getMaxSignedBodyBytes());
         if (maximumBodyBytes > 0 && request.getContentLengthLong() > maximumBodyBytes) {
-            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "signed request body too large");
+            errorWriter.write(request, response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+                    "REQUEST_BODY_TOO_LARGE", "请求体过大", null);
             return null;
         }
         CachedBodyRequest cachedRequest = new CachedBodyRequest(request);
         if (maximumBodyBytes > 0 && cachedRequest.bodyLength() > maximumBodyBytes) {
-            response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE, "signed request body too large");
+            errorWriter.write(request, response, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+                    "REQUEST_BODY_TOO_LARGE", "请求体过大", null);
             return null;
         }
         return cachedRequest;

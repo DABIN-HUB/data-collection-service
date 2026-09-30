@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -181,6 +182,43 @@ public class CloudOutboxService {
 
     public boolean isEnabled() {
         return enabled();
+    }
+
+    public Optional<CloudOutboxMessage> find(String messageId) {
+        return !enabled() ? Optional.empty() : repository.find(messageId);
+    }
+
+    public List<CloudOutboxMessage> list(CloudOutboxStatus status, String localDeviceId, int limit) {
+        return !enabled() ? List.of() : repository.list(status, localDeviceId, Math.min(200, Math.max(1, limit)));
+    }
+
+    public boolean replay(String messageId) {
+        if (!enabled()) return false;
+        CloudOutboxMessage current = repository.find(messageId).orElse(null);
+        if (current == null || current.getStatus() != CloudOutboxStatus.ISOLATED) return false;
+        CloudOutboxMessage pending = new CloudOutboxMessage(
+                current.getMessageId(), current.getLocalDeviceId(), current.getProductKey(),
+                current.getDeviceName(), current.getGatewayDeviceId(), current.getShadowVersion(),
+                current.getWindowStart(), current.getWindowEnd(), current.getCreatedAt(),
+                System.currentTimeMillis(), current.getAttempts(), CloudOutboxStatus.PENDING,
+                null, current.getReportData(), current.getCommits());
+        return repository.replayIsolated(pending);
+    }
+
+    public void flush() {
+        dispatchDueMessages();
+    }
+
+
+    /**
+     * 返回发件箱轻量监控快照，一次调用内完成 enabled/backlog/isolation/oldest 读取。
+     */
+    public CloudOutboxSnapshot snapshot() {
+        boolean currentEnabled = enabled();
+        if (!currentEnabled) {
+            return new CloudOutboxSnapshot(false, 0L, 0L, 0L);
+        }
+        return new CloudOutboxSnapshot(true, getPendingCount(), getIsolatedCount(), getOldestMessageAgeMillis());
     }
 
     @Scheduled(fixedDelayString = "${collector.report.outbox.poll-interval-ms:1000}",

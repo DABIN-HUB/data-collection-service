@@ -3,20 +3,22 @@
     <div class="panel-toolbar">
       <div class="table-actions">
         <el-tag effect="plain">实时通道：{{ wsStatusText }}</el-tag>
-        <el-button :loading="webSocketStore.connecting" @click="connectWebSocket">连接实时通道</el-button>
+        <el-tag v-if="deviceHealth" effect="plain">设备健康（最近 HTTP 快照）：{{ realtimeDeviceHealthText(deviceHealth.deviceHealth) }}</el-tag>
+        <el-button v-if="appStore.capabilities?.realtime.websocketAvailable" :loading="webSocketStore.connecting" @click="toggleWebSocket">{{ webSocketActionText }}</el-button>
         <el-button :loading="loading" @click="load">刷新实时值</el-button>
       </div>
     </div>
-    <el-alert v-if="webSocketStore.error" :title="webSocketStore.error" type="info" :closable="false" />
+    <el-alert v-if="webSocketStore.error && appStore.capabilities?.realtime.websocketAvailable" :title="webSocketStore.error" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <el-table v-loading="loading" :data="filteredRows" height="360" border>
-      <el-table-column prop="pointName" label="点位名称" min-width="160" />
-      <el-table-column prop="pointCode" label="点位编码" min-width="150" />
-      <el-table-column prop="address" label="地址" width="120" />
-      <el-table-column label="当前值" min-width="130"><template #default="{ row }">{{ row.currentValue ?? row.value ?? '-' }}</template></el-table-column>
-      <el-table-column label="质量" width="110"><template #default="{ row }"><el-tag :type="qualityType(row.quality)" effect="light">{{ qualityText(row.quality) }}</el-tag></template></el-table-column>
+      <el-table-column label="点位名称" min-width="160"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointName || '-')">{{ row.pointName || '-' }}</span></template></el-table-column>
+      <el-table-column label="点位编码" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.pointCode || '-')">{{ row.pointCode || '-' }}</span></template></el-table-column>
+      <el-table-column label="地址" width="120"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.address || '-')">{{ row.address || '-' }}</span></template></el-table-column>
+      <el-table-column label="当前值" min-width="130"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.currentValue ?? row.value ?? '-')">{{ row.currentValue ?? row.value ?? '-' }}{{ row.stale ? '（旧值）' : '' }}</span></template></el-table-column>
+      <el-table-column label="质量" width="110"><template #default="{ row }"><el-tag :type="qualityType(row)" effect="light">{{ realtimeQualityText(row) }}</el-tag></template></el-table-column>
+      <el-table-column label="采集状态" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="realtimeErrorText(row)">{{ realtimeStatusText(row) }}</span></template></el-table-column>
       <el-table-column prop="unit" label="单位" width="90" />
-      <el-table-column label="更新时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.collectTime) }}</template></el-table-column>
+      <el-table-column label="更新时间" min-width="160"><template #default="{ row }">{{ formatTime(row.lastUpdateTime ?? row.timestamp ?? row.collectTime) }}</template></el-table-column>
       <el-table-column prop="processCostMs" label="耗时 ms" width="100" />
     </el-table>
   </section>
@@ -26,8 +28,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { getDeviceRealtimeData } from "@/api/data.api";
+import {
+  shouldSkipRealtimePanelHttpLoad,
+  shouldUseRealtimePanelWebSocketRows,
+  type RealtimePanelLoadSource
+} from "@/features/realtime/utils/realtime-panel-transport";
+import { createLatestRealtimeRequestOwner, type RealtimeRequestContext } from "@/features/realtime/utils/realtime-request-lifecycle";
+import { normalizeRealtimeRows, realtimeDeviceHealthText, realtimeErrorText, realtimeQualityClass, realtimeQualityText, realtimeStatusText } from "@/features/realtime/utils/realtime-utils";
+import { useAppStore } from "@/stores/app.store";
 import { useWebSocketStore } from "@/stores/websocket.store";
-import type { RealtimePointRow } from "@/types/monitor";
+import type { DeviceRealtimeDataResponse, RealtimePointRow } from "@/types/monitor";
 
 const props = withDefaults(defineProps<{
   deviceId: string;
@@ -40,14 +50,24 @@ const props = withDefaults(defineProps<{
   refreshIntervalMs: 5000
 });
 
+const appStore = useAppStore();
 const webSocketStore = useWebSocketStore();
 const loading = ref(false);
 const error = ref("");
 const rows = ref<RealtimePointRow[]>([]);
+const deviceHealth = ref<DeviceRealtimeDataResponse | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
+const requestOwner = createLatestRealtimeRequestOwner();
 
 const wsRows = computed(() => webSocketStore.rows(props.deviceId));
-const displayRows = computed(() => wsRows.value.length > 0 ? wsRows.value : rows.value);
+const usingWebSocketRows = computed(() => shouldUseRealtimePanelWebSocketRows({
+  connected: webSocketStore.connected,
+  activeDeviceId: webSocketStore.activeDeviceId,
+  deviceId: props.deviceId,
+  hasFreshRows: webSocketStore.canUseRows(props.deviceId),
+  wsRowCount: wsRows.value.length
+}));
+const displayRows = computed(() => usingWebSocketRows.value ? wsRows.value : rows.value);
 const filteredRows = computed(() => {
   const keyword = props.keyword.trim().toLowerCase();
   if (!keyword) {
@@ -57,33 +77,69 @@ const filteredRows = computed(() => {
     .some((value) => String(value || "").toLowerCase().includes(keyword)));
 });
 const wsStatusText = computed(() => {
-  if (webSocketStore.connected && webSocketStore.activeDeviceId === props.deviceId) {
-    return "已连接";
+  if (!appStore.capabilities?.realtime.websocketAvailable) return "HTTP 轮询";
+  switch (webSocketStore.status) {
+    case "connected": return "已连接";
+    case "connecting": return "连接中";
+    case "reconnecting": return "重连中";
+    case "unavailable": return "不可用";
+    case "closed": return "已关闭";
+    default: return "未启用";
   }
-  if (webSocketStore.connecting) {
-    return "连接中";
-  }
-  return "未连接";
 });
+const webSocketActionText = computed(() => webSocketStore.enabled ? "关闭实时通道" : "启用实时通道");
 
-async function load() {
-  if (!props.deviceId) {
-    rows.value = [];
+async function load(source: RealtimePanelLoadSource = "manual") {
+  if (shouldSkipRealtimePanelHttpLoad({
+    source,
+    loading: loading.value,
+    usingWebSocketRows: usingWebSocketRows.value
+  })) {
     return;
   }
+  if (!props.deviceId) {
+    requestOwner.invalidate();
+    loading.value = false;
+    error.value = "";
+    rows.value = [];
+    deviceHealth.value = null;
+    return;
+  }
+  const requestContext = currentPanelRealtimeContext();
+  const requestTicket = requestOwner.begin(requestContext);
   loading.value = true;
   error.value = "";
   try {
-    const response = await getDeviceRealtimeData(props.deviceId);
-    rows.value = response.points || response.data || response.values || [];
+    const response = await getDeviceRealtimeData(requestContext.deviceId);
+    const nextRows = normalizeRealtimeRows(response, requestContext.deviceId);
+    if (!requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+      return;
+    }
+    rows.value = nextRows;
+    deviceHealth.value = response.deviceHealth ? response : null;
   } catch (caught) {
+    if (!requestOwner.isCurrent(requestTicket, currentPanelRealtimeContext())) {
+      return;
+    }
     error.value = caught instanceof Error ? caught.message : "实时数据加载失败";
+    rows.value = [];
+    deviceHealth.value = null;
   } finally {
-    loading.value = false;
+    if (requestOwner.isLatest(requestTicket)) {
+      loading.value = false;
+    }
   }
 }
 
-function connectWebSocket() {
+function toggleWebSocket() {
+  if (!appStore.capabilities?.realtime.websocketAvailable) {
+    webSocketStore.disableRealtime();
+    return;
+  }
+  if (webSocketStore.enabled) {
+    webSocketStore.disableRealtime();
+    return;
+  }
   webSocketStore.connectRealtime(props.deviceId);
 }
 
@@ -94,34 +150,15 @@ function formatTime(value: unknown): string {
   return value ? String(value) : "-";
 }
 
-function qualityType(value: unknown): "success" | "warning" | "danger" | "info" {
-  const quality = String(value || "").toUpperCase();
-  if (["GOOD", "OK", "SUCCESS", "100"].includes(quality)) {
+function qualityType(row: RealtimePointRow): "success" | "warning" | "danger" | "info" {
+  const qualityClass = realtimeQualityClass(row);
+  if (qualityClass === "is-good") {
     return "success";
   }
-  if (["BAD", "ERROR", "FAILED"].includes(quality)) {
+  if (qualityClass === "is-bad") {
     return "danger";
   }
-  if (["UNCERTAIN", "WARN", "WARNING"].includes(quality)) {
-    return "warning";
-  }
-  return "info";
-}
-
-function qualityText(value: unknown): string {
-  const quality = String(value || "UNKNOWN").toUpperCase();
-  return {
-    GOOD: "良好",
-    OK: "良好",
-    SUCCESS: "良好",
-    BAD: "异常",
-    ERROR: "异常",
-    FAILED: "失败",
-    UNCERTAIN: "不确定",
-    WARN: "警告",
-    WARNING: "警告",
-    UNKNOWN: "未知"
-  }[quality] || quality;
+  return row.qualityAvailable === false ? "info" : "warning";
 }
 
 function syncTimer() {
@@ -130,26 +167,90 @@ function syncTimer() {
     timer = null;
   }
   if (props.autoRefresh && props.deviceId) {
-    timer = setInterval(() => load(), Math.max(1000, props.refreshIntervalMs));
+    timer = setInterval(() => void load("timer"), Math.max(1000, props.refreshIntervalMs));
   }
 }
 
 defineExpose({ load });
 
 onMounted(() => {
-  connectWebSocket();
-  load();
+  void load("mount");
   syncTimer();
 });
 onBeforeUnmount(() => {
+  requestOwner.invalidate();
+  loading.value = false;
   if (timer) {
     clearInterval(timer);
   }
+  webSocketStore.disableRealtime();
 });
-watch(() => props.deviceId, () => {
-  connectWebSocket();
-  load();
+watch(() => props.deviceId, (deviceId) => {
+  rows.value = [];
+  deviceHealth.value = null;
+  if (!deviceId) {
+    webSocketStore.disableRealtime();
+  } else if (webSocketStore.enabled) {
+    webSocketStore.connectRealtime(deviceId);
+  }
+  void load("device-change");
   syncTimer();
 });
 watch(() => [props.autoRefresh, props.refreshIntervalMs], syncTimer);
+watch(
+  () => [props.deviceId, usingWebSocketRows.value] as const,
+  ([deviceId, nextUsing], previous) => {
+    if (!deviceId || !previous) {
+      return;
+    }
+    const [previousDeviceId, previousUsing] = previous;
+    if (deviceId !== previousDeviceId) {
+      return;
+    }
+    if (previousUsing && !nextUsing) {
+      void load("ws-fallback");
+    }
+  }
+);
+
+function currentPanelRealtimeContext(): RealtimeRequestContext {
+  return {
+    mode: "panel",
+    deviceId: props.deviceId
+  };
+}
 </script>
+
+<style scoped>
+.realtime-workbench,
+.monitor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.panel-toolbar,
+.table-actions {
+  display: flex;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.cell-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

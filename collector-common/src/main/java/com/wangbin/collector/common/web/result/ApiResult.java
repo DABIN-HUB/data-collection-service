@@ -23,6 +23,7 @@ public class ApiResult<T> {
     private String status;
     @JsonAlias("msg")
     private String message;
+    private String machineCode;
     private T data;
     private Long timestamp;
     private Map<String, Object> extra;
@@ -112,6 +113,7 @@ public class ApiResult<T> {
      */
     public static <T> ApiResult<T> statusSuccess(String message, T data) {
         ApiResult<T> result = new ApiResult<>();
+        result.setCode(ResultCode.SUCCESS.getCode());
         result.setStatus(STATUS_SUCCESS);
         result.setMessage(message);
         result.setData(data);
@@ -126,6 +128,13 @@ public class ApiResult<T> {
         result.setStatus(STATUS_ERROR);
         result.setMessage(message);
         result.setData(data);
+        return result;
+    }
+
+    /** 构造带机器可读错误码的失败响应。 */
+    public static <T> ApiResult<T> statusError(String machineCode, String message, T data) {
+        ApiResult<T> result = statusError(message, data);
+        result.setMachineCode(machineCode);
         return result;
     }
 
@@ -177,6 +186,12 @@ public class ApiResult<T> {
      */
     public ApiResult<T> withRunning(Boolean running) {
         this.running = running;
+        return this;
+    }
+
+    /** 设置机器可读错误码。 */
+    public ApiResult<T> withMachineCode(String machineCode) {
+        this.machineCode = machineCode;
         return this;
     }
 

@@ -155,7 +155,15 @@ public class CacheReportService {
      * 执行当前业务逻辑。
      */
     public void reportPoint(String localDeviceId, String method, DataPoint point, Object cacheValue) {
-        if (!isMqttEnabled() || localDeviceId == null || point == null || cacheValue == null) {
+        if (localDeviceId == null || point == null || cacheValue == null) {
+            return;
+        }
+        ProcessResult processResult = toProcessResult(cacheValue);
+        if (processResult == null) {
+            return;
+        }
+        ShadowUpdateResult updateResult = shadowManager.apply(localDeviceId, point, processResult);
+        if (!isMqttEnabled()) {
             return;
         }
         CloudTargetConfig cloudTarget = cloudDeviceIdentityService.resolveTarget(localDeviceId);
@@ -166,15 +174,9 @@ public class CacheReportService {
             }
             return;
         }
-        ProcessResult processResult = toProcessResult(cacheValue);
-        if (processResult == null) {
-            return;
-        }
         String gatewayDeviceId = gatewayDeviceId();
         shadowGatewayMapping.put(localDeviceId, gatewayDeviceId);
         shadowIdentities.put(localDeviceId, cloudTarget.identity());
-
-        ShadowUpdateResult updateResult = shadowManager.apply(localDeviceId, point, processResult);
         if (updateResult.changeTriggered()) {
             triggerImmediateFlush(localDeviceId);
         }

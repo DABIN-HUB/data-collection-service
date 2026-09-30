@@ -60,7 +60,11 @@ public class CollectorDataPostProcessor {
      * 异步写入单点遥测后处理流水线。
      */
     public void savePointAsync(String deviceId, DataPoint point, Object value) {
-        Long generation = captureGeneration(deviceId);
+        savePointAsync(deviceId, point, value, captureGeneration(deviceId));
+    }
+
+    /** 推送回调没有线程内调度上下文，必须携带采集器创建时的代次。 */
+    public void savePointAsync(String deviceId, DataPoint point, Object value, Long generation) {
         submit(deviceId, point, generation,
                 () -> processPoint(deviceId, point, value, generation),
                 () -> contextForPoint(deviceId, point, value, generation));
@@ -183,7 +187,7 @@ public class CollectorDataPostProcessor {
                 deviceId,
                 point,
                 processResult,
-                value,
+                processResult,
                 System.currentTimeMillis(),
                 generation));
     }
@@ -236,7 +240,7 @@ public class CollectorDataPostProcessor {
                 deviceId,
                 point,
                 processResult,
-                cacheValue,
+                processResult,
                 System.currentTimeMillis(),
                 generation);
     }

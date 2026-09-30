@@ -27,13 +27,13 @@ public final class FinsDataCodec {
     public static Object decode(byte[] payload, FinsAddress address) {
         if (address.isBitUnit()) {
             if (address.isArrayType()) {
-                List<Boolean> values = new ArrayList<>(address.getElementCount());
+                List<Object> values = new ArrayList<>(address.getElementCount());
                 for (int index = 0; index < address.getElementCount(); index++) {
-                    values.add((payload[index] & 0x01) != 0);
+                    values.add(decodeBitValue((payload[index] & 0x01) != 0, address.getDataType()));
                 }
                 return values;
             }
-            return payload.length > 0 && (payload[0] & 0x01) != 0;
+            return decodeBitValue(payload.length > 0 && (payload[0] & 0x01) != 0, address.getDataType());
         }
         if (address.isStringType()) {
             return decodeString(payload, address);
@@ -93,6 +93,10 @@ public final class FinsDataCodec {
             offset += encoded.length;
         }
         return payload;
+    }
+
+    private static Object decodeBitValue(boolean value, String dataType) {
+        return "BOOLEAN".equals(dataType) ? value : (value ? 1 : 0);
     }
 
     /**

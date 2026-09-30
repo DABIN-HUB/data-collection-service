@@ -1,6 +1,8 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.DeviceConsoleApplicationService;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.CollectionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +39,7 @@ class DeviceControllerTest {
 
         mockMvc.perform(post("/api/device/dev-1/start"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.message", is("设备启动成功")))
                 .andExpect(jsonPath("$.deviceId", is("dev-1")))
@@ -62,10 +64,37 @@ class DeviceControllerTest {
 
         mockMvc.perform(get("/api/device/running"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data[0]", is("dev-1")))
                 .andExpect(jsonPath("$.data[1]", is("dev-2")))
+                .andExpect(jsonPath("$.count", is(2)));
+    }
+
+    @Test
+    void shouldTriggerDeviceReloadWithAsyncMessage() throws Exception {
+        mockMvc.perform(post("/api/device/reload"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code", is(200)))
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.message", is("已触发设备重新加载")));
+    }
+
+    @Test
+    void shouldReturnRuntimeSnapshotsWithCount() throws Exception {
+        when(collectionService.getDeviceRuntimeSnapshots()).thenReturn(List.of(
+                new DeviceRuntimeSnapshot("dev-1", DeviceRuntimePhase.ONLINE,
+                        true, false, true, false, 0L, 100L, 1L, 90L, 0, 0L, null, 200L),
+                new DeviceRuntimeSnapshot("dev-2", DeviceRuntimePhase.STOPPED,
+                        false, false, false, false, 0L, 0L, 0L, 0L, 0, 0L, null, 201L)));
+
+        mockMvc.perform(get("/api/device/runtime"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code", is(200)))
+                .andExpect(jsonPath("$.status", is("success")))
+                .andExpect(jsonPath("$.data[0].deviceId", is("dev-1")))
+                .andExpect(jsonPath("$.data[0].phase", is("ONLINE")))
+                .andExpect(jsonPath("$.data[1].deviceId", is("dev-2")))
                 .andExpect(jsonPath("$.count", is(2)));
     }
 
@@ -75,7 +104,7 @@ class DeviceControllerTest {
 
         mockMvc.perform(get("/api/device/dev-1/running"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.deviceId", is("dev-1")))
                 .andExpect(jsonPath("$.running", is(true)))
@@ -97,7 +126,7 @@ class DeviceControllerTest {
 
         mockMvc.perform(get("/api/device/dev-1/status"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.deviceId", is("dev-1")))
                 .andExpect(jsonPath("$.data.deviceId", is("dev-1")))
@@ -121,7 +150,7 @@ class DeviceControllerTest {
 
         mockMvc.perform(get("/api/device/statistics"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").doesNotExist())
+                .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.dev-1.totalExecutions", is(10)))
                 .andExpect(jsonPath("$.data.dev-1.successRate", is(80.0D)))

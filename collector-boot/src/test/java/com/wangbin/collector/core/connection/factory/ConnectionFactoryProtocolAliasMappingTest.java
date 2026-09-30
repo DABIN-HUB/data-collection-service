@@ -188,10 +188,11 @@ class ConnectionFactoryProtocolAliasMappingTest {
     }
 
     @Test
-    void shouldMapOpcUaPrimaryProtocolToPlc4xAdapterWithDefaultPort() {
+    void shouldMapOpcUaPrimaryProtocolToMiloAdapterWithDefaultPort() {
         DeviceConnection config = new DeviceConnection();
+        config.setHost("127.0.0.1");
 
-        assertInstanceOf(Plc4xOpcUaConnectionAdapter.class,
+        assertInstanceOf(OpcUaConnectionAdapter.class,
                 factory.createConnection(device("dev-opcua", "OPC_UA"), config));
         assertEquals(4840, config.getPort());
     }
@@ -199,6 +200,7 @@ class ConnectionFactoryProtocolAliasMappingTest {
     @Test
     void shouldMapMiloOpcUaProtocolToIndependentAdapter() {
         DeviceConnection config = new DeviceConnection();
+        config.setHost("127.0.0.1");
 
         assertInstanceOf(OpcUaConnectionAdapter.class,
                 factory.createConnection(device("dev-opcua-milo", "OPCUA_MILO"), config));

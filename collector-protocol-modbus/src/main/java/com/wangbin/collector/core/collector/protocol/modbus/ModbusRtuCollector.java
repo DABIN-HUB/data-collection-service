@@ -176,7 +176,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
         }
 
         // 解析Modbus地址
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = sanitizeUnitId(resolveUnitId(point));
 
         // 根据寄存器类型读取数据
@@ -200,7 +200,7 @@ public class ModbusRtuCollector extends AbstractModbusCollector {
             throw new IllegalArgumentException("点位地址不能为空");
         }
 
-        ModbusAddress modbusAddress = parseModbusAddress(address);
+        ModbusAddress modbusAddress = parseModbusAddressForPoint(point, address);
         int unitId = sanitizeUnitId(resolveUnitId(point));
 
         return switch (modbusAddress.getRegisterType()) {

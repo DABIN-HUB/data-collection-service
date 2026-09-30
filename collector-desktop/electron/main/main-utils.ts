@@ -1,3 +1,6 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 export interface ServerConfig {
   serverUrl: string;
 }
@@ -24,6 +27,12 @@ export interface WindowChromeOptions {
   backgroundColor: string;
 }
 
+export interface TrustedRendererUrlOptions {
+  isDev: boolean;
+  devServerUrl?: string;
+  rendererIndexPath?: string;
+}
+
 export const DEFAULT_SERVER_URL = "http://127.0.0.1:9090/collector";
 export const MIN_WINDOW_WIDTH = 1180;
 export const MIN_WINDOW_HEIGHT = 760;
@@ -34,6 +43,12 @@ export const APP_CHROME_BACKGROUND = "#0d1b2a";
 export function normalizeServerConfig(config: Partial<ServerConfig> = {}): ServerConfig {
   return {
     serverUrl: normalizeServerUrl(config.serverUrl || DEFAULT_SERVER_URL)
+  };
+}
+
+export function normalizeServerConfigCandidate(config: Partial<ServerConfig> = {}): ServerConfig {
+  return {
+    serverUrl: normalizeServerUrlStrict(config.serverUrl || "")
   };
 }
 
@@ -58,10 +73,36 @@ export function buildWindowChromeOptions(): WindowChromeOptions {
 export function isSafeExternalUrl(url: string): boolean {
   try {
     const protocol = new URL(url).protocol;
-    return ["http:", "https:", "file:"].includes(protocol);
+    return ["http:", "https:"].includes(protocol);
   } catch {
     return false;
   }
+}
+
+export function isTrustedRendererUrl(url: string, options: TrustedRendererUrlOptions): boolean {
+  try {
+    const parsed = new URL(url);
+    if (options.isDev) {
+      if (!options.devServerUrl) {
+        return false;
+      }
+      const devServer = new URL(options.devServerUrl);
+      return ["http:", "https:"].includes(parsed.protocol)
+        && parsed.protocol === devServer.protocol
+        && parsed.hostname === devServer.hostname
+        && parsed.port === devServer.port;
+    }
+    if (parsed.protocol !== "file:" || !options.rendererIndexPath) {
+      return false;
+    }
+    return normalizeFilePath(fileURLToPath(parsed)) === normalizeFilePath(options.rendererIndexPath);
+  } catch {
+    return false;
+  }
+}
+
+export function isExternalNavigationUrl(url: string, options: TrustedRendererUrlOptions): boolean {
+  return !isTrustedRendererUrl(url, options);
 }
 
 export function buildAboutInfo(version: string, platform: string): string {
@@ -88,4 +129,37 @@ function normalizeServerUrl(serverUrl: string): string {
     return DEFAULT_SERVER_URL;
   }
   return trimmed;
+}
+
+function normalizeServerUrlStrict(serverUrl: string): string {
+  const trimmed = serverUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    throw new Error("采集服务地址不能为空");
+  }
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch (error) {
+    throw new Error("采集服务地址格式无效", { cause: error });
+  }
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("采集服务地址只允许 HTTP/HTTPS 协议");
+  }
+  if (url.username || url.password) {
+    throw new Error("采集服务地址不能包含用户名或密码");
+  }
+  if (url.hash) {
+    throw new Error("采集服务地址不能包含片段标识");
+  }
+  if (url.search) {
+    throw new Error("采集服务地址不能包含查询参数");
+  }
+  if (url.hostname === "127.0.0.1" && url.port === "9090" && (url.pathname === "" || url.pathname === "/")) {
+    url.pathname = "/collector";
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function normalizeFilePath(path: string): string {
+  return resolve(path).replace(/\\/g, "/").toLowerCase();
 }

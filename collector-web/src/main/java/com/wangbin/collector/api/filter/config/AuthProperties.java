@@ -18,7 +18,8 @@ import java.util.Map;
 public class AuthProperties {
 
     private boolean enabled = true;
-    private List<String> permitAllPaths = new ArrayList<>(List.of("/health", "/actuator/**", "/desktop/**"));
+    private List<String> permitAllPaths = new ArrayList<>(List.of(
+            "/health", "/actuator/health", "/actuator/health/**", "/desktop/**"));
     private List<String> ipAllowList = new ArrayList<>();
     private List<String> trustedProxyRanges = new ArrayList<>();
     private boolean allowIpAuthentication;

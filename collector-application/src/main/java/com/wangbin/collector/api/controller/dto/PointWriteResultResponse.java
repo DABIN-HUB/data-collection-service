@@ -41,4 +41,15 @@ public class PointWriteResultResponse {
      * 写入失败原因。
      */
     private String error;
+    private String operationId;
+    private String deviceId;
+    private Object requestedValue;
+    private Boolean accepted;
+    private Boolean writeSuccess;
+    private Boolean readbackAttempted;
+    private Boolean readbackSuccess;
+    private Object readbackValue;
+    private Long startedAt;
+    private Long completedAt;
+    private String message;
 }

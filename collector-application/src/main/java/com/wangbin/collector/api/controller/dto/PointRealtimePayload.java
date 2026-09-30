@@ -300,6 +300,32 @@ public class PointRealtimePayload {
     private Object lastUpdateTime;
 
     /**
+     * 实时状态：GOOD、COLLECT_ERROR、PROCESS_ERROR、DISCONNECTED、NO_VALUE、STALE 或 UNASSESSED。
+     */
+    private String realtimeStatus;
+
+    /** 失败分类：CONFIG_ERROR、COMM_ERROR、MAPPING_ERROR、DECODE_ERROR、NO_VALUE 等。 */
+    private String failureType;
+    private String errorCode;
+    private Long lastAttemptAt;
+    private Long lastValueAt;
+
+    /**
+     * 实时状态的错误摘要。
+     */
+    private String errorMessage;
+
+    /**
+     * 是否为最近一次成功采集后保留的旧值。
+     */
+    private Boolean stale;
+
+    /**
+     * 最近一次成功采集时间。
+     */
+    private Long lastSuccessfulCollectionAt;
+
+    /**
      * 响应生成时间戳。
      */
     private Long timestamp;
@@ -382,6 +408,14 @@ public class PointRealtimePayload {
             this.processingTimeAvailable = true;
             this.metadata = payload;
             this.lastUpdateTime = payload.get(ProcessResultMetadataKeys.COLLECT_TIME);
+            this.realtimeStatus = processResult.isSuccess()
+                    ? (processResult.isQualityAcceptable() ? "GOOD" : "COLLECT_ERROR")
+                    : "PROCESS_ERROR";
+            this.errorMessage = processResult.getMessage();
+            this.stale = false;
+            this.lastSuccessfulCollectionAt = processResult.isSuccess()
+                    ? toLong(payload.get(ProcessResultMetadataKeys.COLLECT_TIME))
+                    : null;
             return;
         }
         this.value = cachedValue;
@@ -389,6 +423,22 @@ public class PointRealtimePayload {
         this.hasCachedValue = cachedValue != null;
         this.qualityAvailable = false;
         this.processingTimeAvailable = false;
+        this.realtimeStatus = cachedValue == null ? "NO_VALUE" : "UNASSESSED";
+        this.stale = false;
         this.metadata = new HashMap<>();
+    }
+
+    private static Long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

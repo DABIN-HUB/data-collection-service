@@ -1,7 +1,7 @@
 <template>
   <section class="monitor-panel log-workbench">
     <div class="panel-toolbar">
-      <div class="table-actions">
+      <div class="table-actions log-filter-bar">
         <el-select v-model="level" placeholder="日志级别" clearable class="mini-filter">
           <el-option label="INFO" value="INFO" />
           <el-option label="WARN" value="WARN" />
@@ -9,8 +9,8 @@
           <el-option label="DEBUG" value="DEBUG" />
           <el-option label="TRACE" value="TRACE" />
         </el-select>
-        <el-input v-model="logger" placeholder="日志来源过滤" clearable class="log-source-filter" />
-        <el-input v-model="keyword" placeholder="搜索日志内容" clearable :prefix-icon="Search" class="compact-select" />
+        <el-input v-model="keyword" placeholder="搜索设备 / 模块 / 日志内容" clearable :prefix-icon="Search" class="compact-select" />
+        <el-date-picker v-model="timeRange" type="datetimerange" range-separator="至" start-placeholder="开始" end-placeholder="结束" />
         <el-input-number v-model="limit" :min="50" :max="2000" :step="50" controls-position="right" />
         <el-switch v-model="autoRefresh" active-text="自动刷新" inactive-text="手动" />
         <el-button :loading="loading" @click="load">刷新</el-button>
@@ -20,10 +20,10 @@
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <el-table v-loading="loading" :data="filteredRows" height="420" border>
       <el-table-column label="时间" min-width="160"><template #default="{ row }">{{ formatTime(row.timestamp || row.time) }}</template></el-table-column>
-      <el-table-column prop="deviceName" label="设备名称" min-width="150" />
+      <el-table-column label="设备名称" min-width="150"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.deviceName || row.deviceId || '-')">{{ row.deviceName || row.deviceId || '-' }}</span></template></el-table-column>
       <el-table-column label="级别" width="100"><template #default="{ row }"><el-tag :type="levelType(row.level)" effect="light">{{ levelText(row.level) }}</el-tag></template></el-table-column>
-      <el-table-column prop="logger" label="日志来源" min-width="180" />
-      <el-table-column label="日志内容" min-width="320"><template #default="{ row }">{{ row.message || row.content || '-' }}</template></el-table-column>
+      <el-table-column label="日志来源" min-width="180"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.logger || '-')">{{ row.logger || '-' }}</span></template></el-table-column>
+      <el-table-column label="日志内容" min-width="320"><template #default="{ row }"><span class="cell-ellipsis" :title="String(row.message || row.content || '-')">{{ row.message || row.content || '-' }}</span></template></el-table-column>
     </el-table>
   </section>
 </template>
@@ -34,8 +34,8 @@ import { Search } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 
 import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
+import { buildLogExportFilename, buildLogQueryParams, exportLogRowsAsText, filterLogRows } from "@/features/log/utils/log-utils";
 import type { LogRow } from "@/types/monitor";
-import { exportLogRows } from "@/views/ops/ops-utils";
 
 const props = defineProps<{
   deviceId?: string;
@@ -45,25 +45,24 @@ const loading = ref(false);
 const error = ref("");
 const rows = ref<LogRow[]>([]);
 const level = ref("");
-const logger = ref("");
 const keyword = ref("");
+const timeRange = ref<[Date, Date] | null>(null);
 const limit = ref(200);
 const autoRefresh = ref(false);
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const filteredRows = computed(() => rows.value.filter((row) => {
-  const value = keyword.value.trim().toLowerCase();
+const filteredRows = computed(() => filterLogRows(rows.value, { level: level.value, keyword: keyword.value }).filter((row) => {
   const matchesDevice = !props.deviceId || row.deviceId === props.deviceId || row.deviceName === props.deviceId;
-  const matchesLogger = !logger.value || String(row.logger || "").toLowerCase().includes(logger.value.toLowerCase());
-  const matchesKeyword = !value || [row.message, row.content, row.deviceId, row.deviceName, row.logger, row.thread].some((item) => String(item || "").toLowerCase().includes(value));
-  return matchesDevice && matchesLogger && matchesKeyword;
+  const timestamp = logTimeMs(row);
+  const matchesTime = !timeRange.value || !timestamp || (timestamp >= timeRange.value[0].getTime() && timestamp <= timeRange.value[1].getTime());
+  return matchesDevice && matchesTime;
 }));
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const response = await getOpsLogs({ level: level.value || undefined, keyword: keyword.value || undefined, limit: limit.value });
+    const response = await getOpsLogs(buildLogQueryParams({ level: level.value, keyword: keyword.value, limit: limit.value }));
     rows.value = normalizeLogRows(response);
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : "运行日志加载失败";
@@ -73,12 +72,12 @@ async function load() {
 }
 
 function downloadLogs() {
-  const content = exportLogRows(filteredRows.value);
+  const content = exportLogRowsAsText(filteredRows.value);
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `collector-logs-${Date.now()}.txt`;
+  link.download = buildLogExportFilename("txt");
   link.click();
   URL.revokeObjectURL(url);
   ElMessage.success("已导出当前日志");
@@ -125,6 +124,18 @@ function formatTime(value: unknown): string {
   return value ? String(value) : "-";
 }
 
+function logTimeMs(row: LogRow): number | null {
+  const value = row.timestamp || row.time;
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value) {
+    const parsed = Date.parse(String(value));
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
 onMounted(() => {
   load();
   syncTimer();
@@ -137,3 +148,60 @@ onBeforeUnmount(() => {
 watch(() => [level.value, keyword.value, limit.value], load);
 watch(autoRefresh, syncTimer);
 </script>
+
+<style scoped>
+.log-workbench,
+.monitor-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+}
+
+.panel-toolbar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.table-actions,
+.panel-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+  white-space: nowrap;
+}
+
+.log-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.log-filter-bar :deep(.el-date-editor) {
+  flex: 1 1 280px;
+  width: clamp(280px, 34vw, 360px);
+  max-width: 100%;
+}
+
+.cell-ellipsis {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

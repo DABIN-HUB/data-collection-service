@@ -20,6 +20,9 @@ public final class FinsAddressParser {
     private static final Pattern ADDRESS_PATTERN = Pattern.compile(
             "^([A-Za-z0-9]+):(\\d+)(?:\\.(\\d+))?(?:#(\\d+))?$",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEGACY_ADDRESS_PATTERN = Pattern.compile(
+            "^([A-Za-z]+)(\\d+)(?:\\.(\\d+))?(?:#(\\d+))?$",
+            Pattern.CASE_INSENSITIVE);
 
     /**
      * 创建当前组件实例。
@@ -47,6 +50,9 @@ public final class FinsAddressParser {
         Map<String, Object> effectiveConfig = config != null ? config : Collections.emptyMap();
         Matcher matcher = ADDRESS_PATTERN.matcher(address.trim());
         if (!matcher.matches()) {
+            matcher = LEGACY_ADDRESS_PATTERN.matcher(address.trim());
+        }
+        if (!matcher.matches()) {
             throw new IllegalArgumentException("Unsupported FINS address format: " + address);
         }
 
@@ -66,14 +72,14 @@ public final class FinsAddressParser {
                 ? 1
                 : resolveArraySize(explicitLength, effectiveConfig);
 
-        if (bitOffset != null && !"BOOLEAN".equals(normalizedType)) {
-            throw new IllegalArgumentException("FINS bit address only supports BOOLEAN/BOOL type");
-        }
         if (bitOffset != null && elementCount > 1) {
             throw new IllegalArgumentException("FINS bit address does not support array length");
         }
         if ("STRING".equals(normalizedType) && bitOffset != null) {
             throw new IllegalArgumentException("FINS STRING does not support bit offset");
+        }
+        if (bitOffset != null && !"BOOLEAN".equals(normalizedType)) {
+            throw new IllegalArgumentException("FINS bit address requires BOOLEAN dataType");
         }
 
         FinsByteOrder byteOrder = FinsByteOrder.from(effectiveConfig.get("byteOrder"), FinsByteOrder.BIG_ENDIAN);

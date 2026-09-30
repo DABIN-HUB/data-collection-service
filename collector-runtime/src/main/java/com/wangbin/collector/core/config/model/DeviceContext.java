@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.config.model;
 
+import com.alibaba.fastjson2.JSON;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -107,6 +108,7 @@ public class DeviceContext {
             if (point != null) {
                 DataPoint pointCopy = new DataPoint();
                 BeanUtils.copyProperties(point, pointCopy);
+                preserveAlarmRule(point, pointCopy);
                 pointCopy.setAdditionalConfig(point.getAdditionalConfig() == null
                         ? new java.util.LinkedHashMap<>()
                         : new java.util.LinkedHashMap<>(point.getAdditionalConfig()));
@@ -114,6 +116,19 @@ public class DeviceContext {
             }
         }
         return Collections.unmodifiableList(snapshot);
+    }
+
+    /**
+     * 复制告警规则 JSON。
+     *
+     * <p>DataPoint 的 alarmRule 底层字段是 JSON 字符串，但公开 getter 返回规则列表，
+     * BeanUtils 无法自动复制该类型不一致属性，必须显式回填。</p>
+     */
+    private static void preserveAlarmRule(DataPoint source, DataPoint target) {
+        if (source == null || target == null) {
+            return;
+        }
+        target.setAlarmRule(JSON.toJSONString(source.getAlarmRule()));
     }
 
     /**

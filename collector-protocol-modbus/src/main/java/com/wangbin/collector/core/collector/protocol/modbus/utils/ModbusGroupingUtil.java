@@ -33,7 +33,7 @@ public class ModbusGroupingUtil {
 
         for (GroupedPoint gp : points) {
             int currentAddress = gp.getAddress().getAddress();
-            int registerCount = DataType.valueOf(gp.getPoint().getDataType()).getRegisterCount();
+            int registerCount = DataType.fromString(gp.getPoint().getDataType()).getRegisterCount();
             int dataEndAddress = currentAddress + registerCount - 1;  // 数据占用的最后一个寄存器地址
 
             if (currentGroup.isEmpty()) {
@@ -42,13 +42,12 @@ public class ModbusGroupingUtil {
                 groupStartAddress = currentAddress;
                 groupEndAddress = dataEndAddress;
             } else {
-                // 检查地址是否连续且不重叠
-                if (currentAddress == groupEndAddress + 1) {
-                    // 地址连续，加入当前组
+                // 地址连续或重叠时共用读取区间，保留每个点的独立偏移。
+                if (currentAddress <= groupEndAddress + 1) {
                     currentGroup.add(gp);
-                    groupEndAddress = dataEndAddress;
+                    groupEndAddress = Math.max(groupEndAddress, dataEndAddress);
                 } else {
-                    // 地址不连续或重叠，开始新组
+                    // 地址不连续，开始新组
                     groups.add(currentGroup);
                     currentGroup = new ArrayList<>();
                     currentGroup.add(gp);

@@ -253,6 +253,11 @@ public class CollectorProperties {
         private String tenantId = "1";
         private String apiToken = "";
 
+        /**
+         * 本地设备配置快照文件。为空时使用用户目录下的默认路径。
+         */
+        private String localDeviceSnapshotFile = "";
+
         @Valid
         private FileConfig file = new FileConfig();
     }

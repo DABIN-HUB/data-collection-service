@@ -84,18 +84,51 @@ class CollectionRuntimeStabilityTest {
                 batchDispatcher,
                 collectorExecutor,
                 processorExecutor);
-        CollectionScheduler scheduler = new CollectionScheduler(
-                collectionManager,
-                configManager,
-                mock(CollectionStatistics.class),
+        DeviceLifecycleCoordinator lifecycleCoordinator = mock(DeviceLifecycleCoordinator.class);
+        TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
+                runtimeState,
+                performanceMonitor,
+                batchExecutor);
+        TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
                 properties,
+                runtimeState,
+                performanceMonitor,
+                executionCoordinator,
+                timeSliceScheduler,
+                System::nanoTime);
+        TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
+                properties,
+                configManager,
                 null,
                 runtimeState,
                 performanceMonitor,
-                mock(DeviceLifecycleCoordinator.class),
+                lifecycleCoordinator,
+                batchExecutor,
+                schedulingCoordinator);
+        SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
+                properties,
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
+                configCoordinator,
+                timeSliceScheduler);
+        ConfigRestartCoordinator configRestartCoordinator = new ConfigRestartCoordinator(
+                lifecycleCoordinator,
+                configCoordinator,
+                timeSliceScheduler);
+        CollectionScheduler scheduler = new CollectionScheduler(
+                collectionManager,
+                mock(CollectionStatistics.class),
+                runtimeState,
+                performanceMonitor,
+                lifecycleCoordinator,
                 batchExecutor,
                 reconnectCoordinator,
-                timeSliceScheduler);
+                schedulingCoordinator,
+                executionCoordinator,
+                configCoordinator,
+                maintenanceCoordinator,
+                configRestartCoordinator);
         CountDownLatch slowEntered = new CountDownLatch(1);
         CountDownLatch releaseSlow = new CountDownLatch(1);
         CountDownLatch fastProcessed = processor.latchFor("fast", 1);
@@ -237,20 +270,34 @@ class CollectionRuntimeStabilityTest {
                 batchDispatcher,
                 collectorExecutor,
                 processorExecutor);
+        PointRuntimeStateService pointRuntimeStateService = new PointRuntimeStateService();
+        DeviceStartPreparer startPreparer = new DeviceStartPreparer(
+                configManager,
+                properties,
+                guard,
+                pointRuntimeStateService,
+                runtimeState,
+                reconnectCoordinator);
+        DeviceLifecycleCleanup lifecycleCleanup = new DeviceLifecycleCleanup(
+                collectionManager,
+                statistics,
+                healthReporter,
+                pointRuntimeStateService,
+                runtimeState,
+                batchExecutor,
+                reconnectCoordinator,
+                guard);
         DeviceLifecycleCoordinator lifecycleCoordinator = new DeviceLifecycleCoordinator(
                 collectionManager,
-                configManager,
                 statistics,
-                properties,
                 healthReporter,
                 planner,
                 protocolBatchStrategy,
                 guard,
-                new PointRuntimeStateService(),
                 runtimeState,
                 performanceMonitor,
-                batchExecutor,
-                reconnectCoordinator,
+                startPreparer,
+                lifecycleCleanup,
                 startExecutor);
         int deviceCount = 5;
         List<String> deviceIds = new ArrayList<>(deviceCount);

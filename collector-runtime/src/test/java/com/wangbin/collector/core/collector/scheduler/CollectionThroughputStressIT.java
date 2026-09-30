@@ -134,34 +134,79 @@ class CollectionThroughputStressIT {
                     asyncCollectorPool,
                     dataProcessorPool
             );
-            DeviceLifecycleCoordinator lifecycleCoordinator = new DeviceLifecycleCoordinator(
-                    collectionManager,
+            DeviceStartPreparer startPreparer = new DeviceStartPreparer(
                     configManager,
-                    collectionStatistics,
                     properties,
-                healthTracker,
-                batchPlanner,
-                protocolBatchStrategy,
-                collectionTaskGuard,
-                pointRuntimeStateService,
-                runtimeState,
-                performanceMonitor,
+                    collectionTaskGuard,
+                    pointRuntimeStateService,
+                    runtimeState,
+                    reconnectCoordinator);
+            DeviceLifecycleCleanup lifecycleCleanup = new DeviceLifecycleCleanup(
+                    collectionManager,
+                    collectionStatistics,
+                    healthTracker,
+                    pointRuntimeStateService,
+                    runtimeState,
                     batchExecutor,
                     reconnectCoordinator,
+                    collectionTaskGuard);
+            DeviceLifecycleCoordinator lifecycleCoordinator = new DeviceLifecycleCoordinator(
+                    collectionManager,
+                    collectionStatistics,
+                    healthTracker,
+                    batchPlanner,
+                    protocolBatchStrategy,
+                    collectionTaskGuard,
+                    runtimeState,
+                    performanceMonitor,
+                    startPreparer,
+                    lifecycleCleanup,
                     deviceStartExecutor
             );
-            scheduler = new CollectionScheduler(
-                    collectionManager,
-                    configManager,
-                    collectionStatistics,
+            TimeSliceExecutionCoordinator executionCoordinator = new TimeSliceExecutionCoordinator(
+                    runtimeState,
+                    performanceMonitor,
+                    batchExecutor);
+            TimeSliceSchedulingCoordinator schedulingCoordinator = new TimeSliceSchedulingCoordinator(
                     properties,
+                    runtimeState,
+                    performanceMonitor,
+                    executionCoordinator,
+                    timeSliceScheduler,
+                    System::nanoTime);
+            TimeSliceConfigCoordinator configCoordinator = new TimeSliceConfigCoordinator(
+                    properties,
+                    configManager,
                     null,
                     runtimeState,
                     performanceMonitor,
                     lifecycleCoordinator,
                     batchExecutor,
+                    schedulingCoordinator);
+            SchedulerMaintenanceCoordinator maintenanceCoordinator = new SchedulerMaintenanceCoordinator(
+                    properties,
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    configCoordinator,
+                    timeSliceScheduler);
+            ConfigRestartCoordinator configRestartCoordinator = new ConfigRestartCoordinator(
+                    lifecycleCoordinator,
+                    configCoordinator,
+                    timeSliceScheduler);
+            scheduler = new CollectionScheduler(
+                    collectionManager,
+                    collectionStatistics,
+                    runtimeState,
+                    performanceMonitor,
+                    lifecycleCoordinator,
+                    batchExecutor,
                     reconnectCoordinator,
-                    timeSliceScheduler
+                    schedulingCoordinator,
+                    executionCoordinator,
+                    configCoordinator,
+                    maintenanceCoordinator,
+                    configRestartCoordinator
             );
 
             Set<String> connectedDevices = ConcurrentHashMap.newKeySet();
