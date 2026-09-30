@@ -105,7 +105,7 @@
           "pointName": "product_count",
           "deviceId": "ref_enip_device001",
           "address": "Count",
-          "dataType": "UINT32",
+          "dataType": "INT32",
           "readWrite": "RW",
           "unit": "",
           "collectionMode": "POLLING",

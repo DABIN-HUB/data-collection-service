@@ -289,7 +289,7 @@ const connectionHealthText = computed(() => {
     return props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
   }
   if (statusDetail.value.ready === true) {
-    return "采集就绪";
+    return "连接就绪（点位待核对）";
   }
   if (statusDetail.value.phase === "WAITING_FIRST_SAMPLE") {
     return "等待首采";

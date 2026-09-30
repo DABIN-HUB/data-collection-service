@@ -1,0 +1,37 @@
+{
+  "device_id": "[REDACTED_DEVICE_ID]",
+  "points": [
+    {
+      "name": "temperature",
+      "value": 21.6354,
+      "unit": "°C",
+      "data_type": "float32",
+      "access": "rw",
+      "timestamp": 1790288068.2652147
+    },
+    {
+      "name": "humidity",
+      "value": 65.467,
+      "unit": "%RH",
+      "data_type": "float32",
+      "access": "rw",
+      "timestamp": 1790288068.265217
+    },
+    {
+      "name": "pressure",
+      "value": 1009.2087,
+      "unit": "hPa",
+      "data_type": "float32",
+      "access": "rw",
+      "timestamp": 1790288068.265218
+    },
+    {
+      "name": "status",
+      "value": "normal",
+      "unit": "",
+      "data_type": "string",
+      "access": "rw",
+      "timestamp": 1790288068.2652187
+    }
+  ]
+}

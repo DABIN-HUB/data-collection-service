@@ -1349,7 +1349,7 @@ public class ConfigManager {
                 point.setReadWrite("R");
             }
             if (!StringUtils.hasText(point.getCollectionMode())) {
-                point.setCollectionMode(isMqttProtocol(device) ? "SUBSCRIBE" : "POLLING");
+                point.setCollectionMode(isMqttProtocol(device) ? "SUBSCRIPTION" : "POLLING");
             }
             if (point.getStatus() == null) {
                 point.setStatus(1);
@@ -1410,7 +1410,7 @@ public class ConfigManager {
                 continue;
             }
             if (isMqttProtocol(device) && !StringUtils.hasText(point.getCollectionMode())) {
-                point.setCollectionMode("SUBSCRIBE");
+                point.setCollectionMode("SUBSCRIPTION");
             }
             Map<String, Object> additionalConfig = point.getAdditionalConfig();
             removePointCloudIdentity(additionalConfig);

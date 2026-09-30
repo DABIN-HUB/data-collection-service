@@ -319,7 +319,8 @@ public class MqttCollector extends ConnectionBackedCollector implements Protocol
 
     private boolean isSubscribeMode(DataPoint point) {
         String mode = point == null ? null : point.getCollectionMode();
-        return mode == null || mode.isBlank() || "SUBSCRIBE".equalsIgnoreCase(mode);
+        return mode == null || mode.isBlank() || "SUBSCRIPTION".equalsIgnoreCase(mode)
+                || "SUBSCRIBE".equalsIgnoreCase(mode);
     }
 
     /**

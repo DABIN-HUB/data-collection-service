@@ -96,6 +96,10 @@ public class AcquisitionRuntimeTracker {
                 if (point == null) continue;
                 PointFact fact = window.points.get(point.getPointId());
                 if (fact == null || fact.configError != null) continue;
+                // 本代次真实轮询返回了可解码的点值，证明协议读取成功；TCP 连通和空响应均不计入。
+                if (values != null && values.get(point.getPointId()) != null && window.protocolReadyAt == 0L) {
+                    window.protocolReadyAt = now;
+                }
                 if (fact.failureReason != null && fact.lastFailureAt >= fact.lastAttemptAt) continue;
                 fact.polling = true;
                 fact.lastAttemptAt = now;
@@ -125,7 +129,7 @@ public class AcquisitionRuntimeTracker {
                 if (fact != null && fact.configError == null) {
                     fact.polling = true;
                     fact.lastAttemptAt = now;
-                    failure(fact, now, reason == null ? "COMM_ERROR" : reason);
+                    failure(fact, now, normalizeReason(reason));
                     fact.failureMessage = detail;
                 }
             }
@@ -166,7 +170,7 @@ public class AcquisitionRuntimeTracker {
         }
     }
 
-    /** 外部协议事件可显式上报配置、通信、映射或无值错误；其他字符串一律归入通信错误。 */
+    /** 外部协议事件可显式上报点位错误，未知类型才降级为通信错误。 */
     public void recordPointFailure(String deviceId, long generation, String pointId, String reason, long at) {
         Window window = windows.get(deviceId);
         if (window == null || window.generation != generation || pointId == null) return;
@@ -182,8 +186,11 @@ public class AcquisitionRuntimeTracker {
     }
 
     private String normalizeReason(String reason) {
-        return "CONFIG_ERROR".equals(reason) || "MAPPING_ERROR".equals(reason)
-                || "NO_VALUE".equals(reason) ? reason : "COMM_ERROR";
+        if (reason == null) return "COMM_ERROR";
+        return switch (reason) {
+            case "CONFIG_ERROR", "COMM_ERROR", "MAPPING_ERROR", "DECODE_ERROR", "NO_VALUE" -> reason;
+            default -> "COMM_ERROR";
+        };
     }
 
     /** 启动失败只能清理自己的代次，不能覆盖已经启动的新窗口。 */
@@ -215,7 +222,7 @@ public class AcquisitionRuntimeTracker {
         }
     }
 
-    /** 仅接收当前代次真实协议握手或订阅确认，不能由 TCP/UDP 连接推断。 */
+    /** 仅接收当前代次真实协议握手或订阅确认，不能由 TCP/UDP 连接或缓存值推断。 */
     public void recordProtocolReady(String deviceId, long generation) {
         Window window = windows.get(deviceId);
         if (window == null || window.generation != generation) return;
@@ -273,7 +280,6 @@ public class AcquisitionRuntimeTracker {
         fact.failureMessage = null;
         fact.qualityCode = qualityCode;
         window.firstValueAt = window.firstValueAt == 0L ? timestamp : Math.min(window.firstValueAt, timestamp);
-        window.protocolReadyAt = Math.max(window.protocolReadyAt, timestamp);
     }
 
     private void failure(PointFact fact, long timestamp, String reason) {
