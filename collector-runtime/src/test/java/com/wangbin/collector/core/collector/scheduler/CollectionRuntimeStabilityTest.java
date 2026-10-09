@@ -128,7 +128,7 @@ class CollectionRuntimeStabilityTest {
                 executionCoordinator,
                 configCoordinator,
                 maintenanceCoordinator,
-                configRestartCoordinator);
+                configRestartCoordinator, new com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker(guard));
         CountDownLatch slowEntered = new CountDownLatch(1);
         CountDownLatch releaseSlow = new CountDownLatch(1);
         CountDownLatch fastProcessed = processor.latchFor("fast", 1);
@@ -139,9 +139,9 @@ class CollectionRuntimeStabilityTest {
         when(collectionManager.readPoints(eq("slow"), anyList())).thenAnswer(invocation -> {
             slowEntered.countDown();
             releaseSlow.await(2, TimeUnit.SECONDS);
-            return values(invocation.getArgument(1));
+            return values(invocation.getArgument(1), guard);
         });
-        when(collectionManager.readPoints(eq("fast"), anyList())).thenAnswer(invocation -> values(invocation.getArgument(1)));
+        when(collectionManager.readPoints(eq("fast"), anyList())).thenAnswer(invocation -> values(invocation.getArgument(1), guard));
 
         CompletableFuture<Void> sliceFuture = CompletableFuture.runAsync(
                 () -> scheduler.executeTimeSlice(0, runtimeState.getTimeSliceRevision()),
@@ -190,13 +190,14 @@ class CollectionRuntimeStabilityTest {
                 throw new IllegalStateException("simulated disconnect");
             }
             return null;
-        }).when(collectionManager).reconnectDevice(anyString());
+        }).when(collectionManager).reconnectDevice(anyString(), anyLong());
 
         for (int i = 0; i < deviceCount; i++) {
             String deviceId = "storm-" + i;
             deviceIds.add(deviceId);
             long generation = guard.activateNextGeneration(deviceId);
             generations.add(generation);
+            runtimeState.requestRunning(deviceId);
             runtimeState.markRunning(deviceId, generation);
         }
 
@@ -322,7 +323,7 @@ class CollectionRuntimeStabilityTest {
         when(protocolBatchStrategy.defaultBatchSize(anyString())).thenReturn(10);
         when(protocolBatchStrategy.maxBatchSize(anyString())).thenReturn(100);
         doAnswer(invocation -> null).when(collectionManager).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
-        doAnswer(invocation -> null).when(collectionManager).connectDevice(anyString());
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(anyString(), anyLong());
         doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(anyString(), anyList());
         doAnswer(invocation -> null).when(collectionManager).disconnectDevice(anyString());
         doAnswer(invocation -> null).when(collectionManager).cleanupDevice(anyString());
@@ -347,7 +348,8 @@ class CollectionRuntimeStabilityTest {
                                        ConfigManager configManager,
                                        String deviceId) {
         long generation = guard.activateNextGeneration(deviceId);
-        runtimeState.markRunning(deviceId, generation);
+        runtimeState.requestRunning(deviceId);
+            runtimeState.markRunning(deviceId, generation);
         DataPoint point = point(deviceId, "p1");
         when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
         runtimeState.addBatchTasks(List.of(new DeviceBatchTask(
@@ -358,10 +360,14 @@ class CollectionRuntimeStabilityTest {
                 runtimeState.getTimeSliceRevision())));
     }
 
-    private Map<String, Object> values(List<DataPoint> points) {
+    private Map<String, Object> values(List<DataPoint> points, CollectionTaskGuard guard) {
         java.util.HashMap<String, Object> values = new java.util.HashMap<>();
+        CollectionProcessingReceipt receipt = guard.captureCurrentContext().receipt();
         for (DataPoint point : points) {
             values.put(point.getPointId(), 1);
+            // 隔离用例模拟已完成的核心处理，而非仅返回 Map 就冒充有效采集。
+            receipt.claim(point.getPointId());
+            receipt.complete(point.getPointId(), true, null, System.currentTimeMillis());
         }
         return values;
     }

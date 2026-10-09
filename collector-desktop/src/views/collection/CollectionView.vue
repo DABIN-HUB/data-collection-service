@@ -190,7 +190,7 @@ function protocolCapability(protocol: ProtocolSchema): string {
 }
 
 function deviceIdOf(device: DeviceInfo): string {
-  return String(device.deviceId || device.id || device.connectionKey || "");
+  return String(device.deviceId || device.id || "");
 }
 
 function sumPoints(source: DeviceInfo[]): number {

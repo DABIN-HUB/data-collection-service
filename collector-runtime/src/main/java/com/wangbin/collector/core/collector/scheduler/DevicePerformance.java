@@ -82,7 +82,8 @@ class DevicePerformance {
         consecutiveFailureCount = 0;
         long sampleTime = collectTime > 0 ? collectTime : System.currentTimeMillis();
         if (firstSuccessTime <= 0) firstSuccessTime = sampleTime;
-        lastSuccessTime = sampleTime;
+        else firstSuccessTime = Math.min(firstSuccessTime, sampleTime);
+        lastSuccessTime = Math.max(lastSuccessTime, sampleTime);
     }
 
     void resetRuntimeWindow(long generation) {

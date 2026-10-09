@@ -117,6 +117,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
             return super.readPoint(point);
         }
         checkConnection();
+        resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         try {
@@ -125,7 +126,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
 
             Object rawValue = doReadPoint(point);
             ProcessResult processResult = buildArrayProcessResult(point, address, rawValue, "array pass-through read");
+            enrichTelemetryMetadata(processResult, rawValue, rawValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
+            addInvocationProcessResult(point.getPointId(), processResult);
 
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
@@ -151,6 +154,8 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         }
         checkConnection();
 
+        resetInvocationProcessResults();
+        Map<String, ProcessResult> invocation = new LinkedHashMap<>();
         Map<String, Object> results = new LinkedHashMap<>();
         List<DataPoint> scalarPoints = new ArrayList<>();
         List<DataPoint> arrayPoints = new ArrayList<>();
@@ -158,6 +163,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
 
         if (!scalarPoints.isEmpty()) {
             results.putAll(super.readPoints(scalarPoints));
+            invocation.putAll(takeInvocationProcessResults());
         }
         if (arrayPoints.isEmpty()) {
             return results;
@@ -177,7 +183,9 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                     EtherNetIpTagAddress address = requireAddress(point);
                     ProcessResult processResult = buildArrayProcessResult(point, address, rawValue,
                             "array pass-through batch read");
+                    enrichTelemetryMetadata(processResult, rawValue, rawValue, arrayStartTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
+                    invocation.put(pointId, processResult.snapshot());
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
                     log.error("EtherNet/IP 数组点位处理失败: 设备={}, 点位名称={}", deviceInfo.getDeviceId(), point.getPointName(), e);
@@ -186,6 +194,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
                 }
             }
 
+            setInvocationProcessResults(invocation);
             totalReadCount.addAndGet(arrayPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - arrayStartTime);
             lastActivityTime = System.currentTimeMillis();
@@ -1142,7 +1151,7 @@ public class EtherNetIpCollector extends ConnectionBackedCollector {
         if (!(rawValue instanceof Collection<?>) && !(rawValue != null && rawValue.getClass().isArray())) {
             throw new IllegalArgumentException("EtherNet/IP array point did not produce collection payload: " + point.getPointId());
         }
-        ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
+        ProcessResult processResult = processArrayQuality(point, rawValue, address.getArraySize());
         processResult.addMetadata("arrayValue", true);
         processResult.addMetadata("arraySize", address.getArraySize());
         processResult.addMetadata("processingMode", "protocol_passthrough");

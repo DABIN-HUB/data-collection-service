@@ -31,13 +31,13 @@
             <p>读取当前设备运行态、连接状态和最近消息。</p>
           </div>
           <div class="control-status-row">
-            <div class="state-pill"><span>运行状态</span><strong :class="statusToneClass(connectionStatusText)"><i></i>{{ connectionStatusText }}</strong></div>
-            <div class="state-pill"><span>连接</span><strong :class="statusToneClass(connectionHealthText)"><i></i>{{ connectionHealthText }}</strong></div>
-            <div class="state-pill state-pill-message"><span>最近消息</span><strong>{{ connectionMessage || statusDetail?.message || '连接正常' }}</strong></div>
+            <div class="state-pill"><span>生命周期</span><strong :class="statusToneClass(connectionStatusText)"><i></i>{{ connectionStatusText }}</strong></div>
+            <div class="state-pill"><span>传输 / 协议</span><strong :class="statusToneClass(connectionHealthText)"><i></i>{{ connectionHealthText }}</strong></div>
+            <div class="state-pill state-pill-message"><span>最近消息</span><strong>{{ connectionMessage || runtimeView.reason || '状态未知' }}</strong></div>
             <div class="header-actions run-control-actions">
               <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
-              <el-button type="primary" @click="$emit('start', device.normalizedId)">启动采集</el-button>
-              <el-button type="danger" plain @click="$emit('stop', device.normalizedId)">停止采集</el-button>
+              <el-button type="primary" :disabled="savingConnection" @click="$emit('start', device.normalizedId)">启动采集</el-button>
+              <el-button type="danger" plain :disabled="savingConnection" @click="$emit('stop', device.normalizedId)">停止采集</el-button>
             </div>
           </div>
         </section>
@@ -58,6 +58,8 @@
         </section>
       </div>
 
+      <p>采集健康：{{ runtimeView.health }} · {{ runtimeView.points }} · 最近有效：{{ runtimeView.lastValid }}</p>
+      <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
       <details class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
         <summary>
           <span>高级协议连接配置</span>
@@ -201,7 +203,7 @@ import { ElMessage } from "element-plus";
 import { getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { getDeviceRealtimeData } from "@/api/data.api";
-import { getDeviceRuntimeSnapshot } from "@/api/device.api";
+
 import { getProtocol } from "@/api/protocol.api";
 import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils";
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
@@ -209,8 +211,8 @@ import LogPanel from "@/components/log/LogPanel.vue";
 import PointEditor from "@/features/point/components/PointEditor.vue";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
-import { resolveDeviceStatus } from "@/stores/device.store";
-import { normalizeDeviceStatusDetail, runtimePhaseLabel, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
+import { useDeviceStore } from "@/stores/device.store";
+import { normalizeDeviceStatusDetail, runtimePresentation, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
 import { buildConnectionPayload, extractProtocolModel, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import {
   buildDeviceProtocolRequestContext,
@@ -224,6 +226,8 @@ import type { RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
 
+const deviceStore = useDeviceStore();
+let configSession = 0;
 const props = defineProps<{
   device: DeviceViewModel | null;
 }>();
@@ -249,7 +253,7 @@ const protocolErrors = ref<string[]>([]);
 const protocolSchema = ref<ProtocolSchema | null>(null);
 const connectionConfig = ref<ConnectionPayload>({});
 const protocolLoading = ref(false);
-const savingConnection = ref(false);
+const savingConnection = computed(() => deviceStore.isDeviceOperating(props.device?.normalizedId || ""));
 const protocolError = ref("");
 const connectionMessage = ref("");
 const configBundle = ref<{ configVersion: number; device?: any; connection?: any; points?: any[] } | null>(null);
@@ -278,39 +282,14 @@ const pagedPointRows = computed(() => {
   return pointRows.value.slice(start, start + pageSize.value);
 });
 
-const connectionStatusText = computed(() => {
-  if (!statusDetail.value) {
-    return resolveDeviceStatus(props.device || ({ status: "OFFLINE" } as DeviceViewModel));
-  }
-  return statusDetail.value ? runtimePhaseLabel(statusDetail.value) : "状态未知";
+const runtimeView = computed(() => {
+  const id = props.device?.normalizedId || "";
+  return runtimePresentation(deviceStore.runtimeMap[id] || props.device?.runtime || statusDetail.value || undefined,
+    Boolean(deviceStore.runtimeErrors[id] || props.device?.runtimeStale));
 });
-const connectionHealthText = computed(() => {
-  if (!statusDetail.value) {
-    return props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
-  }
-  if (statusDetail.value.ready === true) {
-    return "连接就绪（点位待核对）";
-  }
-  if (statusDetail.value.phase === "WAITING_FIRST_SAMPLE") {
-    return "等待首采";
-  }
-  if (statusDetail.value.degradedReason) {
-    return statusDetail.value.degradedReason;
-  }
-  return statusDetail.value.isRunning || statusDetail.value.running ? "运行中" : "未连接";
-});
-
-
-const deviceStatusText = computed(() => {
-  const status = props.device ? resolveDeviceStatus(props.device) : "OFFLINE";
-  return {
-    ONLINE: "在线",
-    CONNECTING: "重连中",
-    ERROR: "异常",
-    DISABLED: "禁用",
-    OFFLINE: "离线"
-  }[status];
-});
+const connectionStatusText = computed(() => runtimeView.value.lifecycle);
+const connectionHealthText = computed(() => runtimeView.value.transportProtocol);
+const deviceStatusText = computed(() => runtimeView.value.lifecycle);
 
 async function loadProtocolConfig() {
   const requestContext = currentProtocolConfigContext();
@@ -318,6 +297,8 @@ async function loadProtocolConfig() {
     return;
   }
   const ticket = protocolConfigOwner.begin(requestContext);
+  const epoch = deviceStore.deviceEpochs[requestContext.deviceId] || 0;
+  ++configSession;
   protocolLoading.value = true;
   protocolError.value = "";
   connectionMessage.value = "";
@@ -328,7 +309,7 @@ async function loadProtocolConfig() {
     ]);
     const nextConnectionConfig = bundle.connection || {};
     const nextProtocolModel = extractProtocolModel(schema.connectionFields || [], nextConnectionConfig);
-    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext())) {
+    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0) || deviceStore.isDeviceOperating(requestContext.deviceId)) {
       return;
     }
     protocolSchema.value = schema;
@@ -337,7 +318,7 @@ async function loadProtocolConfig() {
     protocolModel.value = nextProtocolModel;
     connectionMessage.value = "连接配置已读取";
   } catch (error) {
-    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext())) {
+    if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0) || deviceStore.isDeviceOperating(requestContext.deviceId)) {
       return;
     }
     protocolError.value = error instanceof Error ? error.message : "协议连接配置加载失败";
@@ -356,13 +337,15 @@ async function loadConnectionStatus() {
   const ticket = statusOwner.begin(requestContext);
   statusLoading.value = true;
   try {
-    const nextStatusDetail = normalizeDeviceStatusDetail(await getDeviceRuntimeSnapshot(requestContext.deviceId), requestContext.deviceId);
-    const nextConnectionMessage = nextStatusDetail.message || (nextStatusDetail.connected ? "连接正常" : "连接异常");
+    const error = await deviceStore.refreshRuntime(requestContext.deviceId);
+    if (error) throw new Error(error);
+    const runtime = deviceStore.runtimeMap[requestContext.deviceId];
+    const nextStatusDetail = runtime ? normalizeDeviceStatusDetail(runtime, requestContext.deviceId) : null;
     if (!statusOwner.canCommit(ticket, currentDeviceRequestContext())) {
       return;
     }
     statusDetail.value = nextStatusDetail;
-    connectionMessage.value = nextConnectionMessage || (nextStatusDetail.connected ? "连接正常" : "连接异常");
+    connectionMessage.value = "";
   } catch (error) {
     if (!statusOwner.canCommit(ticket, currentDeviceRequestContext())) {
       return;
@@ -384,18 +367,19 @@ async function loadWorkbenchRows() {
     return;
   }
   const ticket = workbenchRowsOwner.begin(requestContext);
+  const epoch = deviceStore.deviceEpochs[requestContext.deviceId] || 0;
   workbenchRowsLoading.value = true;
   workbenchRowsError.value = "";
   try {
     const nextRows = normalizeRealtimeRows(await getDeviceRealtimeData(requestContext.deviceId), requestContext.deviceId);
-    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext())) {
+    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0)) {
       return;
     }
     workbenchRows.value = nextRows;
     selectedWorkbenchPoint.value = resolveSelectedWorkbenchPoint(nextRows, selectedWorkbenchPoint.value);
     currentPage.value = 1;
   } catch (error) {
-    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext())) {
+    if (!workbenchRowsOwner.canCommit(ticket, currentDeviceRequestContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0)) {
       return;
     }
     workbenchRowsError.value = error instanceof Error ? error.message : "点位运行数据加载失败";
@@ -411,6 +395,8 @@ async function saveProtocolConfig() {
   if (!targetContext.deviceId || !targetContext.protocolKey || !props.device) {
     return;
   }
+  if (deviceStore.isDeviceOperating(targetContext.deviceId)) return;
+  const session = configSession;
   const targetFields = [...protocolFields.value];
   const targetModel = { ...protocolModel.value };
   const targetConnectionConfig = cloneConnectionPayload(connectionConfig.value);
@@ -421,7 +407,7 @@ async function saveProtocolConfig() {
     protocolError.value = "请先修正协议字段校验错误";
     return;
   }
-  savingConnection.value = true;
+
   protocolError.value = "";
   try {
     const payload = buildConnectionPayload(targetFields, targetModel, {
@@ -440,12 +426,19 @@ async function saveProtocolConfig() {
       connection: payload,
       points: currentBundle.points || []
     };
-    const validation = await validateDeviceConfigBundle(targetContext.deviceId, bundlePayload);
-    if (!validation.valid) {
-      throw new Error(validation.errors?.join("；") || "设备配置校验失败");
-    }
-    const result = await commitDeviceConfigBundle(targetContext.deviceId, bundlePayload);
-    if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+    const operation = await deviceStore.operate(async () => {
+      const validation = await validateDeviceConfigBundle(targetContext.deviceId, bundlePayload);
+      if (!validation.valid) throw new Error(validation.errors?.join("；") || "设备配置校验失败");
+      try {
+        return await commitDeviceConfigBundle(targetContext.deviceId, bundlePayload);
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.httpStatus === 409) throw new Error("设备配置已经发生变化，请重新读取配置后确认当前修改", { cause: error });
+        throw error;
+      }
+    }, targetContext.deviceId);
+    if (!operation.ok || !operation.result) throw new Error(operation.error || "协议连接配置保存失败");
+    const result = operation.result;
+    if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
       connectionConfig.value = payload;
       configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion };
       connectionMessage.value = `完整设备配置已保存，配置版本 v${result.configVersion}`;
@@ -457,13 +450,11 @@ async function saveProtocolConfig() {
     const message = error instanceof ApiRequestError && error.httpStatus === 409
       ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
       : error instanceof Error ? error.message : "协议连接配置保存失败";
-    if (shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+    if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
       protocolError.value = message;
       return;
     }
     ElMessage.error(`设备 ${targetDeviceName} 协议连接配置保存失败：${message}`);
-  } finally {
-    savingConnection.value = false;
   }
 }
 
@@ -473,16 +464,17 @@ async function showDiff() {
     return;
   }
   const ticket = diffOwner.begin(requestContext);
+  const epoch = deviceStore.deviceEpochs[requestContext.deviceId] || 0;
   protocolError.value = "";
   try {
     const diff = await getDeviceDiff(requestContext.deviceId);
-    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext())) {
+    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0)) {
       return;
     }
     diffText.value = JSON.stringify(diff, null, 2);
     diffVisible.value = true;
   } catch (error) {
-    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext())) {
+    if (!diffOwner.canCommit(ticket, currentDeviceRequestContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0)) {
       return;
     }
     protocolError.value = error instanceof Error ? error.message : "配置差异加载失败";
@@ -498,6 +490,8 @@ function currentProtocolConfigContext() {
 }
 
 function resetProtocolReadState() {
+  ++configSession;
+  configBundle.value = null;
   protocolModel.value = {};
   protocolErrors.value = [];
   protocolSchema.value = null;
@@ -633,6 +627,9 @@ watch(activeTab, (tab) => {
 });
 
 watch(() => props.device?.normalizedId, () => {
+  ++configSession;
+  workbenchRows.value = [];
+  workbenchRowsError.value = "";
   statusOwner.invalidate();
   workbenchRowsOwner.invalidate();
   diffOwner.invalidate();
@@ -663,6 +660,7 @@ watch(() => [props.device?.normalizedId, protocolKey.value], () => {
 }, { immediate: true });
 
 onBeforeUnmount(() => {
+  ++configSession;
   protocolConfigOwner.invalidate();
   statusOwner.invalidate();
   workbenchRowsOwner.invalidate();

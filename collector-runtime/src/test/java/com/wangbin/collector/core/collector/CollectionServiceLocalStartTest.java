@@ -27,7 +27,7 @@ class CollectionServiceLocalStartTest {
         collectionService = new CollectionService(
                 collectionScheduler,
                 mock(CollectionStatistics.class),
-                configManager
+                configManager, mock(com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator.class)
         );
     }
 

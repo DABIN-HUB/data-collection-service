@@ -1,3 +1,4 @@
+import type { DeviceRuntimeSnapshot } from "./device";
 import type { DataPoint } from "./point";
 
 export interface PointRealtimePayload extends DataPoint {
@@ -305,6 +306,7 @@ export interface DeviceConnectionSnapshot {
   errors?: number;
   successRate?: number;
   connectionDuration?: number;
+  runtime?: DeviceRuntimeSnapshot | null;
   [key: string]: unknown;
 }
 

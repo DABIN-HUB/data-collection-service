@@ -183,10 +183,12 @@ public class S7Collector extends ConnectionBackedCollector {
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
         checkConnection();
+        resetInvocationProcessResults();
         if (isSubscriptionPoint(point)) {
             lastActivityTime = System.currentTimeMillis();
-            ProcessResult processResult = point != null ? getLatestProcessResult(point.getPointId()) : null;
-            return processResult != null ? processResult.getFinalValue() : null;
+            ProcessResult processResult = cachedReadResult(point, getLatestProcessResult(point.getPointId()));
+            addInvocationProcessResult(point.getPointId(), processResult);
+            return processResult.getFinalValue();
         }
         if (!isArrayPoint(point)) {
             return super.readPoint(point);
@@ -199,7 +201,9 @@ public class S7Collector extends ConnectionBackedCollector {
 
             Object rawValue = doReadPoint(point);
             ProcessResult processResult = buildArrayProcessResult(point, address, rawValue, "array pass-through read");
+            enrichTelemetryMetadata(processResult, rawValue, rawValue, startTime, "POLLING");
             lastProcessResults.put(point.getPointId(), processResult);
+            addInvocationProcessResult(point.getPointId(), processResult);
 
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
@@ -226,6 +230,8 @@ public class S7Collector extends ConnectionBackedCollector {
             return super.readPoints(points);
         }
 
+        resetInvocationProcessResults();
+        Map<String, ProcessResult> invocation = new LinkedHashMap<>();
         Map<String, Object> results = new LinkedHashMap<>();
         List<DataPoint> scalarPollPoints = new ArrayList<>();
         List<DataPoint> arrayPollPoints = new ArrayList<>();
@@ -234,17 +240,21 @@ public class S7Collector extends ConnectionBackedCollector {
 
         if (!scalarPollPoints.isEmpty()) {
             results.putAll(super.readPoints(scalarPollPoints));
+            invocation.putAll(takeInvocationProcessResults());
         }
         if (!arrayPollPoints.isEmpty()) {
             results.putAll(readArrayPoints(arrayPollPoints));
+            invocation.putAll(takeInvocationProcessResults());
         }
         for (DataPoint point : subscriptionPoints) {
             if (point == null || point.getPointId() == null) {
                 continue;
             }
-            ProcessResult processResult = getLatestProcessResult(point.getPointId());
-            results.put(point.getPointId(), processResult != null ? processResult.getFinalValue() : null);
+            ProcessResult processResult = cachedReadResult(point, getLatestProcessResult(point.getPointId()));
+            invocation.put(point.getPointId(), processResult);
+            results.put(point.getPointId(), processResult.getFinalValue());
         }
+        setInvocationProcessResults(invocation);
         lastActivityTime = System.currentTimeMillis();
         return results;
     }
@@ -407,7 +417,7 @@ public class S7Collector extends ConnectionBackedCollector {
         enrichTelemetryMetadata(failure, null, null, System.currentTimeMillis(), "POLLING");
         lastProcessResults.put(point.getPointId(), failure);
         if (telemetryIngressService != null) {
-            telemetryIngressService.append(deviceInfo.getDeviceId(), point, failure);
+            telemetryIngressService.append(deviceInfo.getDeviceId(), point, failure, runtimeGeneration);
         }
     }
 
@@ -990,7 +1000,9 @@ public class S7Collector extends ConnectionBackedCollector {
                     S7Address address = requireAddress(point);
                     ProcessResult processResult = buildArrayProcessResult(point, address, rawValue,
                             "array pass-through batch read");
+                    enrichTelemetryMetadata(processResult, rawValue, rawValue, startTime, "POLLING");
                     lastProcessResults.put(pointId, processResult);
+                    addInvocationProcessResult(pointId, processResult);
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
                     log.error("PLC4X S7 array 点位 批量 读取 item 失败, 点位={}", pointId, e);
@@ -1495,6 +1507,9 @@ public class S7Collector extends ConnectionBackedCollector {
         try {
             ProcessResult processResult = ProcessResult.success(payload, payload,
                     "S7 event " + subscriptionMode + " received");
+            Object sourceTime = payload != null ? payload.get("eventTs") : null;
+            long sampleAt = sourceTime instanceof Number number ? number.longValue() : System.currentTimeMillis();
+            enrichTelemetryMetadata(processResult, payload, payload, sampleAt, "PUSH");
             processResult.addMetadata("eventTriggered", true);
             processResult.addMetadata(CommonMapKeys.EVENT_TYPE, "S7_" + subscriptionMode);
             processResult.addMetadata("eventLevel", "INFO");
@@ -1515,7 +1530,7 @@ public class S7Collector extends ConnectionBackedCollector {
             lastProcessResults.put(point.getPointId(), processResult);
             lastActivityTime = System.currentTimeMillis();
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, processResult);
+                telemetryIngressService.append(resolvedDeviceId, point, processResult, runtimeGeneration);
             }
             return processResult;
         } catch (Exception e) {
@@ -1530,7 +1545,7 @@ public class S7Collector extends ConnectionBackedCollector {
             error.addMetadata("subscriptionAddress", subscriptionAddress);
             lastProcessResults.put(point.getPointId(), error);
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, error);
+                telemetryIngressService.append(resolvedDeviceId, point, error, runtimeGeneration);
             }
             return error;
         }
@@ -1757,7 +1772,7 @@ public class S7Collector extends ConnectionBackedCollector {
         if (!(rawValue instanceof Collection<?>) && !(rawValue != null && rawValue.getClass().isArray())) {
             throw new IllegalArgumentException("S7 array point did not produce collection payload: " + point.getPointId());
         }
-        ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
+        ProcessResult processResult = processArrayQuality(point, rawValue, address.getArraySize());
         processResult.addMetadata("arrayValue", true);
         processResult.addMetadata("arraySize", address.getArraySize());
         processResult.addMetadata("processingMode", "protocol_passthrough");
@@ -1785,10 +1800,11 @@ public class S7Collector extends ConnectionBackedCollector {
         try {
             validateArrayPointConfiguration(point, address, "subscribe");
             ProcessResult processResult = buildArrayProcessResult(point, address, rawValue, message);
+            enrichTelemetryMetadata(processResult, rawValue, rawValue, System.currentTimeMillis(), "PUSH");
             lastProcessResults.put(point.getPointId(), processResult);
             lastActivityTime = System.currentTimeMillis();
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, processResult);
+                telemetryIngressService.append(resolvedDeviceId, point, processResult, runtimeGeneration);
             }
             return processResult;
         } catch (Exception e) {
@@ -1797,9 +1813,10 @@ public class S7Collector extends ConnectionBackedCollector {
             recordException(e, point);
             ProcessResult error = ProcessResult.error(rawValue,
                     "pushed array telemetry process failed: " + e.getMessage());
+            enrichTelemetryMetadata(error, rawValue, null, System.currentTimeMillis(), "PUSH");
             lastProcessResults.put(point.getPointId(), error);
             if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, error);
+                telemetryIngressService.append(resolvedDeviceId, point, error, runtimeGeneration);
             }
             return error;
         }

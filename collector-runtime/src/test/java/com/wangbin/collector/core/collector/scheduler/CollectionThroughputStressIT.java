@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -206,7 +207,7 @@ class CollectionThroughputStressIT {
                     executionCoordinator,
                     configCoordinator,
                     maintenanceCoordinator,
-                    configRestartCoordinator
+                    configRestartCoordinator, new com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker(new CollectionTaskGuard())
             );
 
             Set<String> connectedDevices = ConcurrentHashMap.newKeySet();
@@ -303,7 +304,7 @@ class CollectionThroughputStressIT {
         doAnswer(invocation -> {
             connectedDevices.add(invocation.getArgument(0));
             return null;
-        }).when(collectionManager).connectDevice(anyString());
+        }).when(collectionManager).connectDevice(anyString(), anyLong());
         doAnswer(invocation -> {
             connectedDevices.remove(invocation.getArgument(0));
             return null;

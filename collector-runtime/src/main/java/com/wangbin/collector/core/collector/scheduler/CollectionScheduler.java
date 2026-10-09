@@ -4,6 +4,7 @@ import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
@@ -18,7 +19,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+
 
 /**
  * 采集任务调度顶层编排器。
@@ -40,6 +41,7 @@ public class CollectionScheduler {
     private final TimeSliceConfigCoordinator timeSliceConfigCoordinator;
     private final SchedulerMaintenanceCoordinator schedulerMaintenanceCoordinator;
     private final ConfigRestartCoordinator configRestartCoordinator;
+    private final AcquisitionRuntimeTracker acquisitionRuntimeTracker;
     private ConfigManager configManager;
 
     @Autowired
@@ -54,7 +56,8 @@ public class CollectionScheduler {
                                TimeSliceExecutionCoordinator timeSliceExecutionCoordinator,
                                TimeSliceConfigCoordinator timeSliceConfigCoordinator,
                                SchedulerMaintenanceCoordinator schedulerMaintenanceCoordinator,
-                               ConfigRestartCoordinator configRestartCoordinator) {
+                               ConfigRestartCoordinator configRestartCoordinator,
+                               AcquisitionRuntimeTracker acquisitionRuntimeTracker) {
         this.collectionManager = collectionManager;
         this.collectionStatistics = collectionStatistics;
         this.runtimeState = runtimeState;
@@ -67,6 +70,7 @@ public class CollectionScheduler {
         this.timeSliceConfigCoordinator = timeSliceConfigCoordinator;
         this.schedulerMaintenanceCoordinator = schedulerMaintenanceCoordinator;
         this.configRestartCoordinator = configRestartCoordinator;
+        this.acquisitionRuntimeTracker = acquisitionRuntimeTracker;
     }
 
     @Autowired(required = false)
@@ -82,10 +86,11 @@ public class CollectionScheduler {
 
     @PreDestroy
     public void destroy() {
+        deviceLifecycleCoordinator.beginShutdown();
         configRestartCoordinator.cancelAll();
-        stopAllDevices();
-        timeSliceSchedulingCoordinator.cancelTimeSliceScheduling();
         schedulerMaintenanceCoordinator.cancel();
+        timeSliceSchedulingCoordinator.cancelTimeSliceScheduling();
+        stopAllDevices();
         reconnectCoordinator.clearAll();
         runtimeState.clear();
     }
@@ -210,8 +215,12 @@ public class CollectionScheduler {
         boolean matchingRuntimeWindow = performance != null && scheduleInfo != null
                 && performance.runtimeGeneration == scheduleInfo.getGeneration();
         int consecutiveFailures = matchingRuntimeWindow ? performance.consecutiveFailureCount : 0;
-        long firstSampleAt = matchingRuntimeWindow ? performance.firstSuccessTime : 0L;
-        long lastSuccessfulCollectionAt = matchingRuntimeWindow ? performance.lastSuccessTime : 0L;
+        long generation = scheduleInfo != null ? scheduleInfo.getGeneration()
+                : starting ? runtimeState.getStartingGeneration(deviceId) : runtimeState.lastGeneration(deviceId);
+        AcquisitionRuntimeTracker.WindowSnapshot facts = acquisitionRuntimeTracker.snapshot(deviceId, generation);
+        long firstSampleAt = facts.firstValueAt();
+        long lastSuccessfulCollectionAt = facts.points().values().stream()
+                .mapToLong(AcquisitionRuntimeTracker.PointFactSnapshot::lastObservedAt).max().orElse(0L);
         long backoffUntil = runtimeState.getDeviceBackoffUntil(deviceId);
         DeviceRuntimePhase phase;
         String degradedReason = null;
@@ -237,14 +246,14 @@ public class CollectionScheduler {
         } else {
             phase = DeviceRuntimePhase.STOPPED;
         }
-        boolean ready = phase == DeviceRuntimePhase.ONLINE;
+        boolean ready = phase == DeviceRuntimePhase.ONLINE && facts.protocolReadyAt() > 0L;
         int configuredPointCount = configManager != null && configManager.getDataPoints(deviceId) != null
                 ? configManager.getDataPoints(deviceId).size() : 0;
         long configVersion = configManager != null ? configManager.getDeviceConfigVersion(deviceId) : 0L;
         return new DeviceRuntimeSnapshot(
                 deviceId, phase, running, starting, connected, reconnecting,
                 reconnectCoordinator.getNextRetryAt(deviceId), scheduleInfo != null ? scheduleInfo.getStartTime() : 0L,
-                scheduleInfo != null ? scheduleInfo.getGeneration() : runtimeState.getStartingGeneration(deviceId),
+                generation,
                 lastSuccessfulCollectionAt,
                 consecutiveFailures, backoffUntil, degradedReason, System.currentTimeMillis(), ready,
                 firstSampleAt, configuredPointCount, degradedReason, configVersion);
@@ -283,8 +292,26 @@ public class CollectionScheduler {
     }
 
     public void reloadAllDevices() {
-        stopAllDevices();
-        schedulerMaintenanceCoordinator.scheduleStartAllDevices(2, TimeUnit.SECONDS);
+        if (runtimeState.isClosed()) return;
+        if (configManager != null) {
+            // 只刷新配置事实；设备启停交给版本差异与用户意图判定。
+            for (String deviceId : configManager.getAllDeviceIds()) {
+                configManager.refreshDeviceConfig(deviceId);
+            }
+        }
+        configRestartCoordinator.reloadChangedDevices();
+    }
+
+    public SchedulerRuntimeState.DesiredState getDesiredState(String deviceId) {
+        return runtimeState.getDesiredState(deviceId);
+    }
+
+    public long lastGeneration(String deviceId) {
+        return runtimeState.lastGeneration(deviceId);
+    }
+
+    public long getAppliedConfigVersion(String deviceId) {
+        return runtimeState.getAppliedConfigVersion(deviceId);
     }
 
     @EventListener

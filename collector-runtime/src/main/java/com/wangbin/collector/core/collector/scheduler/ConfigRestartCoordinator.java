@@ -1,6 +1,8 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -23,19 +25,32 @@ public class ConfigRestartCoordinator {
     private static final long CONFIG_RESTART_DEBOUNCE_MS = 1000L;
 
     private final DeviceLifecycleCoordinator deviceLifecycleCoordinator;
+    private final ConfigManager configManager;
     private final TimeSliceConfigCoordinator timeSliceConfigCoordinator;
     private final ScheduledExecutorService timeSliceScheduler;
     private final Map<String, ScheduledFuture<?>> pendingConfigRestartTasks = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> pendingConfigStopTasks = new ConcurrentHashMap<>();
+    private final Map<String, Runnable> pendingDeletionReleases = new ConcurrentHashMap<>();
     private final Object lifecycleLock = new Object();
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public ConfigRestartCoordinator(DeviceLifecycleCoordinator deviceLifecycleCoordinator,
                                     TimeSliceConfigCoordinator timeSliceConfigCoordinator,
                                     @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler) {
+        this(deviceLifecycleCoordinator, timeSliceConfigCoordinator, timeSliceScheduler, null);
+    }
+
+    @Autowired
+    public ConfigRestartCoordinator(DeviceLifecycleCoordinator deviceLifecycleCoordinator,
+                                    TimeSliceConfigCoordinator timeSliceConfigCoordinator,
+                                    @Qualifier("timeSliceScheduler") ScheduledExecutorService timeSliceScheduler,
+                                    ConfigManager configManager) {
+        this.configManager = configManager;
         this.deviceLifecycleCoordinator = deviceLifecycleCoordinator;
         this.timeSliceConfigCoordinator = timeSliceConfigCoordinator;
         this.timeSliceScheduler = timeSliceScheduler;
+        deviceLifecycleCoordinator.setConfigTaskCancellation(this::cancelPendingDevice);
+        deviceLifecycleCoordinator.setConfigRestartPending(this::hasPendingRestart);
     }
 
     void handleConfigUpdate(ConfigUpdateEvent event) {
@@ -45,50 +60,81 @@ public class ConfigRestartCoordinator {
         }
         String deviceId = event.getDeviceId();
         if (deviceId == null) {
+            reloadChangedDevices();
             return;
         }
         boolean running = deviceLifecycleCoordinator.isDeviceRunning(deviceId);
         boolean starting = deviceLifecycleCoordinator.isDeviceStarting(deviceId);
         if ("local-delete".equals(event.getConfigType())) {
-            cancelPendingRestart(deviceId);
-            if (running || starting) {
-                deviceLifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
-                scheduleStopDevice(deviceId, running, starting);
+            if (configManager != null) {
+                long version = event.getConfigVersion() == null ? configManager.getDeviceConfigVersion(deviceId) : event.getConfigVersion();
+                Runnable release = configManager.retainDeletedConfigurationVersion(deviceId, version);
+                if (release == null) return;
+                try {
+                    long revision = deviceLifecycleCoordinator.invalidateDeviceForDeletion(deviceId, version, configManager);
+                    if (revision < 0L) {
+                        release.run();
+                        return;
+                    }
+                    scheduleStopDevice(deviceId, running, starting, revision, version, release);
+                } catch (RuntimeException exception) {
+                    release.run();
+                    throw exception;
+                }
+            } else {
+                cancelPendingDevice(deviceId);
+                long revision = deviceLifecycleCoordinator.invalidateDeviceForDeletion(deviceId);
+                scheduleStopDevice(deviceId, running, starting, revision, 0L, () -> {});
             }
             return;
         }
-        if (running) {
-            scheduleRestart(deviceId, true);
-            return;
-        }
-        if (starting) {
-            deviceLifecycleCoordinator.invalidateDeviceForConfigChange(deviceId);
-            scheduleRestart(deviceId, true, running, true);
+        long revision = deviceLifecycleCoordinator.getIntentRevision(deviceId);
+        if (!deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)
+                || !deviceLifecycleCoordinator.isDeviceConfigurationChanged(deviceId)) return;
+        if ((running || starting) && !deviceLifecycleCoordinator.invalidateDeviceForConfigChange(deviceId, revision)) return;
+        scheduleRestart(deviceId, running, starting, revision);
+    }
+
+    /** 全量配置变更只处理配置版本有差异且用户期望运行的设备。 */
+    void reloadChangedDevices() {
+        if (closed.get()) return;
+        for (String deviceId : deviceLifecycleCoordinator.getChangedConfigDeviceIds()) {
+            ConfigUpdateEvent event = new ConfigUpdateEvent();
+            event.setDeviceId(deviceId);
+            event.setConfigType(deviceLifecycleCoordinator.hasDeviceConfiguration(deviceId) ? "all" : "local-delete");
+            handleConfigUpdate(event);
         }
     }
 
-    private void scheduleStopDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
+    private void scheduleStopDevice(String deviceId, boolean wasRunning, boolean wasStarting, long revision, long configVersion, Runnable release) {
         if (closed.get()) {
             log.debug("配置重启协调器已关闭，拒绝调度删除停止任务, 设备={}", deviceId);
+            release.run();
             return;
         }
         synchronized (lifecycleLock) {
             pendingConfigStopTasks.compute(deviceId, (key, oldTask) -> {
                 if (closed.get()) {
                     cancelIfPending(oldTask);
+                    releasePendingDeletion(deviceId);
+                    release.run();
                     return null;
                 }
                 cancelIfPending(oldTask);
+                releasePendingDeletion(deviceId);
+                pendingDeletionReleases.put(deviceId, release);
                 AtomicReference<ScheduledFuture<?>> selfReference = new AtomicReference<>();
                 try {
                     ScheduledFuture<?> stopTask = timeSliceScheduler.schedule(
-                            () -> stopDeviceAfterConfigDelete(deviceId, wasRunning, wasStarting, selfReference),
+                            () -> stopDeviceAfterConfigDelete(deviceId, wasRunning, wasStarting, revision, configVersion, selfReference, release),
                             0L,
                             TimeUnit.MILLISECONDS);
                     selfReference.set(stopTask);
                     return stopTask.isDone() ? null : stopTask;
                 } catch (Exception e) {
                     log.error("配置删除后调度停止设备失败, 设备={}", deviceId, e);
+                    pendingDeletionReleases.remove(deviceId, release);
+                    release.run();
                     return null;
                 }
             });
@@ -98,12 +144,20 @@ public class ConfigRestartCoordinator {
     private void stopDeviceAfterConfigDelete(String deviceId,
                                              boolean wasRunning,
                                              boolean wasStarting,
-                                             AtomicReference<ScheduledFuture<?>> selfReference) {
+                                             long revision,
+                                             long configVersion,
+                                             AtomicReference<ScheduledFuture<?>> selfReference,
+                                             Runnable release) {
         try {
-            deviceLifecycleCoordinator.stopDeviceAfterConfigInvalidation(deviceId, wasRunning, wasStarting);
+            if (!closed.get()) {
+                if (configManager == null) deviceLifecycleCoordinator.stopDeletedDevice(deviceId, revision, wasRunning, wasStarting);
+                else deviceLifecycleCoordinator.stopDeletedDevice(deviceId, revision, wasRunning, wasStarting, configVersion, configManager);
+            }
         } catch (Exception e) {
             log.error("配置删除后停止设备失败, 设备={}", deviceId, e);
         } finally {
+            pendingDeletionReleases.remove(deviceId, release);
+            release.run();
             ScheduledFuture<?> self = selfReference.get();
             if (self != null) {
                 pendingConfigStopTasks.remove(deviceId, self);
@@ -111,21 +165,17 @@ public class ConfigRestartCoordinator {
         }
     }
 
-    private void scheduleRestart(String deviceId, boolean stopBeforeStart) {
-        scheduleRestart(deviceId, stopBeforeStart, false, false);
-    }
-
     private void scheduleRestart(String deviceId,
-                                 boolean stopBeforeStart,
                                  boolean wasRunningBeforeInvalidation,
-                                 boolean wasStartingBeforeInvalidation) {
-        if (closed.get()) {
+                                 boolean wasStartingBeforeInvalidation,
+                                 long revision) {
+        if (closed.get() || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) {
             log.debug("配置重启协调器已关闭，拒绝调度重启任务, 设备={}", deviceId);
             return;
         }
         synchronized (lifecycleLock) {
             pendingConfigRestartTasks.compute(deviceId, (key, oldTask) -> {
-                if (closed.get()) {
+                if (closed.get() || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) {
                     cancelIfPending(oldTask);
                     return null;
                 }
@@ -135,34 +185,25 @@ public class ConfigRestartCoordinator {
                         () -> restartDevice(
                                 deviceId,
                                 selfReference,
-                                stopBeforeStart,
                                 wasRunningBeforeInvalidation,
-                                wasStartingBeforeInvalidation),
+                                wasStartingBeforeInvalidation,
+                                revision),
                         CONFIG_RESTART_DEBOUNCE_MS,
                         TimeUnit.MILLISECONDS);
                 selfReference.set(restartTask);
-                return restartTask;
+                return restartTask.isDone() ? null : restartTask;
             });
         }
     }
 
     private void restartDevice(String deviceId,
                                AtomicReference<ScheduledFuture<?>> selfReference,
-                               boolean stopBeforeStart,
                                boolean wasRunningBeforeInvalidation,
-                               boolean wasStartingBeforeInvalidation) {
+                               boolean wasStartingBeforeInvalidation,
+                               long revision) {
         try {
-            if (stopBeforeStart) {
-                boolean stopped = stopDevice(
-                        deviceId,
-                        wasRunningBeforeInvalidation,
-                        wasStartingBeforeInvalidation);
-                if (!stopped) {
-                    log.warn("配置变更后停止设备失败，跳过重新启动, 设备={}", deviceId);
-                    return;
-                }
-            }
-            startDeviceIfOpen(deviceId);
+            if (!isRestartCurrent(deviceId, selfReference)) return;
+            startDeviceIfOpen(deviceId, revision, wasRunningBeforeInvalidation, wasStartingBeforeInvalidation, selfReference);
         } catch (Exception e) {
             log.error("配置变更后重启设备失败, 设备={}", deviceId, e);
         } finally {
@@ -182,37 +223,41 @@ public class ConfigRestartCoordinator {
         }
     }
 
-    private boolean stopDevice(String deviceId,
-                               boolean wasRunningBeforeInvalidation,
-                               boolean wasStartingBeforeInvalidation) {
-        if (wasRunningBeforeInvalidation || wasStartingBeforeInvalidation) {
-            return deviceLifecycleCoordinator.stopDeviceAfterConfigInvalidation(
-                    deviceId,
-                    wasRunningBeforeInvalidation,
-                    wasStartingBeforeInvalidation);
-        }
-        return deviceLifecycleCoordinator.stopDevice(deviceId);
-    }
-
-    private void startDeviceIfOpen(String deviceId) throws Exception {
-        DeviceLifecycleCoordinator.StartReservation reservation = reserveStartIfOpen(deviceId);
-        if (reservation == null) {
-            return;
-        }
+    private void startDeviceIfOpen(String deviceId, long revision, boolean wasRunning, boolean wasStarting,
+                                   AtomicReference<ScheduledFuture<?>> selfReference) throws Exception {
+        if (!isRestartCurrent(deviceId, selfReference)
+                || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) return;
+        // 全局协调器锁不包围设备停止、网络连接或设备生命周期锁。
+        DeviceLifecycleCoordinator.StartReservation reservation = deviceLifecycleCoordinator.reserveStartForConfigRestart(
+                deviceId, revision, wasRunning, wasStarting, () -> isRestartCurrent(deviceId, selfReference));
+        if (reservation == null) return;
         beforeReservedStartContinuationForTest(deviceId, reservation);
+        if (!isRestartCurrent(deviceId, selfReference)
+                || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) return;
         if (deviceLifecycleCoordinator.continueReservedStart(reservation) && !closed.get()) {
             timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
         }
     }
 
-    private DeviceLifecycleCoordinator.StartReservation reserveStartIfOpen(String deviceId) throws Exception {
+    private boolean isRestartCurrent(String deviceId, AtomicReference<ScheduledFuture<?>> selfReference) {
+        ScheduledFuture<?> self = selfReference.get();
+        return !closed.get() && self != null && !self.isCancelled() && pendingConfigRestartTasks.get(deviceId) == self;
+    }
+
+    void cancelPendingDevice(String deviceId) {
+        cancelPendingRestart(deviceId);
         synchronized (lifecycleLock) {
-            if (closed.get()) {
-                log.debug("配置重启协调器已关闭，跳过已运行重启任务的启动预留, 设备={}", deviceId);
+            pendingConfigStopTasks.computeIfPresent(deviceId, (key, future) -> {
+                cancelIfPending(future);
                 return null;
-            }
-            return deviceLifecycleCoordinator.reserveStartForConfigRestart(deviceId);
+            });
+            releasePendingDeletion(deviceId);
         }
+    }
+
+    private void releasePendingDeletion(String deviceId) {
+        Runnable release = pendingDeletionReleases.remove(deviceId);
+        if (release != null) release.run();
     }
 
     /**
@@ -228,17 +273,25 @@ public class ConfigRestartCoordinator {
     }
 
     void cancelAll() {
+        deviceLifecycleCoordinator.beginShutdown();
         synchronized (lifecycleLock) {
             closed.set(true);
             pendingConfigRestartTasks.values().forEach(this::cancelIfPending);
             pendingConfigRestartTasks.clear();
             pendingConfigStopTasks.values().forEach(this::cancelIfPending);
             pendingConfigStopTasks.clear();
+            pendingDeletionReleases.values().forEach(Runnable::run);
+            pendingDeletionReleases.clear();
         }
     }
 
     int pendingTaskCountForTest() {
         return pendingConfigRestartTasks.size();
+    }
+
+    private boolean hasPendingRestart(String deviceId) {
+        ScheduledFuture<?> pending = pendingConfigRestartTasks.get(deviceId);
+        return !closed.get() && pending != null && !pending.isCancelled() && !pending.isDone();
     }
 
     int pendingStopTaskCountForTest() {

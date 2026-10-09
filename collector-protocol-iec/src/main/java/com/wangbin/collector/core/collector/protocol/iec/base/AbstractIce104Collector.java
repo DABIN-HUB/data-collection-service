@@ -234,11 +234,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     }
 
     protected Object getCachedValue(int commonAddress, Integer typeId, int ioa) {
+        CacheEntry entry = getCachedSample(commonAddress, typeId, ioa);
+        return entry != null ? entry.value() : null;
+    }
+
+    protected CacheEntry getCachedSample(int commonAddress, Integer typeId, int ioa) {
         CacheEntry entry = getCacheEntry(commonAddress, typeId, ioa);
-        if (entry == null) {
-            return null;
-        }
-        return resolveCacheValue(commonAddress, typeId, ioa, entry);
+        return entry != null && resolveCacheValue(commonAddress, typeId, ioa, entry) != null ? entry : null;
     }
 
     /**

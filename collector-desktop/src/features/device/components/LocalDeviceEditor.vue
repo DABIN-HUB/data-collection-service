@@ -59,7 +59,7 @@
               <section class="local-section-card local-setup-card">
                 <EditorSectionHeader badge="设备基础" title="设备信息" subtitle="设备标识、协议和采集节奏集中配置。" />
                 <div class="form-grid two-column">
-                  <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" :disabled="Boolean(editingDeviceId)" placeholder="local-modbus-1" @change="syncDeviceIdToPoints"></label>
+                  <label>设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" readonly placeholder="自动生成 UUID" @change="syncDeviceIdToPoints"></label>
                   <label>设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
                   <label><span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span><select id="localProtocolSelect" v-model="protocol" @change="onProtocolChanged"><option v-for="item in visibleProtocols" :key="item.protocol" :value="item.protocol">{{ item.title || item.protocol }} ({{ item.protocol }})</option></select></label>
                   <label>基础采集周期 (ms)<input id="localCollectionInterval" v-model.number="adaptive.baseCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"></label>
@@ -316,13 +316,12 @@ import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch, ty
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
-import { startLocalDevice } from "@/api/device.api";
 import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
 import { buildConnectionPayload, buildProtocolInitialModel, extractProtocolModel, getPathValue, setPathValue, validateProtocolModel, type ConnectionPayload, type ProtocolFormModel } from "@/components/protocol/protocol-form-utils";
 import { buildLocalDevicePayload, buildProtocolPointNotes, DEFAULT_ADAPTIVE_CONFIG, validateLocalDeviceDraft, type AdaptiveConfig, type CloudTargetConfig, type LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 import { buildReadonlyItems, createUniqueCode, alarmRules, parseBooleanOption, parseFieldValue, parsePointsJson, serializeAlarmRules, statusLabel, toNumber, type AlarmRule, type FieldValueType } from "@/features/point/utils/point-draft-utils";
-import { buildLocalEditorChecklist, buildPointModelingOverview, cloneData, cloudPointStatus, cloudTargetSummary, countReportFields, defaultPointTemplate, firstPointValue, hasValue, isOpcUaProtocol, isPlainObject, normalizeCloudTarget, normalizeInitialPoints, sanitizePointForSave } from "@/features/device/utils/local-device-editor-utils";
+import { buildLocalEditorChecklist, createLocalDeviceId, resolveEditorDeviceId, buildPointModelingOverview, cloneData, cloudPointStatus, cloudTargetSummary, countReportFields, defaultPointTemplate, firstPointValue, hasValue, isOpcUaProtocol, isPlainObject, normalizeCloudTarget, normalizeInitialPoints, sanitizePointForSave } from "@/features/device/utils/local-device-editor-utils";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig, ProtocolSchema } from "@/types/protocol";
 
@@ -444,6 +443,9 @@ const localEditorSteps = [
 const activeStep = ref(0);
 const completedSteps = ref(new Set<number>());
 const saving = ref(false);
+let editorSession = 0;
+let schemaGeneration = 0;
+let savedInSession = false;
 const error = ref("");
 const editingDeviceId = ref("");
 const deviceId = ref("");
@@ -583,9 +585,16 @@ function buildDefaultPoint(currentDeviceId: string, currentProtocol: string, ove
 function setActiveStep(index: number) { completedSteps.value = new Set([...completedSteps.value, activeStep.value]); activeStep.value = Math.max(0, Math.min(localEditorSteps.length - 1, index)); if (activeStep.value === 4) syncJsonFromState(); }
 function moveStep(delta: number) { setActiveStep(activeStep.value + delta); }
 function reset(bundle: LocalDeviceBundle | null = null) {
+  editorSession += 1;
+  schemaGeneration += 1;
+  saving.value = false;
+  savedInSession = false;
+  protocolChanged.value = false;
   activeStep.value = 0; completedSteps.value = new Set(); error.value = ""; pointKeyword.value = ""; pointDataTypeFilter.value = ""; pointReadWriteFilter.value = ""; changeDescription.value = "";
   const device = bundle?.device || {}; const connection = bundle?.connection || {};
-  editingDeviceId.value = String(device.id || device.deviceId || ""); deviceId.value = editingDeviceId.value || ""; deviceName.value = String(device.deviceName || ""); protocol.value = String(device.protocolType || connection.connectionType || visibleProtocols.value[0]?.protocol || "MODBUS_TCP"); overwrite.value = Boolean(editingDeviceId.value); startAfterSave.value = false;
+  editingDeviceId.value = bundle ? resolveEditorDeviceId(bundle, "") : "";
+  deviceId.value = editingDeviceId.value || createLocalDeviceId();
+  deviceName.value = String(device.deviceName || ""); protocol.value = String(device.protocolType || connection.connectionType || visibleProtocols.value[0]?.protocol || "MODBUS_TCP"); overwrite.value = Boolean(editingDeviceId.value); startAfterSave.value = false;
   adaptive.baseCollectionInterval = Number(device.collectionInterval || DEFAULT_ADAPTIVE_CONFIG.baseCollectionInterval); adaptive.minCollectionInterval = Number(firstPointValue(bundle?.points, "minCollectionInterval") || DEFAULT_ADAPTIVE_CONFIG.minCollectionInterval); adaptive.maxCollectionInterval = Number(firstPointValue(bundle?.points, "maxCollectionInterval") || DEFAULT_ADAPTIVE_CONFIG.maxCollectionInterval); adaptive.pointChangeThreshold = Number(firstPointValue(bundle?.points, "pointChangeThreshold") || DEFAULT_ADAPTIVE_CONFIG.pointChangeThreshold);
   Object.assign(cloudTarget, { enabled: false, deviceType: "SUB_DEVICE", productKey: "", deviceName: "", topologyEnabled: true }, normalizeCloudTarget(device.cloudTarget));
   points.value = normalizePointsForEditor(bundle?.points || [], deviceId.value || "local-device", protocol.value); if (points.value.length === 0) addPoint(); selectedPointIndex.value = points.value.length ? 0 : -1; selectedAlarmRuleIndex.value = 0;
@@ -604,32 +613,37 @@ function onProtocolChanged() {
   void ensureProtocolSchema(protocol.value);
 }
 async function ensureProtocolSchema(protocolCode: string) {
-  const normalizedProtocol = protocolCode.trim(); if (!normalizedProtocol) return;
+  const normalizedProtocol = protocolCode.trim();
+  if (!normalizedProtocol) return;
+  const session = editorSession;
+  const generation = ++schemaGeneration;
+  const draftAtStart = JSON.stringify(connectionModel.value);
+  const canCommit = () => props.modelValue && session === editorSession && generation === schemaGeneration && protocol.value === normalizedProtocol;
+  const applySchema = (detail: ProtocolSchema) => {
+    if (!canCommit()) return;
+    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: detail };
+    // Schema 迟到只补缺省字段，绝不重置已加载连接或用户修改后的草稿。
+    if (JSON.stringify(connectionModel.value) === draftAtStart) {
+      const originalConnection = props.editingBundle?.connection as ConnectionPayload | undefined;
+      const originalProtocol = String(props.editingBundle?.device?.protocolType || "");
+      const loaded = originalConnection && originalProtocol === normalizedProtocol
+        ? extractProtocolModel(detail.connectionFields || [], originalConnection) : {};
+      connectionModel.value = { ...buildProtocolInitialModel(detail.connectionFields || []), ...loaded, ...connectionModel.value };
+    }
+    protocolChanged.value = false;
+    syncJsonFromState();
+  };
   const existing = protocolDetails.value[normalizedProtocol] || props.protocols.find((item) => item.protocol === normalizedProtocol);
   if (hasRenderableProtocolFields(existing)) {
-    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: existing };
-    connectionModel.value = protocolChanged.value
-      ? buildProtocolInitialModel(existing.connectionFields || [])
-      : { ...buildProtocolInitialModel(existing.connectionFields || []), ...connectionModel.value };
-    protocolChanged.value = false;
+    applySchema(existing);
     return;
   }
   try {
     const detail = await getProtocol(normalizedProtocol);
-    protocolDetails.value = { ...protocolDetails.value, [normalizedProtocol]: detail };
-    if (protocol.value === normalizedProtocol) {
-      connectionModel.value = buildProtocolInitialModel(detail.connectionFields || []);
-      points.value = protocolChanged.value
-        ? points.value.map((point, index) => buildDefaultPoint(deviceId.value || "local-device", normalizedProtocol, {
-            pointId: point.pointId,
-            pointCode: point.pointCode || `point_${index + 1}`,
-            pointName: point.pointName || `点位 ${index + 1}`
-          }))
-        : normalizePointsForEditor(points.value, deviceId.value || "local-device", normalizedProtocol);
-      protocolChanged.value = false;
-      syncJsonFromState();
-    }
-  } catch (caught) { error.value = caught instanceof Error ? `协议字段加载失败：${caught.message}` : "协议字段加载失败"; }
+    applySchema(detail);
+  } catch (caught) {
+    if (canCommit()) error.value = caught instanceof Error ? `协议字段加载失败：${caught.message}` : "协议字段加载失败";
+  }
 }
 function hasRenderableProtocolFields(schema: ProtocolSchema | null | undefined): schema is ProtocolSchema { return Boolean(schema && ((schema.connectionFields?.length || 0) > 0 || (schema.pointFields?.length || 0) > 0)); }
 function addPoint() { const pointCode = createUniqueCode(points.value, "point"); const point = buildDefaultPoint(deviceId.value || "local-device", protocol.value, { pointCode, pointName: `点位 ${points.value.length + 1}` }); points.value = [...points.value, point]; selectedPointIndex.value = points.value.length - 1; syncJsonFromState(); }
@@ -646,9 +660,6 @@ function updateSelectedPath(path: string, value: unknown) {
   const previousNodeId = getPathValue(point, "additionalConfig.nodeId");
   const previousReportField = getPathValue(point, "additionalConfig.reportField");
   setPathValue(point as Record<string, unknown>, path, value);
-  if (path === "pointCode" && String(value || "").trim() !== String(previousPointCode || "").trim()) {
-    point.pointId = undefined;
-  }
   if (path === "pointCode" && hasValue(previousReportField) && String(previousReportField).trim() === String(previousPointCode || "").trim()) {
     setPathValue(point as Record<string, unknown>, "additionalConfig.reportField", value);
   }
@@ -680,10 +691,89 @@ function syncJsonFromState() { configJson.value = JSON.stringify(buildConfigSnap
 function formatConfigJson() { try { configJson.value = JSON.stringify(JSON.parse(configJson.value || "{}"), null, 2); error.value = ""; } catch (caught) { error.value = caught instanceof Error ? `JSON 格式错误：${caught.message}` : "JSON 格式错误"; } }
 function applyConfigJson() { try { const parsed = JSON.parse(configJson.value || "{}"); applyConfigSnapshot(parsed); error.value = ""; syncJsonFromState(); } catch (caught) { error.value = caught instanceof Error ? `JSON 格式错误：${caught.message}` : "JSON 格式错误"; } }
 function buildConfigSnapshot() { return { device: { deviceId: deviceId.value, deviceName: deviceName.value, protocolType: protocol.value, collectionInterval: adaptive.baseCollectionInterval, cloudTarget: { ...cloudTarget } }, adaptive: { ...adaptive }, connection: { ...connectionModel.value }, points: cloneData(points.value), cloudTarget: { ...cloudTarget }, uiSession: { changeDescription: changeDescription.value || undefined } }; }
-function applyConfigSnapshot(value: unknown) { if (!isPlainObject(value)) throw new Error("配置必须是 JSON 对象"); const device = isPlainObject(value.device) ? value.device : {}; const adaptiveValue = isPlainObject(value.adaptive) ? value.adaptive : {}; deviceId.value = String(value.deviceId || device.deviceId || device.id || deviceId.value || ""); deviceName.value = String(value.deviceName || device.deviceName || deviceName.value || ""); protocol.value = String(value.protocol || device.protocolType || protocol.value || "MODBUS_TCP"); adaptive.baseCollectionInterval = Number(adaptiveValue.baseCollectionInterval || device.collectionInterval || adaptive.baseCollectionInterval); adaptive.minCollectionInterval = Number(adaptiveValue.minCollectionInterval || adaptive.minCollectionInterval); adaptive.maxCollectionInterval = Number(adaptiveValue.maxCollectionInterval || adaptive.maxCollectionInterval); adaptive.pointChangeThreshold = Number(adaptiveValue.pointChangeThreshold || adaptive.pointChangeThreshold); if (isPlainObject(value.cloudTarget) || isPlainObject(device.cloudTarget)) Object.assign(cloudTarget, { enabled: false, deviceType: "SUB_DEVICE", productKey: "", deviceName: "", topologyEnabled: true }, normalizeCloudTarget(isPlainObject(value.cloudTarget) ? value.cloudTarget : device.cloudTarget)); if (isPlainObject(value.connection)) connectionModel.value = { ...buildProtocolInitialModel(connectionFields.value), ...(value.connection as ProtocolFormModel) }; if (Array.isArray(value.points)) { const currentCode = selectedPoint.value?.pointCode || null; const normalized = normalizePointsForEditor(parsePointsJson(JSON.stringify(value.points)), deviceId.value || "local-device", protocol.value); points.value = normalized; const nextIndex = currentCode ? normalized.findIndex((item) => item.pointCode === currentCode) : -1; selectedPointIndex.value = nextIndex >= 0 ? nextIndex : (normalized.length ? 0 : -1); } if (isPlainObject(value.uiSession) && hasValue(value.uiSession.changeDescription)) changeDescription.value = String(value.uiSession.changeDescription); void ensureProtocolSchema(protocol.value); }
+function applyConfigSnapshot(value: unknown) {
+  if (!isPlainObject(value)) throw new Error("配置必须是 JSON 对象");
+  const device = isPlainObject(value.device) ? value.device : {};
+  const adaptiveValue = isPlainObject(value.adaptive) ? value.adaptive : {};
+  const identity = resolveEditorDeviceId(value, deviceId.value);
+  deviceId.value = identity;
+  deviceName.value = String(value.deviceName || device.deviceName || deviceName.value || "");
+  protocol.value = String(value.protocol || device.protocolType || protocol.value || "MODBUS_TCP");
+  adaptive.baseCollectionInterval = Number(adaptiveValue.baseCollectionInterval || device.collectionInterval || adaptive.baseCollectionInterval);
+  adaptive.minCollectionInterval = Number(adaptiveValue.minCollectionInterval || adaptive.minCollectionInterval);
+  adaptive.maxCollectionInterval = Number(adaptiveValue.maxCollectionInterval || adaptive.maxCollectionInterval);
+  adaptive.pointChangeThreshold = Number(adaptiveValue.pointChangeThreshold ?? adaptive.pointChangeThreshold);
+  if (isPlainObject(value.cloudTarget) || isPlainObject(device.cloudTarget)) {
+    Object.assign(cloudTarget, { enabled: false, deviceType: "SUB_DEVICE", productKey: "", deviceName: "", topologyEnabled: true }, normalizeCloudTarget(isPlainObject(value.cloudTarget) ? value.cloudTarget : device.cloudTarget));
+  }
+  if (isPlainObject(value.connection)) connectionModel.value = { ...buildProtocolInitialModel(connectionFields.value), ...(value.connection as ProtocolFormModel) };
+  if (Array.isArray(value.points)) {
+    const currentCode = selectedPoint.value?.pointCode || null;
+    const normalized = normalizePointsForEditor(parsePointsJson(JSON.stringify(value.points)), identity, protocol.value);
+    points.value = normalized;
+    const nextIndex = currentCode ? normalized.findIndex((item) => item.pointCode === currentCode) : -1;
+    selectedPointIndex.value = nextIndex >= 0 ? nextIndex : (normalized.length ? 0 : -1);
+  }
+  if (isPlainObject(value.uiSession) && hasValue(value.uiSession.changeDescription)) {
+    changeDescription.value = String(value.uiSession.changeDescription);
+  }
+  void ensureProtocolSchema(protocol.value);
+}
+
 function validateConfigSnapshot(value: ReturnType<typeof buildConfigSnapshot>) { const warnings: string[] = []; const errors = [...validateLocalDeviceDraft({ deviceId: value.device.deviceId, deviceName: value.device.deviceName, protocol: value.device.protocolType, points: value.points, cloudTarget: value.cloudTarget }), ...validateProtocolModel(connectionFields.value, value.connection as ProtocolFormModel)]; if (!value.points.some((point) => point.alarmEnabled)) warnings.push("尚未启用点位告警规则"); if (!totalReportFieldCount.value) warnings.push("尚未配置 reportField 上报属性"); return { errors, warnings }; }
-async function save() { error.value = ""; const mergedConnectionModel = { ...buildProtocolInitialModel(connectionFields.value), ...connectionModel.value }; const normalizedPoints = normalizePointsForEditor(points.value, deviceId.value || "local-device", protocol.value).map(sanitizePointForSave); const errors = [...validateLocalDeviceDraft({ deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value, points: normalizedPoints, cloudTarget: { ...cloudTarget } }), ...validateProtocolModel(connectionFields.value, mergedConnectionModel)]; if (errors.length > 0) { error.value = errors.join("；"); return; } saving.value = true; try { const connection = buildConnectionPayload(connectionFields.value, mergedConnectionModel, { deviceId: deviceId.value, connectionType: protocol.value }); const payload = buildLocalDevicePayload({ deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value, adaptive: { ...adaptive }, connection, points: normalizedPoints, cloudTarget: { ...cloudTarget }, overwrite: overwrite.value || Boolean(editingDeviceId.value), startAfterSave: startAfterSave.value }); if (editingDeviceId.value) await updateLocalDevice(editingDeviceId.value, payload); else await createLocalDevice(payload); if (startAfterSave.value) await startLocalDevice(deviceId.value); ElMessage.success(startAfterSave.value ? "本地设备已保存并启动" : "本地设备已保存"); emit("saved", deviceId.value); close(false); } catch (caught) { error.value = caught instanceof Error ? caught.message : "本地设备保存失败"; } finally { saving.value = false; } }
-function close(value: boolean) { emit("update:modelValue", value); }
+async function save() {
+  if (saving.value) return;
+  const session = editorSession;
+  const targetId = editingDeviceId.value || deviceId.value;
+  const targetEditingId = editingDeviceId.value;
+  const requestedStart = startAfterSave.value;
+  const canCommit = () => props.modelValue && session === editorSession && deviceId.value === targetId;
+  error.value = "";
+  const mergedConnectionModel = { ...buildProtocolInitialModel(connectionFields.value), ...connectionModel.value };
+  const normalizedPoints = normalizePointsForEditor(points.value, targetId, protocol.value).map(sanitizePointForSave);
+  const errors = [...validateLocalDeviceDraft({ deviceId: targetId, deviceName: deviceName.value, protocol: protocol.value, points: normalizedPoints, cloudTarget: { ...cloudTarget } }), ...validateProtocolModel(connectionFields.value, mergedConnectionModel)];
+  if (deviceId.value !== targetId) errors.push("禁止修改编辑中的设备身份");
+  if (errors.length > 0) { error.value = errors.join("；"); return; }
+  const connection = buildConnectionPayload(connectionFields.value, mergedConnectionModel, { deviceId: targetId, connectionType: protocol.value });
+  const payload = buildLocalDevicePayload({ deviceId: targetId, deviceName: deviceName.value, protocol: protocol.value, adaptive: { ...adaptive }, connection, points: normalizedPoints, cloudTarget: { ...cloudTarget }, overwrite: overwrite.value || Boolean(targetEditingId) || savedInSession, startAfterSave: requestedStart });
+  saving.value = true;
+  try {
+    const response = targetEditingId ? await updateLocalDevice(targetEditingId, payload) : await createLocalDevice(payload);
+    if (!canCommit()) return;
+    const responseId = response.deviceId;
+    if (!responseId || responseId !== targetId) throw new Error("保存响应缺少设备身份或与请求不一致，请核对服务器配置后重试");
+    savedInSession = true;
+    ElMessage.success(`设备 ${responseId} 配置已保存${response.changed === false ? "（配置未变化）" : ""}`);
+    emit("saved", responseId);
+    if (requestedStart && response.startStatus === "RESTART_PENDING") {
+      ElMessage.success("配置重启待完成，沿用已有启动意图，等待新一代有效数据");
+      close(false);
+      return;
+    }
+    if (requestedStart && response.startStatus === "STOP_SUPERSEDED") {
+      ElMessage.info("配置已保存，已遵循停止请求，设备保持停止");
+      close(false);
+      return;
+    }
+    if (requestedStart && !response.started) {
+      error.value = `设备 ${responseId} 配置已保存，但启动失败：${response.startError || "请检查运行状态"}`;
+      ElMessage.warning(error.value);
+      return;
+    }
+    if (requestedStart) {
+      ElMessage.success(response.runtime?.ready ? "设备已就绪" : response.startStatus === "ALREADY_RUNNING" ? "设备已在运行，无需重复启动" : "启动请求已接受，等待首批有效数据");
+    }
+    close(false);
+  } catch (caught) {
+    if (canCommit()) error.value = caught instanceof Error ? caught.message : "本地设备保存失败";
+  } finally {
+    if (session === editorSession) saving.value = false;
+  }
+}
+function close(value: boolean) {
+  if (!value) { editorSession += 1; schemaGeneration += 1; saving.value = false; }
+  emit("update:modelValue", value);
+}
 function fieldComponent(field: PointEditorField) { if (field.control === "switch") return ElSwitch; if (field.control === "select") return ElSelect; if (field.control === "number") return ElInputNumber; return ElInput; }
 function fieldProps(field: PointEditorField) { const value = getPointFieldValue(field.path); if (field.control === "switch") return { modelValue: Boolean(value), disabled: field.disabled }; if (field.control === "select") return { modelValue: value ?? "", clearable: true, filterable: true, disabled: field.disabled }; if (field.control === "number") return { modelValue: toNumber(value), controlsPosition: "right", step: field.step || 1, disabled: field.disabled }; return { modelValue: value === undefined || value === null ? "" : String(value), disabled: field.disabled }; }
 function getPointFieldValue(path: string): unknown { return selectedPoint.value ? getPathValue(selectedPoint.value, path) : undefined; }
@@ -703,11 +793,11 @@ function minPointAdditionalNumber(key: string) { const values = points.value.map
 function buildPayloadPreview(mode: "property" | "event" | "full") { const mapped = points.value.filter((point) => point.additionalConfig?.reportEnabled !== false && hasValue(point.additionalConfig?.reportField)); if (mode === "property") return { topic: cloudTopicPreview.value, productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, properties: Object.fromEntries(mapped.map((point) => [String(point.additionalConfig?.reportField), point.lastValue ?? `<${point.pointCode || point.pointName}>`])) }; if (mode === "event") return { productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, events: eventMappingPreview.value, minIntervalMs: eventIntervalSummary.value }; return { device: { deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value }, cloudTarget: { ...cloudTarget }, pointCount: points.value.length, reportFields: mapped.map((point) => point.additionalConfig?.reportField), alarmRules: alarmRuleRows.value.length }; }
 function handleLocalEditorKeydown(event: KeyboardEvent) { if (event.key === "Escape" && props.modelValue) close(false); }
 
-watch(() => props.modelValue, (visible) => { document.body.classList.toggle("modal-active", visible); if (visible) { reset(props.editingBundle || null); document.addEventListener("keydown", handleLocalEditorKeydown); } else document.removeEventListener("keydown", handleLocalEditorKeydown); }, { immediate: true });
+watch(() => props.modelValue, (visible) => { document.body.classList.toggle("modal-active", visible); if (visible) { reset(props.editingBundle || null); document.addEventListener("keydown", handleLocalEditorKeydown); } else { editorSession += 1; schemaGeneration += 1; saving.value = false; document.removeEventListener("keydown", handleLocalEditorKeydown); } }, { immediate: true });
 watch(() => props.editingBundle, (bundle) => { if (props.modelValue) reset(bundle || null); });
 watch(connectionFields, (fields) => { if (props.modelValue && Object.keys(connectionModel.value).length === 0) connectionModel.value = buildProtocolInitialModel(fields); });
 watch([deviceId, deviceName, protocol, () => ({ ...adaptive }), () => ({ ...cloudTarget }), connectionModel, points], () => { if (activeStep.value === 4) syncJsonFromState(); }, { deep: true });
-onBeforeUnmount(() => { document.body.classList.remove("modal-active"); document.removeEventListener("keydown", handleLocalEditorKeydown); });
+onBeforeUnmount(() => { editorSession += 1; schemaGeneration += 1; document.body.classList.remove("modal-active"); document.removeEventListener("keydown", handleLocalEditorKeydown); });
 </script>
 
 <style scoped>

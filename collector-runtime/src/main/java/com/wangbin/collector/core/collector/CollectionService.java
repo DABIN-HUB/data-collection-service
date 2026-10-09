@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector;
 
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
+import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class CollectionService {
     private final CollectionScheduler collectionScheduler;
     private final CollectionStatistics collectionStatistics;
     private final ConfigManager configManager;
+    private final RuntimeStateCoordinator runtimeStateCoordinator;
 
     /**
      * 处理组件生命周期。
@@ -81,9 +83,9 @@ public class CollectionService {
     }
 
     public DeviceRuntimeSnapshot getDeviceRuntimeSnapshot(String deviceId) {
-        return collectionScheduler.getDeviceRuntimeSnapshot(deviceId);
+        return runtimeStateCoordinator.runtimeSnapshot(deviceId);
     }
     public List<DeviceRuntimeSnapshot> getDeviceRuntimeSnapshots() {
-        return collectionScheduler.getDeviceRuntimeSnapshots();
+        return runtimeStateCoordinator.runtimeSnapshots();
     }
 }

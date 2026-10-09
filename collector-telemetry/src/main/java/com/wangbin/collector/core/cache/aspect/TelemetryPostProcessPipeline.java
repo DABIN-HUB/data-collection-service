@@ -2,6 +2,8 @@ package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.logging.RateLimitedLogReporter;
 import com.wangbin.collector.core.cache.config.TelemetryExecutorNames;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
@@ -13,6 +15,11 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.port.DeviceDataActivityReporter;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -27,6 +34,9 @@ public class TelemetryPostProcessPipeline {
 
     private static final int LATENCY_SAMPLE_LIMIT = 20_000;
 
+    private ConfigManager configManager;
+    private AcquisitionRuntimeTracker acquisitionRuntimeTracker;
+    private DeviceDataActivityReporter activityReporter;
     private final List<TelemetryPostProcessStage> stageCandidates;
     private final Map<TelemetryStageType, Executor> stageExecutors;
     private final TelemetryLatencyReservoir processLatencyNanos = new TelemetryLatencyReservoir(LATENCY_SAMPLE_LIMIT);
@@ -41,9 +51,22 @@ public class TelemetryPostProcessPipeline {
     private final LongAdder stageRejectedShutdownEvents = new LongAdder();
     private volatile List<TelemetryPostProcessStage> orderedStageSnapshot = List.of();
 
-    /**
-     * 创建遥测后处理流水线。
-     */
+    /** 生产装配必须核对当前点位身份，并在核心完成后通知活动统计。 */
+    @Autowired
+    public TelemetryPostProcessPipeline(List<TelemetryPostProcessStage> stages,
+            @Qualifier(TelemetryExecutorNames.CACHE_STAGE) Executor cacheExecutor,
+            @Qualifier(TelemetryExecutorNames.STREAM_STAGE) Executor streamExecutor,
+            @Qualifier(TelemetryExecutorNames.HISTORY_STAGE) Executor historyExecutor,
+            @Qualifier(TelemetryExecutorNames.REPORT_STAGE) Executor reportExecutor,
+            AcquisitionRuntimeTracker tracker, DeviceDataActivityReporter reporter,
+            ConfigManager configManager) {
+        this(stages, cacheExecutor, streamExecutor, historyExecutor, reportExecutor);
+        acquisitionRuntimeTracker = tracker;
+        activityReporter = reporter;
+        this.configManager = configManager;
+    }
+
+    /** 测试兼容构造器，不作为生产装配入口。 */
     public TelemetryPostProcessPipeline(
             List<TelemetryPostProcessStage> stageCandidates,
             @Qualifier(TelemetryExecutorNames.CACHE_STAGE) Executor cacheExecutor,
@@ -64,45 +87,177 @@ public class TelemetryPostProcessPipeline {
      * 提交所有启用的后处理阶段。
      */
     public void process(TelemetryPostProcessContext context) {
-        if (context == null || context.deviceId() == null || context.point() == null || context.processResult() == null) {
-            return;
-        }
+        processCore(context);
+    }
 
+    /** 只等待核心实时处理，不等待历史、云上报或 ACK。 */
+    public CompletableFuture<Boolean> processCore(TelemetryPostProcessContext context) {
+        if (context == null || context.deviceId() == null || context.point() == null || context.processResult() == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        CompletableFuture<Boolean> core = null;
         long startedAt = System.nanoTime();
         try {
             processedItems.increment();
             for (TelemetryPostProcessStage stage : orderedStageSnapshot) {
-                if (stage == null || !stage.enabled(context)) {
-                    continue;
-                }
-                executeStage(stage, context);
+                if (stage == null || !stage.enabled(context)) continue;
+                if (context.historicalOnly() && (stage.type() == TelemetryStageType.CACHE
+                        || stage.type() == TelemetryStageType.STREAM)) continue;
+                CompletableFuture<Boolean> completion = executeStage(stage, context);
+                if (stage.type() == TelemetryStageType.CACHE) core = completion;
             }
         } finally {
             processLatencyNanos.add(System.nanoTime() - startedAt);
         }
+        return core != null ? core : CompletableFuture.completedFuture(false);
     }
 
-    private void executeStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context) {
+    public CompletableFuture<Void> processRecovery(TelemetryPostProcessContext context) {
+        if (!context.historicalOnly()) throw new IllegalArgumentException("补偿只能使用历史上下文");
+        List<CompletableFuture<Boolean>> completions = new ArrayList<>();
+        for (TelemetryPostProcessStage stage : orderedStageSnapshot) {
+            if (stage != null && (stage.type() == TelemetryStageType.HISTORY || stage.type() == TelemetryStageType.REPORT)
+                    && stage.enabled(context)) completions.add(executeStage(stage, context));
+        }
+        return CompletableFuture.allOf(completions.toArray(CompletableFuture[]::new));
+    }
+
+    private boolean commitStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context,
+                                Runnable action) {
+        if (context.historicalOnly()) {
+            if (stage.type() != TelemetryStageType.HISTORY && stage.type() != TelemetryStageType.REPORT) return false;
+            action.run();
+            return true;
+        }
+        if (!context.live()) return false;
+        if (stage.type() != TelemetryStageType.CACHE) {
+            // 下游只在执行入口取得归属许可；网络/历史/上报不能持有设备提交门阻塞 STOP 或背压补偿。
+            // 已进入的下游工作允许完成，但不会写实时缓存或授予本代成功事实。
+            if (!commitLiveContext(stage, context, () -> {}) || !context.live()) return false;
+            action.run();
+            return true;
+        }
+        // 核心实时缓存与采集事实必须在同一设备/配置/回执门内完成，保持 STOP 和精准失效线性化。
+        return commitLiveContext(stage, context, action);
+    }
+
+    private boolean commitLiveContext(TelemetryPostProcessStage stage, TelemetryPostProcessContext context,
+                                      Runnable action) {
+        return context.guard().commitIfCurrent(context.deviceId(), context.generation(), () -> {
+            Runnable commit = () -> commitLiveStage(stage, context, action);
+            if (context.receipt() != null) {
+                Runnable guarded = commit;
+                commit = () -> {
+                    if (!context.receipt().commitIfOpen(guarded)) {
+                        throw new CancellationException("本轮核心处理已取消");
+                    }
+                };
+            }
+            if (configManager == null) {
+                commit.run();
+                return;
+            }
+            Object sourceVersion = context.processResult().getMetadata(ProcessResultMetadataKeys.CONFIG_VERSION);
+            // 版本核对和最终副作用在同一配置读锁中；配置提交不能穿过核对与缓存写入的间隙。
+            if (!(sourceVersion instanceof Number version) || !configManager.runIfConfigurationCurrent(
+                    context.deviceId(), version.longValue(), commit)) {
+                throw new CancellationException("源配置版本已失效或缺失");
+            }
+        });
+    }
+
+    private void commitLiveStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context,
+                                 Runnable action) {
+        if (!context.live() || (acquisitionRuntimeTracker != null
+                && !acquisitionRuntimeTracker.matchesPoint(context.deviceId(), context.generation(), context.point()))) {
+            throw new CancellationException("代次或点位身份已失效");
+        }
+        if (configManager != null) {
+            com.wangbin.collector.common.domain.entity.DataPoint current = configManager.getDataPointByPointId(
+                    context.deviceId(), context.point().getPointId());
+            if (current == null || !java.util.Objects.equals(current.getDeviceId(), context.deviceId())
+                    || !java.util.Objects.equals(current.getPointCode(), context.point().getPointCode())
+                    || !java.util.Objects.equals(current.getAddress(), context.point().getAddress())
+                    || !java.util.Objects.equals(current.getDataType(), context.point().getDataType())) {
+                throw new CancellationException("点位配置身份已失效");
+            }
+        }
+        if (stage.type() == TelemetryStageType.CACHE && acquisitionRuntimeTracker != null
+                && context.sampleAt() > 0L && !acquisitionRuntimeTracker.acceptsSample(
+                context.deviceId(), context.generation(), context.point(), context.sampleAt())) {
+            throw new CancellationException("旧样本不能覆盖更新事实");
+        }
+        action.run();
+    }
+
+    private CompletableFuture<Boolean> executeStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context) {
+        CompletableFuture<Boolean> completion = new CompletableFuture<>();
         Executor executor = stageExecutors.get(stage.type());
         if (executor == null) {
-            log.error("遥测后处理阶段未配置执行器，阶段={}", stage.name());
-            return;
+            completion.completeExceptionally(new IllegalStateException("遥测阶段缺少执行器：" + stage.name()));
+            return completion;
         }
         long startedAt = System.nanoTime();
         try {
             executor.execute(() -> {
                 try {
-                    stage.process(context);
+                    boolean committed = commitStage(stage, context, () -> {
+                        stage.process(context);
+                        if (stage.type() == TelemetryStageType.CACHE && context.validValue()
+                                && activityReporter != null && !"POLLING".equals(context.source())) {
+                            activityReporter.recordSuccessfulData(context.deviceId(), context.generation(), context.sampleAt());
+                        }
+                    });
+                    completion.complete(committed && context.validValue());
                 } catch (Exception exception) {
-                    log.error("遥测后处理阶段执行失败，阶段={}，设备={}，点位={}",
-                            stage.name(), context.deviceId(), context.point().getPointId(), exception);
+                    if (exception instanceof CancellationException) {
+                        if (context.receipt() != null && "旧样本不能覆盖更新事实".equals(exception.getMessage())) {
+                            context.receipt().complete(context.point().getPointId(), false, "STALE_SAMPLE", context.sampleAt());
+                        }
+                        log.debug("跳过失效遥测阶段，阶段={}，设备={}，点位={}，原因={}",
+                                stage.name(), context.deviceId(), context.point().getPointId(), exception.getMessage());
+                    } else {
+                        recordCoreFailure(stage, context);
+                        log.error("遥测后处理阶段执行失败，阶段={}，设备={}，点位={}",
+                                stage.name(), context.deviceId(), context.point().getPointId(), exception);
+                    }
+                    completion.completeExceptionally(exception);
                 }
             });
             stageSubmissions.increment();
             stageSubmissionLatencyNanos.add(System.nanoTime() - startedAt);
         } catch (RejectedExecutionException exception) {
             stageSubmissionLatencyNanos.add(System.nanoTime() - startedAt);
-            handleRejectedStage(stage, context, executor, exception);
+            recordCoreFailure(stage, context);
+            completion.completeExceptionally(exception);
+            // 补偿只保留可靠数据，不把任务提交或后续重放当作本轮核心成功。
+            if (stage.type() != TelemetryStageType.CACHE) {
+                try {
+                    commitStage(stage, context, () -> handleRejectedStage(stage, context, executor, exception));
+                } catch (CancellationException cancelled) {
+                    log.debug("跳过已失效遥测的阶段补偿，设备={}，阶段={}", context.deviceId(), stage.name());
+                }
+            } else {
+                stageRejectedEvents.increment();
+                stageRejectedUncompensatedEvents.increment();
+            }
+        }
+        return completion;
+    }
+
+    private void recordCoreFailure(TelemetryPostProcessStage stage, TelemetryPostProcessContext context) {
+        if (stage.type() != TelemetryStageType.CACHE || acquisitionRuntimeTracker == null || !context.live()) return;
+        try {
+            commitStage(stage, context, () -> {
+                acquisitionRuntimeTracker.recordPointFailure(context.deviceId(), context.generation(),
+                        context.point().getPointId(), "PROCESS_ERROR", context.sampleAt());
+            });
+        } catch (CancellationException cancelled) {
+            log.debug("旧配置或旧样本的核心失败不覆盖当前事实，设备={}，点位={}",
+                    context.deviceId(), context.point().getPointId());
+        } catch (Exception exception) {
+            log.error("记录核心处理失败事实时发生错误，设备={}，点位={}",
+                    context.deviceId(), context.point().getPointId(), exception);
         }
     }
 

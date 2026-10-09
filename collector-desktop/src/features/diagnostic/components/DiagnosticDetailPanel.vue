@@ -92,20 +92,22 @@
       </section>
     </div>
     <section class="exact-table-card diagnostic-connection-table">
-      <div class="exact-table-title"><h2>设备连接指标</h2><span>连接采集指标</span></div>
+      <div class="exact-table-title"><h2>设备连接指标</h2><span>连接不等同采集健康</span></div>
       <table>
-        <thead><tr><th>设备</th><th>状态</th><th>连接</th><th>成功率</th><th>收/发字节</th><th>空闲</th><th>错误</th><th>说明</th></tr></thead>
+        <thead><tr><th>设备</th><th>连接状态</th><th>连接</th><th>采集健康</th><th>采集就绪</th><th>连接成功率</th><th>收/发字节</th><th>空闲</th><th>错误</th><th>说明</th></tr></thead>
         <tbody>
-          <tr v-if="connectionRows.length === 0"><td colspan="8" class="exact-empty">暂无设备连接指标</td></tr>
+          <tr v-if="connectionRows.length === 0"><td colspan="10" class="exact-empty">暂无设备连接指标</td></tr>
           <tr v-for="row in connectionRows" :key="row.deviceId">
             <td><code>{{ row.deviceId }}</code></td>
             <td>{{ row.statusText }}</td>
             <td><span class="status-badge" :class="row.tone">{{ row.connectedText }}</span></td>
+            <td><span class="status-badge" :class="row.healthTone">{{ row.healthText }}</span></td>
+            <td>{{ row.readyText }}</td>
             <td>{{ row.successRateText }}</td>
             <td>{{ row.bytesText }}</td>
             <td>{{ row.idleTimeText }}</td>
             <td>{{ row.errors }}</td>
-            <td>{{ row.missing ? '缺失连接或仅存在期望配置' : '连接指标已采集' }}</td>
+            <td>{{ row.healthReason || (row.missing ? '缺失连接或仅存在期望配置' : '连接指标已采集') }}</td>
           </tr>
         </tbody>
       </table>

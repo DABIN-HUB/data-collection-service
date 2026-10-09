@@ -25,6 +25,11 @@ public interface CollectorLifecycle {
         // 兼容未提供运行代次绑定能力的旧采集器。
     }
 
+    /** 绑定启动准备时确认的配置版本，不能用处理结果到达时的新配置冒充源配置。 */
+    default void setRuntimeConfigurationVersion(long version) {
+        // 非遥测旧实现保持原生命周期；统一采集基类负责保存源配置版本。
+    }
+
     /**
      * 处理连接生命周期。
      */

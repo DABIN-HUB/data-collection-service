@@ -99,15 +99,16 @@ describe("runtime.store lifecycle", () => {
     expect(store.runtime).toMatchObject({ message: "runtime-b" });
   });
 
-  it("保留 partial success semantics：单项成功时 connected 仍为 true", async () => {
+  it("单项成功不能冒充整体 connected/健康，必须暴露来源失败", async () => {
     apiMocks.getHealth.mockResolvedValueOnce({ status: "UP", level: "OK" });
     apiMocks.getRuntimeStatus.mockRejectedValueOnce(new Error("runtime failed"));
     const store = useRuntimeStore();
 
     await store.refresh();
 
-    expect(store.connected).toBe(true);
-    expect(store.error).toBe("");
+    expect(store.connected).toBe(false);
+    expect(store.error).toContain("runtime failed");
+    expect(store.runtimeLevel).toBe("UNKNOWN");
     expect(store.health).toMatchObject({ status: "UP" });
   });
 });

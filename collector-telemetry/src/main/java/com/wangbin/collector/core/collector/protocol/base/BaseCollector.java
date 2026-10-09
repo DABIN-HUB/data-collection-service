@@ -108,10 +108,16 @@ protected volatile boolean connected = false;
     protected volatile long lastDisconnectTime;
     protected volatile long lastActivityTime;
     protected volatile long runtimeGeneration;
+    protected volatile long runtimeConfigVersion;
 
     @Override
     public void setRuntimeGeneration(long generation) {
         this.runtimeGeneration = generation;
+    }
+
+    @Override
+    public void setRuntimeConfigurationVersion(long version) {
+        this.runtimeConfigVersion = version;
     }
 
 
@@ -127,6 +133,7 @@ protected volatile boolean connected = false;
     // 处理结果
     protected final Map<String, ProcessResult> lastProcessResults = new ConcurrentHashMap<>();
     private final ThreadLocal<Map<String, ProcessResult>> invocationProcessResults = new ThreadLocal<>();
+    private final ThreadLocal<Long> invocationConfigVersion = new ThreadLocal<>();
     private final CollectorValueConverter valueConverter = new CollectorValueConverter();
     private final CollectorTelemetryMetadataEnricher telemetryMetadataEnricher = new CollectorTelemetryMetadataEnricher();
 
@@ -146,6 +153,8 @@ protected volatile boolean connected = false;
     @Override
     public void init(DeviceInfo deviceInfo) throws CollectorException {
         this.deviceInfo = deviceInfo;
+        this.runtimeConfigVersion = configManager != null
+                ? configManager.getDeviceConfigVersion(deviceInfo.getDeviceId()) : 0L;
 
         log.info("采集器初始化完成: {} [{}]", deviceInfo.getDeviceName(), getCollectorType());
     }
@@ -237,8 +246,8 @@ protected volatile boolean connected = false;
      */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
-        checkConnection();
-        invocationProcessResults.remove();
+            checkConnection();
+            resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         try {
@@ -250,7 +259,8 @@ protected volatile boolean connected = false;
             ProcessContext context = new ProcessContext();
             context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
             ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-            enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
+            enrichTelemetryMetadata(processResult, rawValue, processedValue,
+                    readSampleAt(point, startTime), readSampleSource(point));
             lastProcessResults.put(point.getPointId(), processResult);
             invocationProcessResults.set(Map.of(point.getPointId(), processResult.snapshot()));
 
@@ -285,8 +295,8 @@ protected volatile boolean connected = false;
  */
 @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
-        checkConnection();
-        invocationProcessResults.remove();
+            checkConnection();
+            resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         Map<String, Object> results = new HashMap<>();
@@ -328,7 +338,8 @@ protected volatile boolean connected = false;
                     ProcessContext context = new ProcessContext();
                     context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
                     ProcessResult processResult = dataQualityProcessor.process(context, point, processedValue);
-                    enrichTelemetryMetadata(processResult, rawValue, processedValue, startTime, "POLLING");
+                    enrichTelemetryMetadata(processResult, rawValue, processedValue,
+                    readSampleAt(point, startTime), readSampleSource(point));
                     lastProcessResults.put(pointId, processResult);
                     batchProcessResults.put(pointId, processResult.snapshot());
 
@@ -810,6 +821,79 @@ protected volatile boolean connected = false;
      *
      * @return 当前调用的处理结果
      */
+    protected long readSampleAt(DataPoint point, long requestedAt) {
+        return requestedAt;
+    }
+
+    protected String readSampleSource(DataPoint point) {
+        return "POLLING";
+    }
+
+    protected void resetInvocationProcessResults() {
+        invocationProcessResults.remove();
+        invocationConfigVersion.set(runtimeConfigVersion);
+    }
+
+    protected void addInvocationProcessResult(String pointId, ProcessResult result) {
+        Map<String, ProcessResult> copy = new LinkedHashMap<>();
+        Map<String, ProcessResult> previous = invocationProcessResults.get();
+        if (previous != null) copy.putAll(previous);
+        copy.put(pointId, result.snapshot());
+        invocationProcessResults.set(Collections.unmodifiableMap(copy));
+    }
+
+    protected void setInvocationProcessResults(Map<String, ProcessResult> results) {
+        invocationProcessResults.set(Collections.unmodifiableMap(new LinkedHashMap<>(results)));
+    }
+
+    /** 返回缓存只保留源时间与质量，不能制造一次新的协议观察。 */
+    protected ProcessResult cachedReadResult(DataPoint point, ProcessResult previous) {
+        ProcessResult result = previous != null ? previous.snapshot()
+                : ProcessResult.error(null, "订阅尚未收到有效样本");
+        result.addMetadata(com.wangbin.collector.core.processor.ProcessResultMetadataKeys.SOURCE, "CACHE_READ");
+        return result;
+    }
+
+    /** 保留协议数组形态，但逐元素执行公共质量处理，不能把非空容器直接当作 GOOD。 */
+    protected ProcessResult processArrayQuality(DataPoint point, Object rawValue, int expectedSize) {
+        List<?> elements;
+        if (rawValue instanceof Collection<?> collection) {
+            elements = new ArrayList<>(collection);
+        } else if (rawValue != null && rawValue.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(rawValue);
+            List<Object> copy = new ArrayList<>(length);
+            for (int index = 0; index < length; index++) copy.add(java.lang.reflect.Array.get(rawValue, index));
+            elements = copy;
+        } else {
+            return ProcessResult.error(rawValue, "数组点位未返回数组", DataQuality.VALUE_INVALID);
+        }
+        if (elements.isEmpty() || elements.size() != expectedSize) {
+            return ProcessResult.error(rawValue, "数组点位返回长度与配置不符", DataQuality.VALUE_INVALID);
+        }
+        if (dataQualityProcessor == null) {
+            return ProcessResult.error(rawValue, "数组质量处理组件未初始化", DataQuality.PROCESS_ERROR);
+        }
+        int quality = 100;
+        for (Object element : elements) {
+            if (element instanceof Number number && !Double.isFinite(number.doubleValue())) {
+                return ProcessResult.error(rawValue, "数组包含非有限数值", DataQuality.VALUE_INVALID);
+            }
+            ProcessContext context = new ProcessContext();
+            context.addAttribute(CommonMapKeys.DEVICE_ID, deviceInfo.getDeviceId());
+            ProcessResult assessed = dataQualityProcessor.process(context, point, element);
+            if (!assessed.isSuccess() || assessed.getQuality() < 0 || assessed.getQuality() > 100) {
+                ProcessResult failed = assessed.snapshot();
+                failed.setRawValue(rawValue);
+                failed.setProcessedValue(rawValue);
+                return failed;
+            }
+            quality = Math.min(quality, assessed.getQuality());
+        }
+        ProcessResult result = ProcessResult.success(rawValue, rawValue, "数组各元素质量处理完成");
+        result.setQuality(quality);
+        return result;
+    }
+
     public Map<String, ProcessResult> takeInvocationProcessResults() {
         Map<String, ProcessResult> snapshot = invocationProcessResults.get();
         invocationProcessResults.remove();
@@ -847,9 +931,7 @@ protected volatile boolean connected = false;
             if (telemetryIngressService != null) {
                 telemetryIngressService.append(resolvedDeviceId, point, processResult, runtimeGeneration);
             }
-            if (processResult.isSuccess() && deviceDataActivityReporter != null) {
-                deviceDataActivityReporter.recordSuccessfulData(resolvedDeviceId, runtimeGeneration, collectTime);
-            }
+            // 推送入口成功不代表核心处理完成；活动事实由实时阶段提交成功后统一记录。
             lastActivityTime = System.currentTimeMillis();
             return processResult;
         } catch (Exception e) {
@@ -878,6 +960,10 @@ protected volatile boolean connected = false;
                                            long collectTime,
                                            String source) {
         telemetryMetadataEnricher.enrich(result, rawValue, processedValue, collectTime, source);
+        Long version = "POLLING".equals(source) ? invocationConfigVersion.get() : null;
+        if (version == null) version = runtimeConfigVersion;
+        if (version != null) result.addMetadata(
+                com.wangbin.collector.core.processor.ProcessResultMetadataKeys.CONFIG_VERSION, version);
     }
 
     /**

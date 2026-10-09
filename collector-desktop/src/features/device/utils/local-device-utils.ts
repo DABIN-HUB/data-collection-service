@@ -73,7 +73,7 @@ export function buildLocalDevicePayload(draft: LocalDeviceDraft): LocalDevicePay
   const connection = cloneRecord(draft.connection);
   const extJson = cloneRecord(connection.extJson);
   const cloudTarget = normalizeCloudTarget(draft.cloudTarget);
-  const deviceId = draft.deviceId.trim();
+  const deviceId = draft.deviceId;
   const protocol = draft.protocol.trim() || "MODBUS_TCP";
   const points = normalizeLocalPoints(draft.points, deviceId, protocol, adaptive);
   const host = connection.host;
@@ -161,9 +161,25 @@ export function buildProtocolPointNotes(protocol: string, pointAddressHints: str
   return { addressHints, messages };
 }
 
+/** 新点位在进入草稿时分配 UUID；编辑及重试只沿用已有身份。 */
+export function createLocalPointId(): string {
+  if (typeof globalThis.crypto.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function normalizeLocalPoints(points: DataPoint[], deviceId: string, protocol: string, adaptive: AdaptiveConfig = DEFAULT_ADAPTIVE_CONFIG): DataPoint[] {
   const normalizedProtocol = protocol || "MODBUS_TCP";
+  const identities = new Set<string>();
   return (Array.isArray(points) ? points : []).map((point, index) => {
+    if (point.deviceId?.trim() && point.deviceId !== deviceId) throw new Error("点位归属与设备身份不一致");
+    if (point.id !== undefined && !point.pointId?.trim()) throw new Error("历史点位缺少 pointId，请先修复身份，不能重新生成");
+    const pointId = point.pointId || createLocalPointId();
+    if (identities.has(pointId)) throw new Error(`点位身份重复：${pointId}`);
+    identities.add(pointId);
     const pointCode = String(point.pointCode || `point_${index + 1}`).trim();
     const address = String(point.address || defaultPointAddress(normalizedProtocol)).trim();
     const additionalConfig = cloneRecord(point.additionalConfig);
@@ -186,7 +202,7 @@ export function normalizeLocalPoints(points: DataPoint[], deviceId: string, prot
       cacheEnabled: 1,
       alarmEnabled: 0,
       ...point,
-      pointId: point.pointId || `local-${pointCode}`,
+      pointId,
       pointCode,
       pointName: String(point.pointName || pointCode).trim(),
       deviceId,

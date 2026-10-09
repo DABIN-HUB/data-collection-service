@@ -7,6 +7,9 @@ import com.wangbin.collector.core.cache.config.TelemetryStreamProperties;
 import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -27,8 +30,16 @@ import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class RedisFailureIsolationTest {
+
+    private final CollectionTaskGuard guard = new CollectionTaskGuard();
+    private final AcquisitionRuntimeTracker tracker = new AcquisitionRuntimeTracker(guard);
+    private final ConfigManager configManager = mock(ConfigManager.class);
 
     private ThreadPoolExecutor entryExecutor;
     private ThreadPoolExecutor streamExecutor;
@@ -57,10 +68,10 @@ class RedisFailureIsolationTest {
         streamExecutor = fixedPool("redis-stream", 2, 128);
         FlakyTelemetryStreamService streamService = new FlakyTelemetryStreamService(6);
         CollectorDataPostProcessor processor = processor(streamService);
-        CollectionTaskGuard guard = new CollectionTaskGuard();
         String deviceId = "redis-recovery-dev";
         long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 3);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
         guard.runWithContext(deviceId, generation, () -> processor.saveBatchAsync(deviceId, points, values, null));
@@ -84,18 +95,19 @@ class RedisFailureIsolationTest {
         streamExecutor = fixedPool("redis-slow-stream", 1, 128);
         BlockingTelemetryStreamService streamService = new BlockingTelemetryStreamService();
         CollectorDataPostProcessor processor = processor(streamService);
-        CollectionTaskGuard guard = new CollectionTaskGuard();
         long generationA = guard.activateNextGeneration("redis-slow-a");
         long generationB = guard.activateNextGeneration("redis-slow-b");
         DataPoint pointA = point("redis-slow-a", "p1");
         DataPoint pointB = point("redis-slow-b", "p1");
+        registerPoints("redis-slow-a", generationA, List.of(pointA));
+        registerPoints("redis-slow-b", generationB, List.of(pointB));
 
         guard.runWithContext("redis-slow-a", generationA,
-                () -> processor.savePointAsync("redis-slow-a", pointA, 1));
+                () -> processor.savePointAsync("redis-slow-a", pointA, result(1)));
         assertTrue(streamService.awaitEntered());
 
         guard.runWithContext("redis-slow-b", generationB,
-                () -> processor.savePointAsync("redis-slow-b", pointB, 2));
+                () -> processor.savePointAsync("redis-slow-b", pointB, result(2)));
         waitUntil(() -> entryExecutor.getQueue().isEmpty() && entryExecutor.getActiveCount() == 0);
         assertEquals(1, streamExecutor.getActiveCount());
         assertTrue(streamExecutor.getQueue().size() > 0);
@@ -112,7 +124,6 @@ class RedisFailureIsolationTest {
         streamExecutor = fixedPool("redis-storm-stream", 4, 512);
         AlwaysFailingTelemetryStreamService streamService = new AlwaysFailingTelemetryStreamService();
         CollectorDataPostProcessor processor = processor(streamService);
-        CollectionTaskGuard guard = new CollectionTaskGuard();
         int deviceCount = 20;
         int pointsPerDevice = 1;
 
@@ -120,6 +131,7 @@ class RedisFailureIsolationTest {
             String deviceId = "redis-storm-" + i;
             long generation = guard.activateNextGeneration(deviceId);
             List<DataPoint> points = points(deviceId, pointsPerDevice);
+            registerPoints(deviceId, generation, points);
             guard.runWithContext(deviceId, generation,
                     () -> processor.saveBatchAsync(deviceId, points, values(points), null));
         }
@@ -142,12 +154,13 @@ class RedisFailureIsolationTest {
         streamExecutor = fixedPool("redis-shutdown-stream", 1, 32);
         BlockingTelemetryStreamService streamService = new BlockingTelemetryStreamService();
         CollectorDataPostProcessor processor = processor(streamService);
-        CollectionTaskGuard guard = new CollectionTaskGuard();
         String deviceId = "redis-shutdown-dev";
         long generation = guard.activateNextGeneration(deviceId);
 
+        DataPoint point = point(deviceId, "p1");
+        registerPoints(deviceId, generation, List.of(point));
         guard.runWithContext(deviceId, generation,
-                () -> processor.savePointAsync(deviceId, point(deviceId, "p1"), 1));
+                () -> processor.savePointAsync(deviceId, point, result(1)));
         assertTrue(streamService.awaitEntered());
 
         entryExecutor.shutdownNow();
@@ -166,8 +179,32 @@ class RedisFailureIsolationTest {
                 streamExecutor,
                 streamExecutor,
                 streamExecutor,
-                streamExecutor);
-        return new CollectorDataPostProcessor(entryExecutor, pipeline, new CollectionTaskGuard());
+                streamExecutor,
+                tracker,
+                (deviceId, generation, sampleAt) -> {},
+                configManager);
+        return new CollectorDataPostProcessor(entryExecutor, pipeline, guard);
+    }
+
+    private void registerPoints(String deviceId, long generation, List<DataPoint> points) {
+        tracker.open(deviceId, generation, points);
+        for (DataPoint point : points) {
+            when(configManager.getDataPointByPointId(deviceId, point.getPointId())).thenReturn(point);
+        }
+        when(configManager.runIfConfigurationCurrent(eq(deviceId), eq(1L), any(Runnable.class)))
+                .thenAnswer(invocation -> {
+                    invocation.getArgument(2, Runnable.class).run();
+                    return true;
+                });
+    }
+
+    private ProcessResult result(Object value) {
+        ProcessResult result = ProcessResult.success(value, value);
+        result.setQuality(100);
+        result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, System.currentTimeMillis());
+        result.addMetadata(ProcessResultMetadataKeys.SOURCE, "POLLING");
+        result.addMetadata(ProcessResultMetadataKeys.CONFIG_VERSION, 1L);
+        return result;
     }
 
     private List<DataPoint> points(String deviceId, int count) {
@@ -191,7 +228,7 @@ class RedisFailureIsolationTest {
     private Map<String, Object> values(List<DataPoint> points) {
         Map<String, Object> values = new HashMap<>();
         for (DataPoint point : points) {
-            values.put(point.getPointId(), ProcessResult.success(1, 1));
+            values.put(point.getPointId(), result(1));
         }
         return values;
     }

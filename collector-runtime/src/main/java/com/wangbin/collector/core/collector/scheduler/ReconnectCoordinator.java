@@ -47,7 +47,11 @@ public class ReconnectCoordinator {
         if (!collectionTaskGuard.isCurrent(deviceId, generation)) {
             return;
         }
-        ReconnectState state = reconnectStates.computeIfAbsent(deviceId, ignored -> new ReconnectState());
+        ReconnectState state = reconnectStates.compute(deviceId, (id, existing) -> {
+            if (!isReconnectEligible(id, generation)) return existing;
+            return existing != null && existing.generation == generation ? existing : new ReconnectState(generation);
+        });
+        if (state == null || state.generation != generation || !isReconnectEligible(deviceId, generation)) return;
         long now = System.currentTimeMillis();
         if (now < state.nextRetryAt.get()) {
             return;
@@ -78,19 +82,19 @@ public class ReconnectCoordinator {
             if (!isReconnectEligible(deviceId, generation)) {
                 return;
             }
-            collectionManager.reconnectDevice(deviceId);
+            log.info("设备重连开始 deviceId={} action=RECONNECT source=RECONNECT generation={} desiredState={}",
+                    deviceId, generation, runtimeState.getDesiredState(deviceId));
+            collectionManager.reconnectDevice(deviceId, generation);
             if (!isReconnectEligible(deviceId, generation)) {
-                try {
-                    collectionManager.disconnectDevice(deviceId);
-                } catch (Exception e) {
-                    log.warn("旧代次重连后断开失败, 设备={}", deviceId, e);
-                }
+                collectionManager.cleanupDeviceIfGeneration(deviceId, generation);
                 return;
             }
             state.consecutiveFailures.set(0);
             state.nextRetryAt.set(0L);
             success = true;
             reconnectSuccessCount.incrementAndGet();
+            log.info("设备重连完成 deviceId={} action=RECONNECT source=RECONNECT generation={} desiredState={}",
+                    deviceId, generation, runtimeState.getDesiredState(deviceId));
         } catch (Exception e) {
             reconnectFailureCount.incrementAndGet();
             long delayMs = scheduleNextReconnectRetry(state);
@@ -98,6 +102,7 @@ public class ReconnectCoordinator {
         } finally {
             state.lastDurationMs.set(System.currentTimeMillis() - startTime);
             state.reconnecting.set(false);
+            if (!isReconnectEligible(deviceId, generation)) reconnectStates.remove(deviceId, state);
             if (success) {
                 state.lastSuccessAt.set(System.currentTimeMillis());
             }
@@ -106,7 +111,9 @@ public class ReconnectCoordinator {
 
     boolean isReconnectEligible(String deviceId, long generation) {
         DeviceScheduleInfo scheduleInfo = runtimeState.getScheduleInfo(deviceId);
-        return scheduleInfo != null
+        return !runtimeState.isClosed()
+                && runtimeState.getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING
+                && scheduleInfo != null
                 && scheduleInfo.isRunning()
                 && scheduleInfo.getGeneration() == generation
                 && collectionTaskGuard.isCurrent(deviceId, generation)
@@ -178,6 +185,12 @@ public class ReconnectCoordinator {
     }
 
     static final class ReconnectState {
+        private final long generation;
+
+        private ReconnectState(long generation) {
+            this.generation = generation;
+        }
+
         private final AtomicBoolean reconnecting = new AtomicBoolean(false);
         private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
         private final AtomicLong nextRetryAt = new AtomicLong(0);

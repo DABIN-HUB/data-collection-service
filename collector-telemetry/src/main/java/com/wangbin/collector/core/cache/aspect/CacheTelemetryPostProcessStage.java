@@ -6,6 +6,8 @@ import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
 import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import com.wangbin.collector.common.constant.CommonMapKeys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,7 +67,7 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
      */
     @Override
     public boolean enabled(TelemetryPostProcessContext context) {
-        return context.cacheValue() != null && context.point() != null && context.point().needCache();
+        return context.processResult() != null && context.point() != null;
     }
 
     /**
@@ -74,19 +76,30 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
     @Override
     public void process(TelemetryPostProcessContext context) {
         DataPoint point = context.point();
+        ProcessResult cachedResult = context.processResult().snapshot();
+        cachedResult.addMetadata(ProcessResultMetadataKeys.SOURCE_GENERATION, context.generation());
+        cachedResult.addMetadata(ProcessResultMetadataKeys.RUNTIME_ID, context.guard().runtimeId());
+        java.util.Map<String, Object> identity = new java.util.LinkedHashMap<>();
+        identity.put(CommonMapKeys.DEVICE_ID, context.deviceId());
+        identity.put(CommonMapKeys.POINT_ID, point.getPointId());
+        identity.put(CommonMapKeys.POINT_CODE, point.getPointCode());
+        identity.put(CommonMapKeys.ADDRESS, point.getAddress());
+        identity.put(ProcessResultMetadataKeys.POINT_DATA_TYPE, point.getDataType());
+        cachedResult.addMetadata(ProcessResultMetadataKeys.POINT_IDENTITY, identity);
         CacheKey cacheKey = CacheKey.dataKey(context.deviceId(), point.getPointId());
-        boolean success = multiLevelCacheManager.put(cacheKey, context.cacheValue(), getCacheExpireTime(point));
-        if (!success) {
-            return;
+        if (point.needCache() && !multiLevelCacheManager.put(cacheKey, cachedResult, getCacheExpireTime(point))) {
+            if (acquisitionRuntimeTracker != null) acquisitionRuntimeTracker.recordPointFailure(
+                    context.deviceId(), context.generation(), point.getPointId(), "CACHE_ERROR", context.sampleAt());
+            throw new IllegalStateException("实时缓存写入未完成");
         }
         ProcessResult result = context.processResult();
         if (acquisitionRuntimeTracker != null && result != null) {
-            acquisitionRuntimeTracker.recordCachedPoint(context.deviceId(), point, context.generation(),
-                    result.isSuccess() && result.isQualityAcceptable() && result.getFinalValue() != null,
-                    result.getQuality(), System.currentTimeMillis());
+            acquisitionRuntimeTracker.recordCoreProcessedPoint(context.deviceId(), point, context.generation(),
+                    context.validValue(), result.getQuality(), context.sampleAt(), context.source());
         }
+        if (!point.needCache()) return;
         try {
-            realtimeChangeTracker.record(context.deviceId(), point.getPointId(), context.cacheValue());
+            realtimeChangeTracker.record(context.deviceId(), point.getPointId(), cachedResult);
         } catch (Exception exception) {
             log.warn("实时变更跟踪失败，设备={}，点位={}", context.deviceId(), point.getPointId(), exception);
             try {

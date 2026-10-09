@@ -30,21 +30,23 @@ const deviceStore = useDeviceStore();
 const router = useRouter();
 
 async function startSelectedDevice(deviceId: string) {
-  await deviceStore.startSmart(deviceId);
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.startSmart(deviceId);
+  if (!result.ok) {
+    ElMessage.error(`设备 ${deviceId}：${result.error}`);
     return;
   }
-  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "START"));
+  if (result.refreshError) ElMessage.warning(`设备 ${deviceId} 操作已受理，运行状态暂不可用：${result.refreshError}`);
+  else ElMessage.success(`设备 ${deviceId}：${runtimeOperationMessage(result.runtime, "START")}`);
 }
 
 async function stopSelectedDevice(deviceId: string) {
-  await deviceStore.stop(deviceId);
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.stop(deviceId);
+  if (!result.ok) {
+    ElMessage.error(`设备 ${deviceId}：${result.error}`);
     return;
   }
-  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "STOP"));
+  if (result.refreshError) ElMessage.warning(`设备 ${deviceId} 操作已受理，运行状态暂不可用：${result.refreshError}`);
+  else ElMessage.success(`设备 ${deviceId}：${runtimeOperationMessage(result.runtime, "STOP")}`);
 }
 
 function openWorkbenchHistory(target: WorkbenchPointTarget) {

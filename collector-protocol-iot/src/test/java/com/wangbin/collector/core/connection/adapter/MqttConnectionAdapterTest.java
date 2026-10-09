@@ -24,6 +24,7 @@ class MqttConnectionAdapterTest {
                 mock(org.eclipse.paho.client.mqttv3.MqttAsyncClient.class);
         org.eclipse.paho.client.mqttv3.IMqttToken token =
                 mock(org.eclipse.paho.client.mqttv3.IMqttToken.class);
+        when(token.getGrantedQos()).thenReturn(new int[]{1});
         java.util.concurrent.atomic.AtomicBoolean connected = new java.util.concurrent.atomic.AtomicBoolean();
         when(client.isConnected()).thenAnswer(invocation -> connected.get());
         when(client.connect(any(MqttConnectOptions.class))).thenAnswer(invocation -> {
@@ -60,6 +61,7 @@ class MqttConnectionAdapterTest {
         org.eclipse.paho.mqttv5.client.MqttAsyncClient client =
                 mock(org.eclipse.paho.mqttv5.client.MqttAsyncClient.class);
         org.eclipse.paho.mqttv5.client.IMqttToken token = mock(org.eclipse.paho.mqttv5.client.IMqttToken.class);
+        when(token.getReasonCodes()).thenReturn(new int[]{1});
         java.util.concurrent.atomic.AtomicBoolean connected = new java.util.concurrent.atomic.AtomicBoolean();
         when(client.isConnected()).thenAnswer(invocation -> connected.get());
         when(client.connect(any(MqttConnectionOptions.class))).thenAnswer(invocation -> {

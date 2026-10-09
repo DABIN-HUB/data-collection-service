@@ -29,6 +29,28 @@ export interface LocalEditorChecklistItem {
   state: LocalEditorChecklistState;
 }
 
+/** 每个新建会话只调用一次；失败重试继续使用原 UUID。 */
+export function createLocalDeviceId(): string {
+  if (typeof globalThis.crypto.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** 所有身份别名必须一致；高级 JSON 不能绕过当前编辑会话的身份。 */
+export function resolveEditorDeviceId(value: Record<string, unknown>, currentId: string): string {
+  const device = isPlainObject(value.device) ? value.device : {};
+  const ids = [value.deviceId, device.deviceId, device.id].filter((id) => id !== undefined && id !== null);
+  if (ids.some((id) => typeof id !== "string")) throw new Error("设备身份必须是字符串");
+  const identity = ids.length ? String(ids[0]) : currentId;
+  if (ids.some((id) => id !== identity) || (currentId && identity !== currentId)) {
+    throw new Error("设备身份冲突，禁止修改当前设备 ID");
+  }
+  return identity;
+}
+
 export function buildPointModelingOverview(points: DataPoint[]): PointModelingOverview {
   const complete = points.filter((point) => hasValue(point.pointCode) && hasValue(point.pointName) && hasValue(point.address)).length;
   return {
@@ -74,7 +96,7 @@ export function normalizeInitialPoints(rawPoints: DataPoint[], currentDeviceId: 
     removeDeprecatedCloudIdentityConfig(additionalConfig);
     return {
       ...point,
-      pointId: point.pointId || `local-${pointCode}`,
+      pointId: point.pointId,
       pointCode,
       pointName: point.pointName || `点位 ${index + 1}`,
       address: point.address || defaultAddress(currentProtocol),

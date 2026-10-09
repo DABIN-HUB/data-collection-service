@@ -52,6 +52,17 @@ export interface DeviceRuntimeSnapshot {
   configuredPointCount?: number;
   lastError?: string;
   configVersion?: number;
+  desiredState?: string;
+  transport?: string;
+  protocol?: string;
+  deviceHealth?: string;
+  healthReason?: string;
+  goodPointCount?: number;
+  failedPointCount?: number;
+  stalePointCount?: number;
+  waitingPointCount?: number;
+  lastValidSampleAt?: number;
+  participatingPointCount?: number;
 }
 
 export interface DeviceOperationResponse {
@@ -115,4 +126,6 @@ export interface DeviceViewModel extends DeviceInfo {
   displayGroup: string;
   displayProtocol: string;
   runtime?: DeviceRuntimeSnapshot;
+  runtimeStale?: boolean;
+  runtimeError?: string;
 }

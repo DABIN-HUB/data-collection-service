@@ -24,6 +24,16 @@ import java.util.function.ToLongFunction;
 @Component
 public class SchedulerRuntimeState {
 
+    /** 用户意图与运行代次分离；停止后保留最后代次，便于识别迟到回调。 */
+    public enum DesiredState { RUNNING, STOPPED }
+
+    private record DeviceIntent(DesiredState state, long revision) { }
+
+    private final ConcurrentHashMap<String, DeviceIntent> deviceIntents = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastGenerations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> appliedConfigVersions = new ConcurrentHashMap<>();
+    private final AtomicLong intentSequence = new AtomicLong();
+    private volatile boolean closed;
     private final ConcurrentHashMap<String, DeviceScheduleInfo> deviceScheduleInfo = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, List<DeviceBatchTask>> timeSliceTasks = new ConcurrentHashMap<>();
     private final Set<String> startingDevices = ConcurrentHashMap.newKeySet();
@@ -43,6 +53,92 @@ public class SchedulerRuntimeState {
 
     SchedulerRuntimeState(LongSupplier nanoTimeSupplier) {
         this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
+    }
+
+    public DesiredState getDesiredState(String deviceId) {
+        DeviceIntent intent = deviceIntents.get(deviceId);
+        return intent == null ? DesiredState.STOPPED : intent.state();
+    }
+
+    public long getIntentRevision(String deviceId) {
+        DeviceIntent intent = deviceIntents.get(deviceId);
+        return intent == null ? 0L : intent.revision();
+    }
+
+    public long lastGeneration(String deviceId) {
+        return lastGenerations.getOrDefault(deviceId, 0L);
+    }
+
+    /** 由设备生命周期锁保护入口；重复活动 START 不会进入此方法。 */
+    boolean requestRunning(String deviceId) {
+        stateLock.lock();
+        try {
+            if (closed) return false;
+            deviceIntents.put(deviceId, new DeviceIntent(DesiredState.RUNNING, intentSequence.incrementAndGet()));
+            return true;
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    long requestStopped(String deviceId) {
+        stateLock.lock();
+        try {
+            DeviceIntent old = deviceIntents.get(deviceId);
+            if (old != null && old.state() == DesiredState.STOPPED) return old.revision();
+            long revision = intentSequence.incrementAndGet();
+            deviceIntents.put(deviceId, new DeviceIntent(DesiredState.STOPPED, revision));
+            return revision;
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    void forgetStoppedIntentAfterDeletion(String deviceId, long revision) {
+        stateLock.lock();
+        try {
+            DeviceIntent intent = deviceIntents.get(deviceId);
+            if (intent != null && intent.state() == DesiredState.STOPPED && intent.revision() == revision) {
+                deviceIntents.remove(deviceId, intent);
+                appliedConfigVersions.remove(deviceId);
+            }
+            // 最后代次保留为墓碑，删除后迟到任务也不能借用新的运行窗口。
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    boolean isRunningIntent(String deviceId, long revision) {
+        DeviceIntent intent = deviceIntents.get(deviceId);
+        return !closed && intent != null && intent.state() == DesiredState.RUNNING && intent.revision() == revision;
+    }
+
+    boolean isClosed() {
+        return closed;
+    }
+
+    void beginShutdown() {
+        stateLock.lock();
+        try {
+            closed = true;
+            deviceIntents.replaceAll((id, intent) -> new DeviceIntent(DesiredState.STOPPED, intentSequence.incrementAndGet()));
+        } finally {
+            stateLock.unlock();
+        }
+    }
+
+    Set<String> getDesiredRunningDeviceIds() {
+        return deviceIntents.entrySet().stream()
+                .filter(entry -> entry.getValue().state() == DesiredState.RUNNING)
+                .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+    }
+
+    void recordAppliedConfigVersion(String deviceId, long generation, long version) {
+        if (isStartingGeneration(deviceId, generation)) appliedConfigVersions.put(deviceId, version);
+    }
+
+    long getAppliedConfigVersion(String deviceId) {
+        return appliedConfigVersions.getOrDefault(deviceId, 0L);
     }
 
     void initializeTimeSlices(int sliceCount, int intervalMs) {
@@ -390,6 +486,7 @@ public class SchedulerRuntimeState {
         try {
             if (startingDevices.contains(deviceId)) {
                 startingGenerations.put(deviceId, generation);
+                lastGenerations.merge(deviceId, generation, Math::max);
             }
         } finally {
             stateLock.unlock();
@@ -435,6 +532,7 @@ public class SchedulerRuntimeState {
     void markRunning(String deviceId, long generation) {
         stateLock.lock();
         try {
+            lastGenerations.merge(deviceId, generation, Math::max);
             deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
             startingDevices.remove(deviceId);
             startingGenerations.remove(deviceId);
@@ -446,9 +544,11 @@ public class SchedulerRuntimeState {
     boolean commitRunning(String deviceId, long generation, List<DeviceBatchTask> batchTasks) {
         stateLock.lock();
         try {
-            if (!startingDevices.contains(deviceId) || !Objects.equals(startingGenerations.get(deviceId), generation)) {
+            if (closed || getDesiredState(deviceId) != DesiredState.RUNNING
+                    || !startingDevices.contains(deviceId) || !Objects.equals(startingGenerations.get(deviceId), generation)) {
                 return false;
             }
+            lastGenerations.merge(deviceId, generation, Math::max);
             deviceScheduleInfo.put(deviceId, new DeviceScheduleInfo(deviceId, generation, true));
             addBatchTasksLocked(batchTasks);
             startingDevices.remove(deviceId);
@@ -540,7 +640,9 @@ public class SchedulerRuntimeState {
     }
 
     Set<String> getKnownDeviceIds() {
-        return getActiveDeviceIds();
+        Set<String> ids = new HashSet<>(getActiveDeviceIds());
+        ids.addAll(deviceIntents.keySet());
+        return Set.copyOf(ids);
     }
 
     long getTotalTaskCount() {

@@ -26,6 +26,18 @@ import java.util.concurrent.TimeoutException;
  */
 @Slf4j
 public class Iec104Collector extends AbstractIce104Collector {
+    private final ThreadLocal<Map<String, CacheEntry>> cachedReadSamples = ThreadLocal.withInitial(HashMap::new);
+
+    @Override
+    protected long readSampleAt(DataPoint point, long requestedAt) {
+        CacheEntry cached = cachedReadSamples.get().get(point.getPointId());
+        return cached != null ? cached.timestamp() : requestedAt;
+    }
+
+    @Override
+    protected String readSampleSource(DataPoint point) {
+        return cachedReadSamples.get().containsKey(point.getPointId()) ? "CACHE_READ" : "POLLING";
+    }
 
     private final Map<Iec104Key, DataPoint> 突发上送PointIndex = new ConcurrentHashMap<>();
 
@@ -144,14 +156,16 @@ public class Iec104Collector extends AbstractIce104Collector {
      */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
+        cachedReadSamples.get().remove(point.getPointId());
         Iec104Address address = resolveReadAddress(point);
         int ioa = address.getIoAddress();
         int ca = address.getCommonAddress();
         Integer typeId = resolvePointTypeId(point, address);
 
-        Object cached = getCachedValue(ca, typeId, ioa);
+        CacheEntry cached = getCachedSample(ca, typeId, ioa);
         if (cached != null) {
-            return cached;
+            cachedReadSamples.get().put(point.getPointId(), cached);
+            return cached.value();
         }
 
         CompletableFuture<Object> future = registerPendingRequest(ca, typeId, ioa);
@@ -172,6 +186,7 @@ public class Iec104Collector extends AbstractIce104Collector {
      */
     @Override
     protected Map<String, Object> doReadPoints(List<DataPoint> points) {
+        cachedReadSamples.get().clear();
         Map<String, Object> results = new HashMap<>();
         Map<String, PendingRead> pendingReads = new LinkedHashMap<>();
         Map<Iec104Key, PendingRead> deduplicatedRequests = new LinkedHashMap<>();
@@ -179,9 +194,10 @@ public class Iec104Collector extends AbstractIce104Collector {
         for (DataPoint point : points) {
             Iec104Address address = resolveReadAddress(point);
             Integer typeId = resolvePointTypeId(point, address);
-            Object cached = getCachedValue(address.getCommonAddress(), typeId, address.getIoAddress());
+            CacheEntry cached = getCachedSample(address.getCommonAddress(), typeId, address.getIoAddress());
             if (cached != null) {
-                results.put(point.getPointId(), cached);
+                cachedReadSamples.get().put(point.getPointId(), cached);
+                results.put(point.getPointId(), cached.value());
                 continue;
             }
 
@@ -433,7 +449,7 @@ public class Iec104Collector extends AbstractIce104Collector {
         DataPoint point = findSpontaneousPoint(commonAddress, typeId, ioa);
         log.debug("IEC104 测量映射：CA={}，ASDU={}，逻辑IOA={}，点位={}，匹配={}",
                 commonAddress, type, ioa, point != null ? point.getPointId() : null, point != null);
-        if (point != null && !"POLLING".equalsIgnoreCase(point.getCollectionMode())) {
+        if (point != null) {
             ingestPushedValue(point, value);
         }
     }

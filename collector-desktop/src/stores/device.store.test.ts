@@ -70,6 +70,73 @@ function device(overrides: Partial<DeviceViewModel>): DeviceViewModel {
 }
 
 describe("device.store helpers", () => {
+  it("身份兼容旧 id，但不得以 connectionKey 作为设备主键", () => {
+    expect(normalizeDeviceViewModel({ deviceId: "canonical", id: "legacy", connectionKey: "transport" }).normalizedId).toBe("canonical");
+    expect(normalizeDeviceViewModel({ id: "legacy" }).normalizedId).toBe("legacy");
+    expect(normalizeDeviceViewModel({ connectionKey: "transport" }).normalizedId).toBe("");
+  });
+
+  it("同设备互斥、不同设备并发，结果与错误只归属目标设备", async () => {
+    const a = createDeferred<unknown>();
+    const b = createDeferred<unknown>();
+    apiMocks.startDevice.mockImplementationOnce(() => a.promise).mockImplementationOnce(() => b.promise);
+    const store = useDeviceStore();
+    const first = store.start("a");
+    const second = store.start("b");
+    const duplicate = await store.stop("a");
+    expect(apiMocks.startDevice).toHaveBeenCalledTimes(2);
+    expect(apiMocks.stopDevice).not.toHaveBeenCalled();
+    expect(duplicate).toMatchObject({ ok: false });
+    a.reject(new Error("A失败"));
+    expect(await first).toMatchObject({ ok: false, error: "A失败" });
+    expect(store.isDeviceOperating("b")).toBe(true);
+    b.resolve({ deviceId: "b", accepted: true, runtime: { deviceId: "b", phase: "WAITING_FIRST_SAMPLE", generation: 2 } });
+    expect(await second).toMatchObject({ ok: true });
+    expect(store.deviceErrors["a"]).toBe("A失败");
+    expect(store.deviceErrors["b"]).toBe("");
+    expect(store.error).toBe("");
+  });
+
+  it("旧批量读不能覆盖写后快照，写后不触发全设备 N+1", async () => {
+    const old = createDeferred<unknown[]>();
+    const store = useDeviceStore();
+    apiMocks.getConfigDevices.mockResolvedValue({ devices: [{ deviceId: "a" }, { deviceId: "b" }] });
+    apiMocks.getDeviceRuntime.mockImplementationOnce(() => old.promise);
+    const read = store.refresh();
+    apiMocks.startDevice.mockResolvedValueOnce({ accepted: true, runtime: { deviceId: "a", phase: "WAITING_FIRST_SAMPLE", generation: 3, generatedAt: 30 } });
+    await store.start("a");
+    old.resolve([{ deviceId: "a", phase: "STOPPED", generation: 2, generatedAt: 20 }]);
+    await read;
+    expect(store.runtimeMap["a"]).toMatchObject({ phase: "WAITING_FIRST_SAMPLE", generation: 3 });
+    expect(store.devices.find((item) => item.normalizedId === "a")?.runtime?.generation).toBe(3);
+    expect(apiMocks.getDeviceRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it("运行查询失败保留最后快照但显示过期，缺快照显示未知", async () => {
+    const store = useDeviceStore();
+    apiMocks.getConfigDevices.mockResolvedValue({ devices: [{ deviceId: "a", status: "ONLINE" }, { deviceId: "b", status: "ONLINE" }] });
+    apiMocks.getDeviceRuntime.mockResolvedValueOnce([{ deviceId: "a", phase: "ONLINE", generation: 3 }]);
+    await store.refresh();
+    apiMocks.getDeviceRuntime.mockRejectedValueOnce(new Error("runtime不可用"));
+    await store.refresh();
+    expect(store.devices[0]?.status).toBe("STALE");
+    expect(store.devices[1]?.status).toBe("UNKNOWN");
+    expect(store.runtimeMap["a"]?.generation).toBe(3);
+    expect(store.error).toContain("runtime不可用");
+  });
+
+  it("低代次或旧生成时间不能回滚当前快照", async () => {
+    const store = useDeviceStore();
+    apiMocks.getConfigDevices.mockResolvedValue({ devices: [{ deviceId: "a" }] });
+    apiMocks.getDeviceRuntime.mockResolvedValueOnce([{ deviceId: "a", phase: "ONLINE", generation: 3, generatedAt: 30 }]);
+    await store.refresh();
+    apiMocks.getDeviceRuntime.mockResolvedValueOnce([{ deviceId: "a", phase: "FAILED", generation: 2, generatedAt: 40 }]);
+    await store.refresh();
+    apiMocks.getDeviceRuntime.mockResolvedValueOnce([{ deviceId: "a", phase: "STOPPED", generation: 3, generatedAt: 20 }]);
+    await store.refresh();
+    expect(store.runtimeMap["a"]).toMatchObject({ phase: "ONLINE", generation: 3, generatedAt: 30 });
+  });
+
   it("识别本地临时设备", () => {
     expect(isLocalDevice(device({ temporaryConfig: true }))).toBe(true);
     expect(isLocalDevice(device({ configSource: "LOCAL" }))).toBe(true);
@@ -150,14 +217,13 @@ describe("device.store helpers", () => {
     expect(apiMocks.startDevice).toHaveBeenCalledWith("remote-1");
   });
 
-  it("syncRemoteDevices 先触发远端同步再重载设备并刷新 Store", async () => {
+  it("syncRemoteDevices 只同步并读取列表，不额外全量重载", async () => {
     const store = useDeviceStore();
 
     await store.syncRemoteDevices();
 
     expect(apiMocks.triggerFullConfigSync).toHaveBeenCalledTimes(1);
-    expect(apiMocks.reloadDevices).toHaveBeenCalledTimes(1);
-    expect(apiMocks.triggerFullConfigSync.mock.invocationCallOrder[0]).toBeLessThan(apiMocks.reloadDevices.mock.invocationCallOrder[0]);
+    expect(apiMocks.reloadDevices).not.toHaveBeenCalled();
     expect(apiMocks.getConfigDevices).toHaveBeenCalledTimes(1);
     expect(apiMocks.getDeviceRuntime).toHaveBeenCalledTimes(1);
   });

@@ -48,6 +48,31 @@ describe("local-device-utils", () => {
     expect(payload.startAfterSave).toBe(true);
   });
 
+  it("保存时原样保留历史设备身份及 pointId，不通过 trim 改名", () => {
+    const deviceId = " legacy/设备-ID ";
+    const payload = buildLocalDevicePayload({
+      deviceId,
+      deviceName: "历史设备",
+      protocol: "MODBUS_TCP",
+      connection: { host: "127.0.0.1", port: 502 },
+      points: [{ pointId: "historical-point-id", pointCode: "temperature", address: "40001" }]
+    });
+    expect(payload.device.deviceId).toBe(deviceId);
+    expect(payload.device.id).toBe(deviceId);
+    expect(payload.connection.deviceId).toBe(deviceId);
+    expect(payload.points[0]).toMatchObject({ deviceId, pointId: "historical-point-id" });
+  });
+
+  it("同编码的新点位身份唯一，改编码和重试保持原身份及历史 id", () => {
+    const points = normalizeLocalPoints([{ pointCode: "p1" }, { pointCode: "p1" }], "dev", "MODBUS_TCP");
+    expect(points[0].pointId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(points[0].pointId).not.toBe(points[1].pointId);
+    const edited = normalizeLocalPoints([{ ...points[0], id: 123, pointCode: "renamed" }], "dev", "MODBUS_TCP");
+    expect(edited[0]).toMatchObject({ id: 123, pointId: points[0].pointId });
+    expect(() => normalizeLocalPoints([{ pointId: "same" }, { pointId: "same" }], "dev", "MODBUS_TCP")).toThrow("重复");
+    expect(() => normalizeLocalPoints([{ deviceId: "other", pointId: "p" }], "dev", "MODBUS_TCP")).toThrow("归属");
+  });
+
   it("规范化点位并补充默认字段", () => {
     const points = normalizeLocalPoints([{ pointCode: "p1", pointName: "点位1", address: "sensor/topic" }], "dev", "MQTT", {
       baseCollectionInterval: 2000,
@@ -57,7 +82,7 @@ describe("local-device-utils", () => {
     });
 
     expect(points[0]).toMatchObject({
-      pointId: "local-p1",
+      pointId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       deviceId: "dev",
       dataType: "STRING",
       readWrite: "R",

@@ -59,7 +59,7 @@ class ReconnectCoordinatorTest {
             entered.countDown();
             release.await(2, TimeUnit.SECONDS);
             return null;
-        }).when(collectionManager).reconnectDevice(deviceId);
+        }).when(collectionManager).reconnectDevice(deviceId, generation);
 
         coordinator.scheduleIfNeeded(deviceId, generation);
         assertTrue(entered.await(1, TimeUnit.SECONDS));
@@ -68,7 +68,7 @@ class ReconnectCoordinatorTest {
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
         assertEquals(1L, coordinator.getAttemptCount());
-        verify(collectionManager).reconnectDevice(deviceId);
+        verify(collectionManager).reconnectDevice(deviceId, generation);
     }
 
     @Test
@@ -101,7 +101,7 @@ class ReconnectCoordinatorTest {
         blocker.countDown();
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
-        verify(collectionManager, never()).reconnectDevice(deviceId);
+        verify(collectionManager, never()).reconnectDevice(deviceId, oldGeneration);
     }
 
     @Test
@@ -111,7 +111,7 @@ class ReconnectCoordinatorTest {
         long generation = markRunning(deviceId);
         doThrow(new RuntimeException("fail"))
                 .doNothing()
-                .when(collectionManager).reconnectDevice(deviceId);
+                .when(collectionManager).reconnectDevice(deviceId, generation);
 
         coordinator.scheduleIfNeeded(deviceId, generation);
         waitUntil(() -> coordinator.getFailureCount() == 1L);
@@ -160,7 +160,7 @@ class ReconnectCoordinatorTest {
             entered.countDown();
             release.await(2, TimeUnit.SECONDS);
             return null;
-        }).when(collectionManager).reconnectDevice(deviceId);
+        }).when(collectionManager).reconnectDevice(deviceId, oldGeneration);
 
         coordinator.scheduleIfNeeded(deviceId, oldGeneration);
         assertTrue(entered.await(1, TimeUnit.SECONDS));
@@ -170,8 +170,35 @@ class ReconnectCoordinatorTest {
         release.countDown();
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
-        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager, never()).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDeviceIfGeneration(deviceId, oldGeneration);
         assertEquals(0L, coordinator.getSuccessCount());
+    }
+
+    @Test
+    void staleReconnectBackoffMustNotDelayNewGeneration() throws Exception {
+        ReconnectCoordinator coordinator = coordinator(fixedPool("reconnect-intent-generation", 2, 8));
+        String deviceId = "dev-generation-backoff";
+        long oldGeneration = markRunning(deviceId);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            entered.countDown();
+            release.await(2, TimeUnit.SECONDS);
+            throw new IllegalStateException("旧代次重连失败");
+        }).when(collectionManager).reconnectDevice(deviceId, oldGeneration);
+        coordinator.scheduleIfNeeded(deviceId, oldGeneration);
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        runtimeState.removeDevice(deviceId);
+        collectionTaskGuard.clearDevice(deviceId);
+        long generation = markRunning(deviceId);
+        coordinator.scheduleIfNeeded(deviceId, generation);
+        waitUntil(() -> coordinator.getSuccessCount() == 1L);
+        release.countDown();
+        waitUntil(() -> coordinator.getFailureCount() == 1L);
+        assertEquals(0L, coordinator.getNextRetryAt(deviceId));
+        verify(collectionManager).reconnectDevice(deviceId, generation);
+        verify(collectionManager, never()).disconnectDevice(deviceId);
     }
 
     private ReconnectCoordinator coordinator(ThreadPoolExecutor executor) {
@@ -185,6 +212,7 @@ class ReconnectCoordinatorTest {
     }
 
     private long markRunning(String deviceId) {
+        runtimeState.requestRunning(deviceId);
         long generation = collectionTaskGuard.activateNextGeneration(deviceId);
         runtimeState.markRunning(deviceId, generation);
         return generation;

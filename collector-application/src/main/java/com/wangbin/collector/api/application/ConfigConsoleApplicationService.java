@@ -36,6 +36,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
@@ -160,17 +161,20 @@ public class ConfigConsoleApplicationService {
     }
 
     public ApiResult<DeviceConfigBundleResponse> getDeviceBundle(String deviceId) {
-        if (!configManager.containsDevice(deviceId)) return notFound("设备不存在: " + deviceId);
-        DeviceInfo device = configManager.getDevice(deviceId);
-        DeviceConnection connection = sensitiveConfigSanitizer.sanitize(configManager.getConnectionConfig(deviceId));
+        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getDeviceConfigurationSnapshot(deviceId);
+        if (snapshot.context() == null) return notFound("设备不存在: " + deviceId);
+        DeviceInfo device = snapshot.context().getDeviceInfo();
+        DeviceConnection connection = sensitiveConfigSanitizer.sanitize(snapshot.context().copyConnectionConfig());
+        boolean local = ConfigManager.CONFIG_SOURCE_LOCAL.equalsIgnoreCase(device.getConfigSource())
+                && Boolean.TRUE.equals(device.getTemporaryConfig());
         return success(DeviceConfigBundleResponse.builder()
                 .deviceId(deviceId)
-                .configVersion(configManager.getDeviceConfigVersion(deviceId))
+                .configVersion(snapshot.configVersion())
                 .device(device)
                 .connection(connection)
-                .points(configManager.getDataPoints(deviceId))
-                .configSource(configManager.isLocalTemporaryDevice(deviceId) ? ConfigManager.CONFIG_SOURCE_LOCAL : "remote")
-                .temporaryConfig(configManager.isLocalTemporaryDevice(deviceId))
+                .points(snapshot.context().copyDataPoints())
+                .configSource(local ? ConfigManager.CONFIG_SOURCE_LOCAL : "remote")
+                .temporaryConfig(local)
                 .build());
     }
 
@@ -206,13 +210,27 @@ public class ConfigConsoleApplicationService {
         }
     }
 
+    private void validateIdentity(String deviceId, String payloadDeviceId) {
+        if (StringUtils.hasText(payloadDeviceId) && !deviceId.equals(payloadDeviceId)) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, "路径与配置 deviceId 不一致，禁止修改设备身份", null);
+        }
+    }
+
     private void normalizeBundle(String deviceId, DeviceConfigBundleRequest request) {
         if (request == null || request.getDevice() == null || request.getConnection() == null) {
             throw new ConfigApiException(HttpStatus.BAD_REQUEST, "配置 Bundle 不能为空", null);
         }
+        validateIdentity(deviceId, request.getDevice().getDeviceId());
+        validateIdentity(deviceId, request.getConnection().getDeviceId());
         request.getDevice().setDeviceId(deviceId);
         request.getConnection().setDeviceId(deviceId);
-        if (request.getPoints() != null) request.getPoints().forEach(point -> { if (point != null) point.setDeviceId(deviceId); });
+        if (request.getPoints() != null) {
+            for (DataPoint point : request.getPoints()) {
+                if (point == null) throw new ConfigApiException(HttpStatus.BAD_REQUEST, "点位不能为空", null);
+                validateIdentity(deviceId, point.getDeviceId());
+            }
+            request.getPoints().forEach(point -> point.setDeviceId(deviceId));
+        }
     }
     /** 查询设备点位配置。 */
     public ApiResult<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
@@ -283,6 +301,7 @@ public class ConfigConsoleApplicationService {
         if (device == null) {
             return error("请求体不能为空");
         }
+        validateIdentity(deviceId, device.getDeviceId());
         device.setDeviceId(deviceId);
         boolean updated = configManager.updateDeviceConfig(device);
         return updated ? success("设备配置已更新", DeviceIdResponse.builder().deviceId(deviceId).build())
@@ -299,6 +318,10 @@ public class ConfigConsoleApplicationService {
     public ApiResult<DeviceIdResponse> updatePoints(String deviceId, List<DataPoint> points) {
         if (CollectionUtils.isEmpty(points)) {
             return error("数据点列表不能为空");
+        }
+        for (DataPoint point : points) {
+            if (point == null) return error("点位不能为空");
+            validateIdentity(deviceId, point.getDeviceId());
         }
         boolean updated = configManager.updateDataPoints(deviceId, points);
         DeviceIdResponse response = DeviceIdResponse.builder()
@@ -320,6 +343,7 @@ public class ConfigConsoleApplicationService {
         if (connection == null) {
             return error("连接配置不能为空");
         }
+        validateIdentity(deviceId, connection.getDeviceId());
         connection.setDeviceId(deviceId);
         sensitiveConfigSanitizer.restoreMaskedValues(connection, configManager.getConnectionConfig(deviceId));
         boolean updated = configManager.updateConnectionConfig(deviceId, connection);

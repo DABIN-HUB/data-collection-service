@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.scheduler;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -24,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -31,9 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +56,8 @@ class DeviceBatchExecutorTest {
     private ThreadPoolExecutor dataProcessorExecutor;
     private ExecutorService testExecutor;
     private DeviceBatchExecutor batchExecutor;
+    private PerformanceMonitor performanceMonitor;
+    private CollectionStatistics collectionStatistics;
 
     @BeforeEach
     void setUp() {
@@ -65,15 +73,17 @@ class DeviceBatchExecutorTest {
         testExecutor = Executors.newSingleThreadExecutor();
         CollectorProperties collectorProperties = new CollectorProperties();
         collectorProperties.getScheduler().setCollectTimeoutMs(100);
+        performanceMonitor = spy(new PerformanceMonitor());
+        collectionStatistics = mock(CollectionStatistics.class);
         batchExecutor = new DeviceBatchExecutor(
                 collectionManager,
                 configManager,
-                mock(CollectionStatistics.class),
+                collectionStatistics,
                 collectorProperties,
                 collectedDataProcessor,
                 collectionTaskGuard,
                 runtimeState,
-                new PerformanceMonitor(),
+                performanceMonitor,
                 mock(ReconnectCoordinator.class),
                 batchDispatcher,
                 asyncCollectorExecutor,
@@ -116,6 +126,9 @@ class DeviceBatchExecutorTest {
         waitUntil(interrupted::get);
         assertTrue(interrupted.get());
         verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
+        verify(performanceMonitor).recordBatchOutcome(eq(deviceId), eq(generation), eq(0), eq(1),
+                anyLong(), eq(0L));
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).failedBatches.get());
     }
 
     @Test
@@ -177,7 +190,11 @@ class DeviceBatchExecutorTest {
         when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
         when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
             readStarted.countDown();
-            return gate.get(2, TimeUnit.SECONDS);
+            Map<String, Object> values = gate.get(2, TimeUnit.SECONDS);
+            CollectionProcessingReceipt receipt = collectionTaskGuard.captureCurrentContext().receipt();
+            receipt.claim("p1");
+            receipt.complete("p1", true, null, System.currentTimeMillis());
+            return values;
         });
         DeviceBatchTask task = new DeviceBatchTask(
                 deviceId,
@@ -545,9 +562,288 @@ class DeviceBatchExecutorTest {
         verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
     }
 
+    @Test
+    void processErrorReceiptMustNotBeOverwrittenByNullReadValue() throws Exception {
+        String deviceId = "dev-core-process-error";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AcquisitionRuntimeTracker tracker = new AcquisitionRuntimeTracker(collectionTaskGuard);
+        tracker.open(deviceId, generation, List.of(point));
+        batchExecutor.setAcquisitionRuntimeTracker(tracker);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("p1", null);
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
+        when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
+            CollectionProcessingReceipt current = collectionTaskGuard.captureCurrentContext().receipt();
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+            return values;
+        });
+
+        batchExecutor.processDeviceBatch(new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision()));
+        TimeUnit.MILLISECONDS.sleep(10);
+        receipt.get().complete("p1", false, "PROCESS_ERROR", 0L);
+
+        AcquisitionRuntimeTracker.PointFactSnapshot fact = tracker.snapshot(deviceId, generation).points().get("p1");
+        assertEquals("PROCESS_ERROR", fact.failureReason());
+        assertEquals(1, fact.consecutiveFailures());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+    }
+
+    @Test
+    void unfinishedCoreReceiptMustTimeOutAndReleaseInFlightTask() throws Exception {
+        String deviceId = "dev-core-timeout";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AcquisitionRuntimeTracker tracker = new AcquisitionRuntimeTracker(collectionTaskGuard);
+        tracker.open(deviceId, generation, List.of(point));
+        batchExecutor.setAcquisitionRuntimeTracker(tracker);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
+        when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
+            CollectionProcessingReceipt current = collectionTaskGuard.captureCurrentContext().receipt();
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+            return Map.of("p1", 1);
+        });
+        DeviceBatchTask task = new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision());
+
+        batchExecutor.processDeviceBatch(task);
+        Map<String, CollectionProcessingReceipt.PointCompletion> results =
+                receipt.get().completion().get(2, TimeUnit.SECONDS);
+        waitUntil(() -> batchExecutor.getTotalInFlightFutureCountForTest() == 0);
+
+        assertTrue(receipt.get().isCancelled());
+        assertFalse(results.get("p1").valid());
+        assertEquals("PROCESS_ERROR", results.get("p1").reason());
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).failedBatches.get());
+        assertEquals("PROCESS_ERROR", tracker.snapshot(deviceId, generation).points().get("p1").failureReason());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), eq(Map.of("p1", 1)));
+        receipt.get().complete("p1", true, null, System.currentTimeMillis());
+        assertFalse(receipt.get().completion().join().get("p1").valid());
+    }
+
+    @Test
+    void partialReceiptMustCountUniqueObservedPointsOnly() throws Exception {
+        String deviceId = "dev-core-partial";
+        DataPoint good = point(deviceId, "p1");
+        DataPoint bad = point(deviceId, "p2");
+        DataPoint missing = point(deviceId, "p3");
+        DataPoint cached = point(deviceId, "p4");
+        DataPoint stale = point(deviceId, "p5");
+        DataPoint nullValue = point(deviceId, "p6");
+        List<DataPoint> points = List.of(good, bad, missing, cached, stale, nullValue, good);
+        long generation = markRunning(deviceId);
+        long sampleAt = System.currentTimeMillis();
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("p1", 1, "p2", 2, "p4", 4, "p5", 5));
+        values.put("p6", null);
+        stubRead(deviceId, values, receipt -> {
+            for (String id : List.of("p1", "p2", "p4", "p5", "p6")) assertTrue(receipt.claim(id));
+            receipt.complete("p1", true, null, sampleAt);
+            receipt.complete("p2", false, "QUALITY_BAD", sampleAt);
+            receipt.complete("p4", false, "CACHE_READ", sampleAt);
+            receipt.complete("p5", false, "STALE_SAMPLE", sampleAt);
+            receipt.complete("p6", true, null, sampleAt);
+        });
+        DeviceBatchTask task = new DeviceBatchTask(deviceId, points, 0, generation,
+                runtimeState.getTimeSliceRevision());
+
+        batchExecutor.processDeviceBatch(task);
+
+        verify(performanceMonitor).recordBatchOutcome(eq(deviceId), eq(generation), eq(1), eq(3),
+                anyLong(), eq(sampleAt));
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(sampleAt, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).failedBatches.get());
+        assertTrue(task.getNextAllowedExecutionTime() > 0L);
+        verify(collectionStatistics).collectionFailed(deviceId);
+        verify(collectionStatistics, never()).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, timeout(1_000)).process(eq(deviceId), eq(List.of(good)), eq(Map.of("p1", 1)));
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+    }
+
+    @Test
+    void nonemptyReadMapMustWaitForAsyncCoreReceiptBeforeSuccess() throws Exception {
+        String deviceId = "dev-core-pending";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        stubRead(deviceId, Map.of("p1", 1), current -> {
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+        });
+
+        batchExecutor.processDeviceBatch(new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision()));
+
+        assertEquals(1, batchExecutor.getInFlightProcessFutureCountForTest());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        verify(collectionStatistics, never()).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+        long sampleAt = System.currentTimeMillis();
+        receipt.get().complete("p1", true, null, sampleAt);
+
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(sampleAt, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).successfulBatches.get());
+        verify(collectionStatistics).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, timeout(1_000)).process(eq(deviceId), eq(List.of(point)), eq(Map.of("p1", 1)));
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+    }
+
+    @Test
+    void nonemptyMapWithoutCoreReceiptMustNotGrantSuccess() {
+        String deviceId = "dev-core-unclaimed";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        stubRead(deviceId, Map.of("p1", 1), receipt -> { });
+
+        batchExecutor.processDeviceBatch(new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision()));
+
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        assertEquals(1L, performanceMonitor.devicePerformance.get(deviceId).failedBatches.get());
+        verify(collectionStatistics).collectionFailed(deviceId);
+        verify(collectionStatistics, never()).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+    }
+
+    @Test
+    void cacheAndStaleReceiptsMustNotCountAsBatchAttempts() {
+        String deviceId = "dev-core-cache-stale";
+        List<DataPoint> points = List.of(point(deviceId, "p1"), point(deviceId, "p2"));
+        long generation = markRunning(deviceId);
+        stubRead(deviceId, Map.of("p1", 1, "p2", 2), receipt -> {
+            assertTrue(receipt.claim("p1"));
+            assertTrue(receipt.claim("p2"));
+            receipt.complete("p1", false, "CACHE_READ", System.currentTimeMillis());
+            receipt.complete("p2", false, "STALE_SAMPLE", System.currentTimeMillis());
+        });
+        DeviceBatchTask task = new DeviceBatchTask(deviceId, points, 0, generation,
+                runtimeState.getTimeSliceRevision());
+
+        batchExecutor.processDeviceBatch(task);
+
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).failedBatches.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).successfulBatches.get());
+        assertEquals(0L, task.getNextAllowedExecutionTime());
+        verify(collectionStatistics, never()).collectionFailed(deviceId);
+        verify(collectionStatistics, never()).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+    }
+
+    @Test
+    void cancellingDeviceCoreFutureMustCancelReceipt() {
+        String deviceId = "dev-core-cancel";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        stubRead(deviceId, Map.of("p1", 1), current -> {
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+        });
+        batchExecutor.processDeviceBatch(new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision()));
+
+        batchExecutor.cancelDeviceInFlightTasks(deviceId);
+
+        assertTrue(receipt.get().isCancelled());
+        assertFalse(receipt.get().commitIfOpen(() -> { throw new AssertionError("取消后不能提交核心副作用"); }));
+        receipt.get().complete("p1", true, null, System.currentTimeMillis());
+        assertFalse(receipt.get().completion().join().get("p1").valid());
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+    }
+
+    @Test
+    void cancelledTaskBeforeCoreRegistrationMustCancelReceiptImmediately() {
+        String deviceId = "dev-core-registration-cancel";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        stubRead(deviceId, Map.of("p1", 1), current -> {
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+        });
+        AtomicInteger validityChecks = new AtomicInteger();
+        DeviceBatchExecutor racingExecutor = new DeviceBatchExecutor(collectionManager, configManager,
+                collectionStatistics, new CollectorProperties(), collectedDataProcessor, collectionTaskGuard,
+                runtimeState, performanceMonitor, mock(ReconnectCoordinator.class), batchDispatcher,
+                asyncCollectorExecutor, dataProcessorExecutor) {
+            @Override
+            boolean isBatchTaskExecutionStillValid(DeviceBatchTask task) {
+                boolean valid = super.isBatchTaskExecutionStillValid(task);
+                if (validityChecks.incrementAndGet() == 2) task.cancel();
+                return valid;
+            }
+        };
+        DeviceBatchTask task = new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision());
+
+        racingExecutor.processDeviceBatch(task);
+
+        assertTrue(task.isCancelled());
+        assertTrue(receipt.get().isCancelled());
+        assertEquals(0, racingExecutor.getTotalInFlightFutureCountForTest());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+    }
+
+    @Test
+    void oldGenerationCoreReceiptMustNotSettleNewRuntimeWindow() {
+        String deviceId = "dev-core-old-generation";
+        DataPoint point = point(deviceId, "p1");
+        long generation = markRunning(deviceId);
+        AtomicReference<CollectionProcessingReceipt> receipt = new AtomicReference<>();
+        stubRead(deviceId, Map.of("p1", 1), current -> {
+            assertTrue(current.claim("p1"));
+            receipt.set(current);
+        });
+        batchExecutor.processDeviceBatch(new DeviceBatchTask(deviceId, List.of(point), 0, generation,
+                runtimeState.getTimeSliceRevision()));
+        long newGeneration = markRunning(deviceId);
+
+        receipt.get().complete("p1", true, null, System.currentTimeMillis());
+
+        assertEquals(newGeneration, performanceMonitor.devicePerformance.get(deviceId).runtimeGeneration);
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).totalPoints.get());
+        assertEquals(0L, performanceMonitor.devicePerformance.get(deviceId).firstSuccessTime);
+        verify(collectionStatistics, never()).collectionSuccess(eq(deviceId), anyLong());
+        verify(collectedDataProcessor, never()).process(eq(deviceId), anyList(), anyMap());
+        assertEquals(0, batchExecutor.getTotalInFlightFutureCountForTest());
+    }
+
+    private void stubRead(String deviceId, Map<String, Object> values,
+                          Consumer<CollectionProcessingReceipt> core) {
+        when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
+        when(configManager.getConnectionConfig(deviceId)).thenReturn(connection(deviceId));
+        when(collectionManager.readPoints(eq(deviceId), anyList())).thenAnswer(invocation -> {
+            CollectionTaskGuard.CollectionTaskContext context = collectionTaskGuard.captureCurrentContext();
+            assertNotNull(context);
+            assertNotNull(context.receipt());
+            core.accept(context.receipt());
+            return values;
+        });
+    }
+
     private long markRunning(String deviceId) {
         long generation = collectionTaskGuard.activateNextGeneration(deviceId);
         runtimeState.markRunning(deviceId, generation);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, generation);
         return generation;
     }
 

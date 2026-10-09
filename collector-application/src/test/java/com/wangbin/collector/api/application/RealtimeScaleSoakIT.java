@@ -9,6 +9,10 @@ import com.wangbin.collector.core.cache.manager.MultiLevelCacheManager;
 import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.realtime.RealtimeChangeTracker;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeState;
+import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -55,8 +59,16 @@ class RealtimeScaleSoakIT {
         RecordingCache cache = new RecordingCache(fixture.values);
         ConfigManager configManager = mock(ConfigManager.class);
         PointRuntimeStateService runtimeStateService = mock(PointRuntimeStateService.class);
+        RuntimeStateCoordinator runtimeStateCoordinator = mock(RuntimeStateCoordinator.class);
         for (String deviceId : fixture.deviceIds) {
             when(configManager.getDataPoints(deviceId)).thenReturn(fixture.pointsByDevice.get(deviceId));
+            // 本用例只衡量规模与批量读取，缓存样本不作为真实采集健康证据。
+            DeviceRuntimeSnapshot runtime = new DeviceRuntimeSnapshot(deviceId, DeviceRuntimePhase.STOPPED,
+                    false, false, false, false, 0L, 0L, 0L, 0L, 0, 0L, null, 1L);
+            when(runtimeStateCoordinator.snapshot(deviceId)).thenReturn(new DeviceRuntimeState(deviceId, runtime,
+                    null, null, DeviceRuntimeState.TransportStatus.UNKNOWN, DeviceRuntimeState.ProtocolStatus.STOPPED,
+                    DeviceRuntimeState.DeviceHealth.OFFLINE, null, false, DeviceRuntimeState.AcquisitionStatus.STOPPED,
+                    0L, 0L, 0L, 0L, 0L, fixture.pointsByDevice.get(deviceId).size(), 0, 0, 0, Map.of(), 1L));
         }
         when(configManager.getAllDeviceIds()).thenReturn(fixture.deviceIds);
         MultiLevelCacheManager cacheManager = mock(MultiLevelCacheManager.class);
@@ -66,7 +78,8 @@ class RealtimeScaleSoakIT {
                 configManager,
                 runtimeStateService,
                 tracker,
-                mock(com.wangbin.collector.core.collector.CollectionService.class));
+                mock(com.wangbin.collector.core.collector.CollectionService.class),
+                runtimeStateCoordinator);
 
         MemorySnapshot startMemory = MemorySnapshot.capture();
         long recordStarted = System.nanoTime();

@@ -1,11 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { computed, ref } from "vue";
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { computed, createApp, h, nextTick, ref, type App } from "vue";
+import LocalDeviceEditor from "../components/LocalDeviceEditor.vue";
+import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
+import { getProtocol } from "@/api/protocol.api";
+import type { LocalDeviceBundle } from "./local-device-utils";
+import type { LocalDeviceConfigResponse } from "@/types/config";
+import type { ProtocolSchema } from "@/types/protocol";
+
+vi.mock("@/api/config.api", () => ({ createLocalDevice: vi.fn(), updateLocalDevice: vi.fn() }));
+vi.mock("@/api/protocol.api", () => ({ getProtocol: vi.fn() }));
 
 import { alarmRules, parseBooleanOption, serializeAlarmRules, type AlarmRule } from "@/features/point/utils/point-draft-utils";
 import localDeviceEditorSource from "../components/LocalDeviceEditor.vue?raw";
 import {
   buildLocalEditorChecklist,
   buildPointModelingOverview,
+  createLocalDeviceId,
+  resolveEditorDeviceId,
   cloudPointStatus,
   cloudTargetSummary,
   countReportFields,
@@ -23,6 +35,49 @@ interface AlarmRuleRow {
   ruleIndex: number;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+interface EditorState {
+  deviceId: string;
+  deviceName: string;
+  saving: boolean;
+  error: string;
+  startAfterSave: boolean;
+  connectionModel: Record<string, unknown>;
+  save: () => Promise<void>;
+  reset: (bundle?: LocalDeviceBundle | null) => void;
+  applyConfigSnapshot: (value: unknown) => void;
+}
+
+let mountedApp: App | null = null;
+let mountedHost: HTMLElement | null = null;
+afterEach(() => {
+  mountedApp?.unmount();
+  mountedHost?.remove();
+  mountedApp = null;
+  mountedHost = null;
+  vi.clearAllMocks();
+});
+
+function mountEditor(protocols: ProtocolSchema[] = [{ protocol: "MODBUS_TCP", connectionFields: [{ name: "host", type: "string", defaultValue: "127.0.0.1" }], pointFields: [] }]) {
+  const visible = ref(true);
+  const saved = vi.fn();
+  mountedHost = document.createElement("div");
+  document.body.append(mountedHost);
+  mountedApp = createApp({ render: () => h(LocalDeviceEditor, { modelValue: visible.value, protocols, onSaved: saved, "onUpdate:modelValue": (value: boolean) => { visible.value = value; } }) });
+  // 与无全局组件的单元测试宿主保持一致，不影响组件内部真实执行。
+  mountedApp.config.warnHandler = () => {};
+  mountedApp.mount(mountedHost);
+  const instance = mountedApp._instance?.subTree.component as unknown as { setupState: EditorState };
+  const state = instance.setupState;
+  return { state, visible, saved };
+}
+
 const adaptive = {
   baseCollectionInterval: 1500,
   minCollectionInterval: 500,
@@ -30,7 +85,103 @@ const adaptive = {
   pointChangeThreshold: 0.02
 };
 
+describe("LocalDeviceEditor 保存会话", () => {
+  it("配置重启待完成不是启动失败，保持同一设备身份并结束保存会话", async () => {
+    const { state, visible, saved } = mountEditor();
+    const identity = state.deviceId;
+    state.deviceName = "配置重启中的设备";
+    state.startAfterSave = true;
+    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: identity, saved: true, started: false, startStatus: "RESTART_PENDING" });
+    await state.save();
+    expect(state.error).toBe("");
+    expect(visible.value).toBe(false);
+    expect(saved).toHaveBeenCalledWith(identity);
+    expect(createLocalDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("保存期间用户停止设备不显示启动失败或重新启动", async () => {
+    const { state, visible } = mountEditor();
+    state.deviceName = "保持停止的设备";
+    state.startAfterSave = true;
+    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: state.deviceId, saved: true, started: false, startStatus: "STOP_SUPERSEDED" });
+    await state.save();
+    expect(state.error).not.toContain("启动失败");
+    expect(visible.value).toBe(false);
+    expect(createLocalDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("启动失败保持 UUID 和草稿，重试保存不再发第二次启动请求", async () => {
+    const { state, visible, saved } = mountEditor();
+    const identity = state.deviceId;
+    state.deviceName = "新设备";
+    state.startAfterSave = true;
+    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: identity, saved: true, started: false, startStatus: "FAILED", startError: "连接失败" });
+    await state.save();
+    expect(visible.value).toBe(true);
+    expect(state.deviceId).toBe(identity);
+    expect(state.error).toContain("配置已保存，但启动失败");
+    expect(saved).toHaveBeenCalledWith(identity);
+    await state.save();
+    expect(vi.mocked(createLocalDevice).mock.calls[1][0]).toMatchObject({ overwrite: true, startAfterSave: true, device: { deviceId: identity } });
+    expect(localDeviceEditorSource).not.toContain("await startLocalDevice");
+  });
+
+  it("保存旧会话后切到新设备，旧 success/error/finally 都不能污染新会话", async () => {
+    const pending = deferred<LocalDeviceConfigResponse>();
+    const { state, saved } = mountEditor();
+    const oldId = state.deviceId;
+    state.deviceName = "A";
+    vi.mocked(createLocalDevice).mockReturnValue(pending.promise);
+    const oldSave = state.save();
+    state.reset({ device: { deviceId: "B", deviceName: "B", protocolType: "MODBUS_TCP" }, points: [] });
+    const current = deferred<LocalDeviceConfigResponse>();
+    vi.mocked(updateLocalDevice).mockReturnValue(current.promise);
+    const currentSave = state.save();
+    pending.resolve({ deviceId: oldId, started: false, saved: true });
+    await oldSave;
+    expect(state.deviceId).toBe("B");
+    expect(state.saving).toBe(true);
+    expect(state.error).toBe("");
+    expect(saved).not.toHaveBeenCalled();
+    current.resolve({ deviceId: "B", saved: true, started: false });
+    await currentSave;
+    expect(saved).toHaveBeenCalledWith("B");
+  });
+
+  it("同协议的旧 schema 返回不得覆盖新会话连接，迟到 schema 不清用户草稿", async () => {
+    const first = deferred<ProtocolSchema>();
+    const second = deferred<ProtocolSchema>();
+    vi.mocked(getProtocol).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { state } = mountEditor([]);
+    state.reset({ device: { id: "historic-B", protocolType: "MODBUS_TCP" }, connection: { host: "saved-host" }, points: [] });
+    state.connectionModel = { host: "user-draft" };
+    second.resolve({ protocol: "MODBUS_TCP", connectionFields: [{ name: "host", type: "string", defaultValue: "new-default" }] });
+    await second.promise;
+    await nextTick();
+    first.resolve({ protocol: "MODBUS_TCP", connectionFields: [{ name: "host", type: "string", defaultValue: "old-default" }] });
+    await first.promise;
+    await nextTick();
+    expect(state.deviceId).toBe("historic-B");
+    expect(state.connectionModel.host).toBe("user-draft");
+    expect(() => state.applyConfigSnapshot({ device: { deviceId: "renamed" } })).toThrow("身份");
+    expect(state.deviceId).toBe("historic-B");
+  });
+});
+
 describe("local-device-editor-utils", () => {
+  it("为新设备生成 UUID 而不影响历史 ID", () => {
+    const generated = createLocalDeviceId();
+    expect(generated).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(resolveEditorDeviceId({ device: { id: "legacy-device" } }, "")).toBe("legacy-device");
+    expect(resolveEditorDeviceId({}, generated)).toBe(generated);
+  });
+
+  it("双字段与高级 JSON 不得修改会话身份", () => {
+    expect(resolveEditorDeviceId({ device: { id: "legacy", deviceId: "legacy" } }, "legacy")).toBe("legacy");
+    expect(() => resolveEditorDeviceId({ device: { id: "A", deviceId: "B" } }, "A")).toThrow("身份");
+    expect(() => resolveEditorDeviceId({ device: { deviceId: "new" } }, "legacy")).toThrow("身份");
+    expect(() => resolveEditorDeviceId({ deviceId: "A", device: { id: "B" } }, "A")).toThrow("身份");
+  });
   it("保留默认协议地址", () => {
     expect(defaultAddress("MQTT")).toBe("sensor/temperature");
     expect(defaultAddress("OPC_UA")).toBe("ns=2;s=Channel1.Device1.Tag1");
@@ -57,7 +208,7 @@ describe("local-device-editor-utils", () => {
     ], "local-1", "MODBUS_TCP", { adaptive, pointDataTypes: ["DOUBLE", "FLOAT"] });
 
     expect(points[0]).toMatchObject({
-      pointId: "local-temp",
+      pointId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       pointCode: "temp",
       pointName: "温度",
       deviceId: "local-1",

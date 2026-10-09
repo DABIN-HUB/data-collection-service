@@ -109,6 +109,186 @@ class DeviceLifecycleCoordinatorTest {
     }
 
     @Test
+    void changedRunningConfigurationWithoutScheduledRestartMustNotClaimPending() throws Exception {
+        String deviceId = "save-no-restart-task";
+        setupSingleDevice(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long revision = lifecycleCoordinator.getIntentRevision(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(2L);
+
+        assertEquals("FAILED", lifecycleCoordinator.startDeviceAfterConfigSave(deviceId, revision).status());
+        assertEquals(revision, lifecycleCoordinator.getIntentRevision(deviceId));
+    }
+
+    @Test
+    void failedRunningIntentWithoutPendingRestartMustAllowExplicitRetry() throws Exception {
+        String deviceId = "retry-failed-start";
+        setupSingleDevice(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        doThrow(new IllegalStateException("第一次注册失败")).doNothing()
+                .when(collectionManager).registerDevice(any(DeviceInfo.class));
+        assertFalse(lifecycleCoordinator.startDevice(deviceId));
+        long failedRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        assertTrue(lifecycleCoordinator.isDeviceRunning(deviceId));
+        assertTrue(lifecycleCoordinator.getIntentRevision(deviceId) > failedRevision);
+    }
+
+    @Test
+    void configRestartMustStillCompleteAfterSaveStartHandsOffStartingIntent() throws Exception {
+        String deviceId = "save-starting-restart";
+        setupSingleDevice(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        CountDownLatch connectEntered = new CountDownLatch(1);
+        CountDownLatch releaseOldConnect = new CountDownLatch(1);
+        AtomicInteger connectCalls = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (connectCalls.incrementAndGet() == 1) {
+                connectEntered.countDown();
+                awaitReleaseIgnoringInterrupt(releaseOldConnect);
+            }
+            return null;
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
+        AtomicReference<Runnable> restart = new AtomicReference<>();
+        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> future = mock(ScheduledFuture.class);
+        when(scheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class))).thenAnswer(invocation -> {
+            restart.set(invocation.getArgument(0));
+            return future;
+        });
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(lifecycleCoordinator,
+                mock(TimeSliceConfigCoordinator.class), scheduler);
+        CompletableFuture<Boolean> oldStart = startAsync(deviceId);
+        try {
+            assertTrue(connectEntered.await(1, TimeUnit.SECONDS));
+            long revision = lifecycleCoordinator.getIntentRevision(deviceId);
+            long oldGeneration = runtimeState.getStartingGeneration(deviceId);
+            when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(2L);
+            coordinator.handleConfigUpdate(configEvent("points", deviceId));
+            assertEquals("RESTART_PENDING", lifecycleCoordinator.startDeviceAfterConfigSave(deviceId, revision).status());
+            assertEquals(revision, lifecycleCoordinator.getIntentRevision(deviceId));
+            restart.get().run();
+            assertTrue(lifecycleCoordinator.isDeviceRunning(deviceId));
+            assertEquals(2L, runtimeState.getAppliedConfigVersion(deviceId));
+            assertTrue(runtimeState.getScheduleInfo(deviceId).getGeneration() > oldGeneration);
+            assertEquals(0, coordinator.pendingTaskCountForTest());
+            assertEquals(revision, lifecycleCoordinator.getIntentRevision(deviceId));
+        } finally {
+            releaseOldConnect.countDown();
+        }
+        assertFalse(oldStart.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void lateDeleteAfterRecreationMustNotInvalidateOrStopNewGeneration() throws Exception {
+        String deviceId = "late-delete-recreated";
+        setupSingleDevice(deviceId);
+        DeviceInfo local = device(deviceId, "MODBUS_TCP");
+        local.setDeviceName("本地设备");
+        local.setStatus("1");
+        DataPoint localPoint = point(deviceId, "p1");
+        localPoint.setAddress("40001");
+        localPoint.setDataType("FLOAT");
+        org.springframework.context.ApplicationEventPublisher publisher = mock(org.springframework.context.ApplicationEventPublisher.class);
+        ConfigManager manager = new ConfigManager(
+                mock(com.wangbin.collector.core.config.manager.ConfigSyncService.class), publisher, null, null);
+        AtomicReference<ConfigUpdateEvent> deletion = new AtomicReference<>();
+        AtomicReference<Runnable> release = new AtomicReference<>();
+        doAnswer(invocation -> {
+            ConfigUpdateEvent event = invocation.getArgument(0);
+            if ("local-delete".equals(event.getConfigType())) {
+                deletion.set(event);
+                release.set(manager.retainDeletedConfigurationVersion(deviceId, event.getConfigVersion()));
+            }
+            return null;
+        }).when(publisher).publishEvent(any(ConfigUpdateEvent.class));
+        assertTrue(manager.saveLocalDeviceConfig(local, connection(deviceId, "MODBUS_TCP"), List.of(localPoint), false));
+        assertTrue(manager.deleteLocalDeviceConfig(deviceId));
+        long deletionVersion = deletion.get().getConfigVersion();
+        long revision = lifecycleCoordinator.invalidateDeviceForDeletion(deviceId, deletionVersion, manager);
+        assertTrue(revision >= 0L);
+        Object deviceLock = lifecycleCoordinator.acquireLifecycleLockForTest(deviceId);
+        CompletableFuture<Long> lateInvalidation = CompletableFuture.supplyAsync(() ->
+                lifecycleCoordinator.invalidateDeviceForDeletion(deviceId, deletionVersion, manager), lifecycleCallExecutor);
+        try {
+            assertTrue(manager.saveLocalDeviceConfig(local, connection(deviceId, "MODBUS_TCP"), List.of(localPoint), false));
+            when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(manager.getDeviceConfigVersion(deviceId));
+            assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        } finally {
+            lifecycleCoordinator.releaseLifecycleLockForTest(deviceId, deviceLock);
+        }
+        long generation = runtimeState.lastGeneration(deviceId);
+        long startRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+        assertEquals(-1L, lateInvalidation.get(1, TimeUnit.SECONDS));
+        assertTrue(lifecycleCoordinator.stopDeletedDevice(deviceId, revision, true, true, deletionVersion, manager));
+        assertEquals(startRevision, lifecycleCoordinator.getIntentRevision(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, generation));
+        assertTrue(lifecycleCoordinator.isDeviceRunning(deviceId));
+        verify(collectionManager, never()).cleanupDevice(deviceId);
+        release.get().run();
+        assertTrue(manager.getDeviceConfigVersion(deviceId) > deletionVersion);
+    }
+
+    @Test
+    void saveAfterStartingInvalidationMustHandOffWithoutNewIntentOrGeneration() throws Exception {
+        String deviceId = "save-starting-handoff";
+        setupSingleDevice(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        runtimeState.requestRunning(deviceId);
+        long revision = lifecycleCoordinator.getIntentRevision(deviceId);
+        long generation = collectionTaskGuard.activateNextGeneration(deviceId);
+        runtimeState.markStarting(deviceId);
+        runtimeState.markStartingGeneration(deviceId, generation);
+        runtimeState.recordAppliedConfigVersion(deviceId, generation, 1L);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(2L);
+        ConfigRestartCoordinator coordinator = pendingConfigRestartCoordinator();
+        coordinator.handleConfigUpdate(configEvent("points", deviceId));
+
+        DeviceLifecycleCoordinator.StartAfterConfigSaveResult result =
+                lifecycleCoordinator.startDeviceAfterConfigSave(deviceId, revision);
+
+        assertEquals("RESTART_PENDING", result.status());
+        assertTrue(result.accepted());
+        assertEquals(revision, lifecycleCoordinator.getIntentRevision(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        assertFalse(collectionTaskGuard.isCurrent(deviceId, generation));
+        verify(collectionManager, never()).registerDevice(any(DeviceInfo.class));
+    }
+
+    @Test
+    void userStopDuringSaveMustNotBeOverriddenBySaveStart() throws Exception {
+        String deviceId = "save-stop-priority";
+        setupSingleDevice(deviceId);
+        runtimeState.requestRunning(deviceId);
+        long saveRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        long stoppedRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+
+        DeviceLifecycleCoordinator.StartAfterConfigSaveResult result =
+                lifecycleCoordinator.startDeviceAfterConfigSave(deviceId, saveRevision);
+
+        assertEquals("STOP_SUPERSEDED", result.status());
+        assertFalse(result.accepted());
+        assertEquals(stoppedRevision, lifecycleCoordinator.getIntentRevision(deviceId));
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, lifecycleCoordinator.getDesiredState(deviceId));
+        verify(collectionManager, never()).registerDevice(any(DeviceInfo.class));
+    }
+
+    @Test
+    void repeatedStartDuringConfigurationRestartMustPreserveIntentRevision() throws Exception {
+        String deviceId = "pending-config-start";
+        setupSingleDevice(deviceId);
+        runtimeState.requestRunning(deviceId);
+        long revision = runtimeState.getIntentRevision(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(2L);
+        pendingConfigRestartCoordinator().handleConfigUpdate(configEvent("points", deviceId));
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        assertEquals(revision, runtimeState.getIntentRevision(deviceId));
+        verify(collectionManager, never()).registerDevice(any(DeviceInfo.class));
+    }
+
+    @Test
     void stopWhileStartingMustNeverMarkRunning() throws Exception {
         String deviceId = "dev-stop-starting";
         setupSingleDevice(deviceId);
@@ -163,7 +343,7 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(runtimeState.isRunning(deviceId));
         assertEquals(0L, runtimeState.getStartingGeneration(deviceId));
         verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
-        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(collectionManager, never()).connectDevice(eq(deviceId), anyLong());
         verify(healthTracker, never()).markDeviceStarted(deviceId);
     }
 
@@ -206,7 +386,7 @@ class DeviceLifecycleCoordinatorTest {
                 awaitReleaseIgnoringInterrupt(releaseOldConnect);
             }
             return null;
-        }).when(collectionManager).connectDevice(deviceId);
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
 
         CompletableFuture<Boolean> oldStartFuture = startAsync(deviceId);
         assertTrue(oldConnectEntered.await(1, TimeUnit.SECONDS));
@@ -242,7 +422,7 @@ class DeviceLifecycleCoordinatorTest {
         setupSingleDevice(startingDevice2);
         CountDownLatch startingEntered = new CountDownLatch(2);
         CountDownLatch releaseStarting = new CountDownLatch(1);
-        doAnswer(invocation -> null).when(collectionManager).connectDevice(runningDevice);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(eq(runningDevice), anyLong());
         blockConnectUntilCancelledOrReleased(startingDevice1, startingEntered, releaseStarting);
         blockConnectUntilCancelledOrReleased(startingDevice2, startingEntered, releaseStarting);
 
@@ -275,6 +455,7 @@ class DeviceLifecycleCoordinatorTest {
         String deviceId = "dev-reserved-start";
         setupSingleDevice(deviceId);
 
+        runtimeState.requestRunning(deviceId);
         DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
 
         assertNotNull(reservation);
@@ -291,7 +472,7 @@ class DeviceLifecycleCoordinatorTest {
 
         assertFalse(lifecycleCoordinator.continueReservedStart(reservation));
         verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
-        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(collectionManager, never()).connectDevice(eq(deviceId), anyLong());
         verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
         verify(healthTracker, never()).markDeviceStarted(deviceId);
     }
@@ -309,13 +490,14 @@ class DeviceLifecycleCoordinatorTest {
             return null;
         }).when(runtimeState).markStartingGeneration(eq(deviceId), anyLong());
 
+        runtimeState.requestRunning(deviceId);
         DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(deviceId);
 
         assertNull(reservation);
         assertFalse(runtimeState.isStarting(deviceId));
         assertFalse(collectionTaskGuard.isCurrent(deviceId, 1L));
         verify(collectionManager, never()).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
-        verify(collectionManager, never()).connectDevice(deviceId);
+        verify(collectionManager, never()).connectDevice(eq(deviceId), anyLong());
     }
 
     @Test
@@ -352,6 +534,7 @@ class DeviceLifecycleCoordinatorTest {
         };
         assertTrue(lifecycleCoordinator.startDevice(deviceId));
 
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
         restartCoordinator.handleConfigUpdate(configEvent("device", deviceId));
         Thread restartThread = new Thread(() -> restartCommand.get().run());
         restartThread.start();
@@ -373,7 +556,7 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(collectionTaskGuard.isCurrent(deviceId, reservation.generation()));
         verify(timeSliceConfigCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
         verify(collectionManager, times(1)).registerDevice(org.mockito.ArgumentMatchers.any(DeviceInfo.class));
-        verify(collectionManager, times(1)).connectDevice(deviceId);
+        verify(collectionManager, times(1)).connectDevice(eq(deviceId), anyLong());
     }
 
     @Test
@@ -385,7 +568,7 @@ class DeviceLifecycleCoordinatorTest {
         CountDownLatch blockedEntered = new CountDownLatch(1);
         CountDownLatch releaseBlocked = new CountDownLatch(1);
         blockConnectUntil(blockedDevice, blockedEntered, releaseBlocked);
-        doAnswer(invocation -> null).when(collectionManager).connectDevice(healthyDevice);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(eq(healthyDevice), anyLong());
 
         CompletableFuture<Boolean> blockedStart = startAsync(blockedDevice);
         assertTrue(blockedEntered.await(1, TimeUnit.SECONDS));
@@ -421,7 +604,7 @@ class DeviceLifecycleCoordinatorTest {
                 .thenReturn(DeviceContext.of(deviceInfo, connection, List.of(subscriptionPoint, pollingPoint)));
         when(collectionManager.getCollector(deviceId)).thenReturn(bacnetCollector);
         doAnswer(invocation -> null).when(collectionManager).registerDevice(deviceInfo);
-        doAnswer(invocation -> null).when(collectionManager).connectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(eq(deviceId), anyLong());
         doAnswer(invocation -> null).when(collectionManager).rebuildReadPlans(eq(deviceId), anyList());
         doAnswer(invocation -> null).when(collectionManager).subscribePoints(eq(deviceId), anyList());
         when(deviceBatchPlanner.plan(eq(deviceId), anyList(), eq(1), org.mockito.ArgumentMatchers.anyLong(), eq(1L)))
@@ -459,7 +642,7 @@ class DeviceLifecycleCoordinatorTest {
                 Thread.currentThread().interrupt();
             }
             return null;
-        }).when(collectionManager).connectDevice(deviceId);
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
 
         CompletableFuture<Boolean> startFuture = startAsync(deviceId);
         assertTrue(gatedExecutor.awaitFirstSubmitEntered());
@@ -488,7 +671,7 @@ class DeviceLifecycleCoordinatorTest {
         GateFirstGetExecutor gatedExecutor = new GateFirstGetExecutor("post-connect-gate");
         replaceDeviceStartExecutor(gatedExecutor);
         setupBacnetDevice(deviceId);
-        doAnswer(invocation -> null).when(collectionManager).connectDevice(deviceId);
+        doAnswer(invocation -> null).when(collectionManager).connectDevice(eq(deviceId), anyLong());
 
         CompletableFuture<Boolean> oldStartFuture = startAsync(deviceId);
         assertTrue(gatedExecutor.awaitFirstGetBlocked());
@@ -566,7 +749,7 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(runtimeState.isRunning(deviceId));
         assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
         assertTrue(runtimeState.getSliceTasks(0).isEmpty());
-        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionManager).cleanupDeviceIfGeneration(eq(deviceId), anyLong());
         verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
         verify(healthTracker, never()).markDeviceStarted(deviceId);
     }
@@ -585,7 +768,7 @@ class DeviceLifecycleCoordinatorTest {
                 Thread.currentThread().interrupt();
             }
             return null;
-        }).when(collectionManager).connectDevice(deviceId);
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
 
         boolean started = lifecycleCoordinator.startDevice(deviceId);
         releaseConnect.countDown();
@@ -596,7 +779,7 @@ class DeviceLifecycleCoordinatorTest {
         assertFalse(runtimeState.isRunning(deviceId));
         assertEquals(0, lifecycleCoordinator.startingFutureCountForTest());
         assertTrue(runtimeState.getSliceTasks(0).isEmpty());
-        verify(collectionManager).cleanupDevice(deviceId);
+        verify(collectionManager).cleanupDeviceIfGeneration(eq(deviceId), anyLong());
         verify(collectionStatistics, never()).startCollection(eq(deviceId), anyInt());
         verify(healthTracker, never()).markDeviceStarted(deviceId);
     }
@@ -631,7 +814,7 @@ class DeviceLifecycleCoordinatorTest {
 
         assertFalse(runtimeState.isRunning(deviceId));
         assertFalse(runtimeState.isStarting(deviceId));
-        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDevice(deviceId);
         verify(healthTracker).markDeviceStopped(deviceId);
     }
 
@@ -647,7 +830,7 @@ class DeviceLifecycleCoordinatorTest {
 
         assertFalse(runtimeState.isRunning(deviceId));
         assertFalse(runtimeState.isStarting(deviceId));
-        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDevice(deviceId);
         verify(collectionStatistics).stopCollection(deviceId);
         verify(healthTracker).markDeviceStopped(deviceId);
     }
@@ -665,20 +848,19 @@ class DeviceLifecycleCoordinatorTest {
         verify(reconnectCoordinator, times(2)).clear(deviceId);
         verify(collectionStatistics).stopCollection(deviceId);
         verify(healthTracker).markDeviceStopped(deviceId);
-        verify(collectionManager).disconnectDevice(deviceId);
+        verify(collectionManager).cleanupDevice(deviceId);
     }
 
     @Test
-    void disconnectFailureShouldFallbackCleanupAndReturnFalse() throws Exception {
+    void collectorCleanupFailureShouldReturnFalseWithoutRetainingRunningState() throws Exception {
         String deviceId = "dev-disconnect-fallback";
         setupSingleDevice(deviceId);
         assertTrue(lifecycleCoordinator.startDevice(deviceId));
-        doThrow(new IllegalStateException("disconnect failed"))
-                .when(collectionManager).disconnectDevice(deviceId);
+        doThrow(new IllegalStateException("cleanup failed"))
+                .when(collectionManager).cleanupDevice(deviceId);
 
         assertFalse(lifecycleCoordinator.stopDevice(deviceId));
 
-        verify(collectionManager).disconnectDevice(deviceId);
         verify(collectionManager).cleanupDevice(deviceId);
         assertFalse(runtimeState.isRunning(deviceId));
         assertFalse(runtimeState.isStarting(deviceId));
@@ -695,6 +877,239 @@ class DeviceLifecycleCoordinatorTest {
 
         assertFalse(runtimeState.isRunning(deviceId));
         assertFalse(runtimeState.isStarting(deviceId));
+    }
+
+    @Test
+    void repeatedStartAndStopMustPreserveGenerationAndOtherDeviceIntent() throws Exception {
+        setupSingleDevice("dev-intent-a");
+        setupSingleDevice("dev-intent-b");
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState("dev-intent-b"));
+        assertTrue(lifecycleCoordinator.startDevice("dev-intent-a"));
+        long generation = runtimeState.lastGeneration("dev-intent-a");
+        long revision = lifecycleCoordinator.getIntentRevision("dev-intent-a");
+        assertTrue(lifecycleCoordinator.startDevice("dev-intent-a"));
+        assertEquals(generation, runtimeState.lastGeneration("dev-intent-a"));
+        assertEquals(revision, lifecycleCoordinator.getIntentRevision("dev-intent-a"));
+        assertTrue(lifecycleCoordinator.stopDevice("dev-intent-a"));
+        assertTrue(lifecycleCoordinator.stopDevice("dev-intent-a"));
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState("dev-intent-a"));
+        assertEquals(generation, runtimeState.lastGeneration("dev-intent-a"));
+        assertFalse(runtimeState.isRunning("dev-intent-b"));
+        verify(collectionManager, never()).connectDevice(eq("dev-intent-b"), anyLong());
+    }
+
+    @Test
+    void oldConfigRestartMustNotStopNewUserStartAfterStopStart() throws Exception {
+        String deviceId = "dev-intent-revision";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long oldRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long generation = runtimeState.lastGeneration(deviceId);
+        assertNull(lifecycleCoordinator.reserveStartForConfigRestart(deviceId, oldRevision, true, false));
+        assertTrue(runtimeState.isRunning(deviceId));
+        assertEquals(generation, runtimeState.lastGeneration(deviceId));
+        assertTrue(runtimeState.getSliceTasks(0).stream().allMatch(task -> task.generation == generation));
+    }
+
+    @Test
+    void configRestartMustPreserveRunningIntentButStopMustInvalidateReservation() throws Exception {
+        String deviceId = "dev-config-intent";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long revision = lifecycleCoordinator.getIntentRevision(deviceId);
+        DeviceLifecycleCoordinator.StartReservation reservation = lifecycleCoordinator.reserveStartForConfigRestart(
+                deviceId, revision, true, false);
+        assertNotNull(reservation);
+        assertEquals(revision, lifecycleCoordinator.getIntentRevision(deviceId));
+        assertEquals(SchedulerRuntimeState.DesiredState.RUNNING, runtimeState.getDesiredState(deviceId));
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        assertFalse(lifecycleCoordinator.continueReservedStart(reservation));
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+    }
+
+    @Test
+    void registerFailureMustFailStartWithoutSubmittingConnect() throws Exception {
+        String deviceId = "dev-registration-failure";
+        setupSingleDevice(deviceId);
+        doThrow(new IllegalStateException("注册失败")).when(collectionManager).registerDevice(any(DeviceInfo.class));
+        assertFalse(lifecycleCoordinator.startDevice(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        assertFalse(runtimeState.isStarting(deviceId));
+        verify(collectionManager, never()).connectDevice(eq(deviceId), anyLong());
+    }
+
+    @Test
+    void retiredCollectorMustFinishOwnedConnectBeforeReplacementCanUseDeviceConnection() throws Exception {
+        com.wangbin.collector.core.collector.factory.CollectorFactory factory = mock(
+                com.wangbin.collector.core.collector.factory.CollectorFactory.class);
+        com.wangbin.collector.core.connection.manager.ConnectionManager connections = mock(
+                com.wangbin.collector.core.connection.manager.ConnectionManager.class);
+        CollectionManager manager = new CollectionManager(factory, connections);
+        DeviceInfo device = device("dev-owned-connect", "MODBUS_TCP");
+        ProtocolCollector oldCollector = mock(ProtocolCollector.class);
+        ProtocolCollector newCollector = mock(ProtocolCollector.class);
+        when(factory.createCollector(device)).thenReturn(oldCollector, newCollector);
+        manager.registerDevice(device);
+        manager.bindRuntimeGeneration(device.getDeviceId(), 1L);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            entered.countDown();
+            awaitReleaseIgnoringInterrupt(release);
+            return null;
+        }).when(oldCollector).connect();
+        Future<?> connecting = lifecycleCallExecutor.submit(() -> manager.connectDevice(device.getDeviceId(), 1L));
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        manager.cleanupDeviceIfGeneration(device.getDeviceId(), 1L);
+        assertNull(manager.getCollector(device.getDeviceId()));
+        org.junit.jupiter.api.Assertions.assertThrows(com.wangbin.collector.common.exception.CollectorException.class,
+                () -> manager.registerDevice(device));
+        release.countDown();
+        connecting.get(1, TimeUnit.SECONDS);
+        manager.registerDevice(device);
+        manager.bindRuntimeGeneration(device.getDeviceId(), 2L);
+        manager.cleanupDeviceIfGeneration(device.getDeviceId(), 1L);
+        assertSame(newCollector, manager.getCollector(device.getDeviceId()));
+        verify(oldCollector).destroy();
+        verify(newCollector, never()).destroy();
+        verify(newCollector, never()).disconnect();
+        verify(connections).removeConnection(device.getDeviceId());
+    }
+
+    @Test
+    void blockedCollectorCreationMustNotHoldAllDeviceRegistrationLock() throws Exception {
+        com.wangbin.collector.core.collector.factory.CollectorFactory factory = mock(
+                com.wangbin.collector.core.collector.factory.CollectorFactory.class);
+        CollectionManager manager = new CollectionManager(factory, null);
+        DeviceInfo deviceA = device("dev-owned-a", "MODBUS_TCP");
+        DeviceInfo deviceB = device("dev-owned-b", "MODBUS_TCP");
+        ProtocolCollector collectorA = mock(ProtocolCollector.class);
+        ProtocolCollector collectorB = mock(ProtocolCollector.class);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(factory.createCollector(deviceA)).thenAnswer(invocation -> {
+            entered.countDown();
+            awaitReleaseIgnoringInterrupt(release);
+            return collectorA;
+        });
+        when(factory.createCollector(deviceB)).thenReturn(collectorB);
+        Future<?> registering = lifecycleCallExecutor.submit(() -> manager.registerDevice(deviceA));
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        Future<?> registeringB = lifecycleCallExecutor.submit(() -> manager.registerDevice(deviceB));
+        registeringB.get(1, TimeUnit.SECONDS);
+        assertSame(collectorB, manager.getCollector(deviceB.getDeviceId()));
+        release.countDown();
+        registering.get(1, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void userStopMustCancelPendingConfigRestartAndRejectForcedLateRunnable() throws Exception {
+        String deviceId = "dev-stop-pending-config";
+        setupSingleDevice(deviceId);
+        ScheduledExecutorService executor = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> restartFuture = mock(ScheduledFuture.class);
+        AtomicReference<Runnable> command = new AtomicReference<>();
+        when(executor.schedule(any(Runnable.class), eq(1000L), eq(TimeUnit.MILLISECONDS))).thenAnswer(invocation -> {
+            command.set(invocation.getArgument(0));
+            return restartFuture;
+        });
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(lifecycleCoordinator,
+                mock(TimeSliceConfigCoordinator.class), executor);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        coordinator.handleConfigUpdate(configEvent("device", deviceId));
+        assertEquals(1, coordinator.pendingTaskCountForTest());
+        assertTrue(lifecycleCoordinator.stopDevice(deviceId));
+        command.get().run();
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        verify(restartFuture).cancel(false);
+        verify(collectionManager).registerDevice(any(DeviceInfo.class));
+        verify(collectionManager).connectDevice(eq(deviceId), anyLong());
+    }
+
+    @Test
+    void reloadDiffMustExcludeUnchangedAndUserStoppedDevices() throws Exception {
+        setupSingleDevice("dev-reload-a");
+        setupSingleDevice("dev-reload-b");
+        when(configManager.getDeviceConfigVersion("dev-reload-a")).thenReturn(1L);
+        when(configManager.getDeviceConfigVersion("dev-reload-b")).thenReturn(1L);
+        assertTrue(lifecycleCoordinator.startDevice("dev-reload-a"));
+        assertTrue(lifecycleCoordinator.startDevice("dev-reload-b"));
+        assertTrue(lifecycleCoordinator.stopDevice("dev-reload-b"));
+        assertTrue(lifecycleCoordinator.getChangedConfigDeviceIds().isEmpty());
+        when(configManager.getDeviceConfigVersion("dev-reload-a")).thenReturn(2L);
+        when(configManager.getDeviceConfigVersion("dev-reload-b")).thenReturn(2L);
+        assertEquals(List.of("dev-reload-a"), lifecycleCoordinator.getChangedConfigDeviceIds());
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState("dev-reload-b"));
+    }
+
+    @Test
+    void oldReadContextMustNotInvokeNewGenerationCollector() throws Exception {
+        com.wangbin.collector.core.collector.factory.CollectorFactory factory = mock(
+                com.wangbin.collector.core.collector.factory.CollectorFactory.class);
+        CollectionManager manager = new CollectionManager(factory, null);
+        manager.setCollectionTaskGuard(collectionTaskGuard);
+        String deviceId = "dev-owned-read";
+        DeviceInfo device = device(deviceId, "MODBUS_TCP");
+        ProtocolCollector oldCollector = mock(ProtocolCollector.class);
+        ProtocolCollector newCollector = mock(ProtocolCollector.class,
+                org.mockito.Mockito.withSettings().extraInterfaces(com.wangbin.collector.core.collector.protocol.base.ReadableCollector.class));
+        when(factory.createCollector(device)).thenReturn(oldCollector, newCollector);
+        long oldGeneration = collectionTaskGuard.activateNextGeneration(deviceId);
+        manager.registerDevice(device);
+        manager.bindRuntimeGeneration(deviceId, oldGeneration);
+        manager.cleanupDeviceIfGeneration(deviceId, oldGeneration);
+        collectionTaskGuard.clearDevice(deviceId);
+        long generation = collectionTaskGuard.activateNextGeneration(deviceId);
+        manager.registerDevice(device);
+        manager.bindRuntimeGeneration(deviceId, generation);
+        org.junit.jupiter.api.Assertions.assertThrows(com.wangbin.collector.common.exception.CollectorException.class,
+                () -> collectionTaskGuard.callWithContext(deviceId, oldGeneration,
+                        () -> manager.readPoints(deviceId, List.of(point(deviceId, "p1")))));
+        verify((com.wangbin.collector.core.collector.protocol.base.ReadableCollector) newCollector, never()).readPoints(anyList());
+        assertSame(newCollector, manager.getCollector(deviceId));
+        verify(newCollector, never()).destroy();
+        org.junit.jupiter.api.Assertions.assertThrows(com.wangbin.collector.common.exception.CollectorException.class,
+                () -> manager.bindRuntimeGeneration(deviceId, oldGeneration));
+    }
+
+    @Test
+    void deletionMustInvalidateIntentAndRemoveRuntimeIdentityWithoutLosingGenerationTombstone() throws Exception {
+        String deviceId = "dev-delete-intent";
+        setupSingleDevice(deviceId);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long generation = runtimeState.lastGeneration(deviceId);
+        long oldRevision = lifecycleCoordinator.getIntentRevision(deviceId);
+        long deletionRevision = lifecycleCoordinator.invalidateDeviceForDeletion(deviceId);
+        assertTrue(lifecycleCoordinator.stopDeletedDevice(deviceId, deletionRevision, true, false));
+        assertFalse(runtimeState.getKnownDeviceIds().contains(deviceId));
+        assertEquals(SchedulerRuntimeState.DesiredState.STOPPED, runtimeState.getDesiredState(deviceId));
+        assertEquals(generation, runtimeState.lastGeneration(deviceId));
+        assertNull(lifecycleCoordinator.reserveStartForConfigRestart(deviceId, oldRevision, true, false));
+        verify(collectionManager).cleanupDevice(deviceId);
+    }
+
+    @Test
+    void lateConfigEventWithAlreadyAppliedVersionMustNotRestartUserStartedDevice() throws Exception {
+        String deviceId = "dev-config-already-applied";
+        setupSingleDevice(deviceId);
+        when(configManager.getDeviceConfigVersion(deviceId)).thenReturn(1L);
+        ScheduledExecutorService executor = mock(ScheduledExecutorService.class);
+        ConfigRestartCoordinator coordinator = new ConfigRestartCoordinator(lifecycleCoordinator,
+                mock(TimeSliceConfigCoordinator.class), executor);
+        assertTrue(lifecycleCoordinator.startDevice(deviceId));
+        long generation = runtimeState.lastGeneration(deviceId);
+        coordinator.handleConfigUpdate(configEvent("device", deviceId));
+        verify(executor, never()).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        assertEquals(0, coordinator.pendingTaskCountForTest());
+        assertEquals(generation, runtimeState.lastGeneration(deviceId));
+        assertTrue(collectionTaskGuard.isCurrent(deviceId, generation));
+        assertTrue(runtimeState.isRunning(deviceId));
     }
 
     private DeviceLifecycleCoordinator newLifecycleCoordinator(ThreadPoolExecutor startExecutor) {
@@ -820,6 +1235,14 @@ class DeviceLifecycleCoordinatorTest {
         return point;
     }
 
+    private ConfigRestartCoordinator pendingConfigRestartCoordinator() {
+        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> future = mock(ScheduledFuture.class);
+        when(scheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(invocation -> future);
+        return new ConfigRestartCoordinator(lifecycleCoordinator, mock(TimeSliceConfigCoordinator.class), scheduler);
+    }
+
     private ConfigUpdateEvent configEvent(String configType, String deviceId) {
         ConfigUpdateEvent event = new ConfigUpdateEvent();
         event.setConfigType(configType);
@@ -836,7 +1259,7 @@ class DeviceLifecycleCoordinatorTest {
             entered.countDown();
             awaitReleaseIgnoringInterrupt(release);
             return null;
-        }).when(collectionManager).connectDevice(deviceId);
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
     }
 
     private void blockConnectUntilCancelledOrReleased(String deviceId,
@@ -850,7 +1273,7 @@ class DeviceLifecycleCoordinatorTest {
                 Thread.currentThread().interrupt();
             }
             return null;
-        }).when(collectionManager).connectDevice(deviceId);
+        }).when(collectionManager).connectDevice(eq(deviceId), anyLong());
     }
 
     private void awaitReleaseIgnoringInterrupt(CountDownLatch release) {

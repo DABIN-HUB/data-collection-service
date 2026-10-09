@@ -20,8 +20,28 @@ public class DeviceInfo {
     // ==================== 基本信息 ====================
 
     /** 设备唯一标识 */
-    @JsonProperty("id")
+    @JsonProperty("deviceId")
     private String deviceId;
+
+    /** 本地身份一旦设置，不允许通过兼容字段或后续赋值改名。 */
+    public void setDeviceId(String deviceId) {
+        if (this.deviceId != null && !Objects.equals(this.deviceId, deviceId)) {
+            throw new IllegalArgumentException("deviceId 与已有设备身份冲突");
+        }
+        this.deviceId = deviceId;
+    }
+
+    /** 保留历史 API 的 id 输出，值始终等于规范 deviceId。 */
+    @JsonProperty("id")
+    public String getId() {
+        return deviceId;
+    }
+
+    /** 兼容历史 id 输入；双字段不一致时拒绝反序列化，不以字段顺序决定身份。 */
+    @JsonProperty("id")
+    public void setId(String id) {
+        setDeviceId(id);
+    }
 
     /** 设备名称 */
     private String deviceName;

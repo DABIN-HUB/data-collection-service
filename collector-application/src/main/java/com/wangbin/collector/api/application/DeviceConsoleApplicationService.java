@@ -35,7 +35,7 @@ public class DeviceConsoleApplicationService {
      * @return 设备启动结果
      */
     public ApiResult<DeviceOperationResponse> startDevice(String deviceId) {
-        return operate(deviceId, "START", () -> collectionService.startDevice(deviceId), "设备启动成功", "设备已启动或启动失败");
+        return operate(deviceId, "START", () -> collectionService.startDevice(deviceId), "启动操作已完成，等待有效采集数据", "启动未完成，请检查设备配置、连接及运行资源");
     }
 
     /**
@@ -45,7 +45,7 @@ public class DeviceConsoleApplicationService {
      * @return 设备启动结果
      */
     public ApiResult<DeviceOperationResponse> startLocalDevice(String deviceId) {
-        return operate(deviceId, "START_LOCAL", () -> collectionService.startLocalDevice(deviceId), "本地临时设备启动成功", "设备不是本地临时设备，或启动失败");
+        return operate(deviceId, "START_LOCAL", () -> collectionService.startLocalDevice(deviceId), "本地设备启动操作已完成，等待有效采集数据", "设备不是本地临时设备，或启动失败");
     }
 
     /**
@@ -62,9 +62,15 @@ public class DeviceConsoleApplicationService {
                                                         String successMessage, String failureMessage) {
         long acceptedAt = System.currentTimeMillis();
         String operationId = UUID.randomUUID().toString();
+        log.info("设备操作开始 operationId={} deviceId={} action={} source=USER", operationId, deviceId, action);
         try {
             boolean accepted = operation.getAsBoolean();
-            DeviceRuntimeSnapshot runtime = collectionService.getDeviceRuntimeSnapshot(deviceId);
+            // 命令结果与查询结果分开；快照暂时不可用不能把已执行的启停改报为失败。
+            DeviceRuntimeSnapshot runtime = safeRuntimeSnapshot(deviceId);
+            log.info("设备操作完成 operationId={} deviceId={} action={} source=USER accepted={} generation={} desiredState={} actualState={} configVersion={} deviceHealth={}",
+                    operationId, deviceId, action, accepted, runtime == null ? null : runtime.generation(),
+                    runtime == null ? null : runtime.desiredState(), runtime == null ? null : runtime.phase(),
+                    runtime == null ? null : runtime.configVersion(), runtime == null ? null : runtime.deviceHealth());
             DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
                     .deviceId(deviceId).action(action).accepted(accepted).acceptedAt(acceptedAt)
                     .completedAt(System.currentTimeMillis()).runtime(runtime).build();
@@ -73,7 +79,7 @@ public class DeviceConsoleApplicationService {
                     : ApiResult.statusError(failureMessage, response);
             return result.withDeviceId(deviceId);
         } catch (Exception exception) {
-            log.error("设备操作失败，设备={}，action={}", deviceId, action, exception);
+            log.error("设备操作失败 operationId={} deviceId={} action={} source=USER", operationId, deviceId, action, exception);
             DeviceOperationResponse response = DeviceOperationResponse.builder().operationId(operationId)
                     .deviceId(deviceId).action(action).accepted(false).acceptedAt(acceptedAt)
                     .completedAt(System.currentTimeMillis()).runtime(safeRuntimeSnapshot(deviceId)).build();

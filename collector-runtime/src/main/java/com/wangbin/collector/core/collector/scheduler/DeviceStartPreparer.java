@@ -53,7 +53,9 @@ public class DeviceStartPreparer {
         long generation = 0L;
         boolean generationActivated = false;
         try {
-            if (!runtimeState.markStartingIfNotActive(deviceId)) {
+            if (runtimeState.isClosed()
+                    || runtimeState.getDesiredState(deviceId) != SchedulerRuntimeState.DesiredState.RUNNING
+                    || !runtimeState.markStartingIfNotActive(deviceId)) {
                 return null;
             }
 
@@ -85,6 +87,7 @@ public class DeviceStartPreparer {
                 cleanupReservedStart(deviceId, generation, false);
                 return null;
             }
+            long configVersion = configManager.getDeviceConfigVersion(deviceId);
             DeviceInfo deviceInfo = configManager.getDevice(deviceId);
             if (deviceInfo == null) {
                 cleanupReservedStart(deviceId, generation, false);
@@ -101,6 +104,12 @@ public class DeviceStartPreparer {
                 return null;
             }
             if (collectorProperties.getAdaptiveCollection().isEnabled()) {
+                // 自适应参数在准备阶段加载，迟到连接回调不再改写点位状态。
+                loadDataPointsAndAdaptiveConfig(deviceId);
+                if (!isReservationCurrent(deviceId, generation)) {
+                    cleanupReservedStart(deviceId, generation, false);
+                    return null;
+                }
                 pointRuntimeStateService.initializeDevice(deviceId, dataPoints);
                 adaptiveInitialized = true;
             }
@@ -109,6 +118,11 @@ public class DeviceStartPreparer {
                 return null;
             }
 
+            if (configManager.getDeviceConfigVersion(deviceId) != configVersion) {
+                cleanupReservedStart(deviceId, generation, adaptiveInitialized);
+                return null;
+            }
+            runtimeState.recordAppliedConfigVersion(deviceId, generation, configVersion);
             long connectTimeoutMs = resolveDeviceStartTimeoutMs(deviceId);
             return new StartPreparation(deviceInfo, List.copyOf(dataPoints), generation, connectTimeoutMs);
         } catch (Exception e) {
@@ -118,17 +132,19 @@ public class DeviceStartPreparer {
     }
 
     private boolean isReservationCurrent(String deviceId, long generation) {
-        return runtimeState.isStartingGeneration(deviceId, generation)
+        return !runtimeState.isClosed()
+                && runtimeState.getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING
+                && runtimeState.isStartingGeneration(deviceId, generation)
                 && collectionTaskGuard.isCurrent(deviceId, generation);
     }
 
     private void cleanupReservedStart(String deviceId, long generation, boolean removePointRuntime) {
-        collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
-        runtimeState.clearStartingIfGeneration(deviceId, generation);
-        if (removePointRuntime) {
-            pointRuntimeStateService.removeDevice(deviceId);
+        boolean owner = collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
+        owner |= runtimeState.clearStartingIfGeneration(deviceId, generation);
+        if (owner) {
+            if (removePointRuntime) pointRuntimeStateService.removeDevice(deviceId);
+            reconnectCoordinator.clear(deviceId);
         }
-        reconnectCoordinator.clear(deviceId);
     }
 
     List<String> getStartableDeviceIds() {
@@ -146,6 +162,14 @@ public class DeviceStartPreparer {
             }
         }
         return List.copyOf(startableDeviceIds);
+    }
+
+    long getConfigVersion(String deviceId) {
+        return configManager.getDeviceConfigVersion(deviceId);
+    }
+
+    boolean containsDevice(String deviceId) {
+        return configManager.getDevice(deviceId) != null;
     }
 
     void loadDataPointsAndAdaptiveConfig(String deviceId) {

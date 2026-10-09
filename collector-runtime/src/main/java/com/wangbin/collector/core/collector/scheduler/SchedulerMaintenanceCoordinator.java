@@ -46,7 +46,7 @@ public class SchedulerMaintenanceCoordinator {
         cancel();
         startDynamicTimeSliceAdjustment();
         startPerformanceMonitoring();
-        scheduleStartAllDevices(5, TimeUnit.SECONDS);
+        // 应用启动仅维护调度器，设备启动必须由用户显式发起。
     }
 
     synchronized void cancel() {

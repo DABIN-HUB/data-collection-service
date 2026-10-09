@@ -4,6 +4,7 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.config.validator.ProtocolPointValidator;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** 只记录当前设备代次的点位采集事实，不把缓存命中或批次提交当作点位成功。 */
+@Slf4j
 @Component
 public class AcquisitionRuntimeTracker {
     private final CollectionTaskGuard taskGuard;
@@ -59,7 +61,7 @@ public class AcquisitionRuntimeTracker {
                 }
             }
         }
-        windows.put(deviceId, window);
+        taskGuard.commitIfCurrent(deviceId, generation, () -> windows.put(deviceId, window));
     }
 
     public boolean isValidPoint(String deviceId, long generation, String pointId) {
@@ -87,6 +89,11 @@ public class AcquisitionRuntimeTracker {
     /** 成功完成一次轮询读取后逐点核对，缺失/null 是失败而不是成功点位。 */
     public void recordPollingResults(String deviceId, long generation, List<DataPoint> points,
                                      Map<String, Object> values) {
+        recordPollingResults(deviceId, generation, points, values, System.currentTimeMillis());
+    }
+
+    public void recordPollingResults(String deviceId, long generation, List<DataPoint> points,
+                                     Map<String, Object> values, long requestedAt) {
         Window window = windows.get(deviceId);
         if (window == null || window.generation != generation || points == null) return;
         synchronized (window) {
@@ -100,10 +107,10 @@ public class AcquisitionRuntimeTracker {
                 if (values != null && values.get(point.getPointId()) != null && window.protocolReadyAt == 0L) {
                     window.protocolReadyAt = now;
                 }
-                if (fact.failureReason != null && fact.lastFailureAt >= fact.lastAttemptAt) continue;
                 fact.polling = true;
                 fact.lastAttemptAt = now;
                 if (values == null || values.get(point.getPointId()) == null) {
+                    if (fact.failureReason != null && fact.lastFailureAt >= requestedAt) continue;
                     failure(fact, now, values != null && values.containsKey(point.getPointId())
                             ? "NO_VALUE" : "MAPPING_ERROR");
                 }
@@ -179,7 +186,6 @@ public class AcquisitionRuntimeTracker {
             PointFact fact = window.points.get(pointId);
             if (fact == null || fact.configError != null) return;
             long timestamp = normalizedTime(at, System.currentTimeMillis());
-            fact.event = true;
             fact.lastAttemptAt = Math.max(fact.lastAttemptAt, timestamp);
             failure(fact, timestamp, normalizeReason(reason));
         }
@@ -188,7 +194,8 @@ public class AcquisitionRuntimeTracker {
     private String normalizeReason(String reason) {
         if (reason == null) return "COMM_ERROR";
         return switch (reason) {
-            case "CONFIG_ERROR", "COMM_ERROR", "MAPPING_ERROR", "DECODE_ERROR", "NO_VALUE" -> reason;
+            case "CONFIG_ERROR", "COMM_ERROR", "MAPPING_ERROR", "DECODE_ERROR", "NO_VALUE",
+                    "QUALITY_BAD", "PROCESS_ERROR", "CACHE_ERROR" -> reason;
             default -> "COMM_ERROR";
         };
     }
@@ -198,12 +205,47 @@ public class AcquisitionRuntimeTracker {
         windows.computeIfPresent(deviceId, (ignored, window) -> window.generation == generation ? null : window);
     }
 
-    /** 仅在后处理已写入实时缓存且点位身份仍匹配时承认一次有效采集。 */
+    /** 最终提交前核对设备与点位定义，不能只匹配点位编号。 */
+    public boolean matchesPoint(String deviceId, Long generation, DataPoint point) {
+        if (generation == null || point == null || !Objects.equals(deviceId, point.getDeviceId())) return false;
+        Window window = windows.get(deviceId);
+        if (window == null || window.generation != generation) return false;
+        synchronized (window) {
+            PointFact fact = window.points.get(point.getPointId());
+            return windows.get(deviceId) == window && taskGuard.isCurrent(deviceId, generation)
+                    && fact != null && fact.configError == null
+                    && Objects.equals(fact.pointCode, point.getPointCode())
+                    && Objects.equals(fact.address, point.getAddress())
+                    && Objects.equals(fact.dataType, point.getDataType());
+        }
+    }
+
+    public boolean acceptsSample(String deviceId, Long generation, DataPoint point, long sampleAt) {
+        if (!matchesPoint(deviceId, generation, point)) return false;
+        Window window = windows.get(deviceId);
+        if (window == null || window.generation != generation) return false;
+        synchronized (window) {
+            PointFact fact = window.points.get(point.getPointId());
+            return fact != null && sampleAt >= Math.max(fact.lastObservedAt, fact.lastFailureAt);
+        }
+    }
+
+    /** 核心处理回执完成后的事实入口，缓存禁用点同样可以记录真实有效值。 */
+    public void recordCoreProcessedPoint(String deviceId, DataPoint point, Long generation,
+                                         boolean good, Integer quality, long sampleAt, String source) {
+        if (!matchesPoint(deviceId, generation, point)) return;
+        if (!"POLLING".equals(source)) {
+            recordPointEvent(deviceId, generation, point.getPointId(), true, quality, sampleAt);
+        }
+        recordCachedPoint(deviceId, point, generation, good, quality, sampleAt);
+    }
+
+    /** 兼容旧入口；时间必须是源采样时间而不是缓存写入时间。 */
     public void recordCachedPoint(String deviceId, DataPoint point, Long sourceGeneration,
                                   boolean good, Integer qualityCode, long at) {
         Window window = windows.get(deviceId);
         if (window == null || point == null || point.getPointId() == null
-                || (sourceGeneration != null && window.generation != sourceGeneration)) return;
+                || sourceGeneration == null || window.generation != sourceGeneration) return;
         synchronized (window) {
             if (windows.get(deviceId) != window || !taskGuard.isCurrent(deviceId, window.generation)) return;
             PointFact fact = window.points.get(point.getPointId());
@@ -213,11 +255,16 @@ public class AcquisitionRuntimeTracker {
             long timestamp = normalizedTime(at, System.currentTimeMillis());
             if (sourceGeneration == null) fact.event = true;
             fact.lastAttemptAt = Math.max(fact.lastAttemptAt, timestamp);
-            if (good) {
+            if (good && qualityCode != null && qualityCode >= 60 && qualityCode <= 100 && at > 0L) {
+                if (window.firstValueAt == 0L && timestamp >= Math.max(fact.lastObservedAt, fact.lastFailureAt)) {
+                    log.info("本代首个有效点位 deviceId={} pointId={} generation={} sampleAt={} quality={}",
+                            deviceId, point.getPointId(), sourceGeneration, timestamp, qualityCode);
+                }
                 success(window, fact, timestamp, qualityCode);
-                if (sourceGeneration == null) window.lastEventAt = Math.max(window.lastEventAt, timestamp);
             } else {
-                failure(fact, timestamp, "DECODE_ERROR");
+                fact.qualityCode = qualityCode;
+                failure(fact, timestamp, qualityCode == null || qualityCode < 60 || qualityCode > 100
+                        ? "QUALITY_BAD" : "PROCESS_ERROR");
             }
         }
     }

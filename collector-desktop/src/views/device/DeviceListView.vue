@@ -28,13 +28,17 @@
             <option value="ONLINE">在线</option>
             <option value="OFFLINE">离线</option>
             <option value="ERROR">异常</option>
+            <option value="UNKNOWN">未知</option>
+            <option value="STALE">过期</option>
+            <option value="CONNECTING">连接中/等待首采</option>
           </select>
         </div>
         <div class="exact-toolbar-group">
-          <button type="button" :disabled="deviceStore.operating" @click="syncDevices">同步远端配置</button>
+          <button type="button" :disabled="deviceStore.syncOperating" @click="syncDevices">同步远端配置</button>
         </div>
       </div>
 
+      <p v-if="detailError || deviceStore.error || deviceStore.syncError" role="alert">{{ detailError || deviceStore.error || deviceStore.syncError }}</p>
       <div class="exact-device-list">
         <div v-if="filteredDevices.length === 0" class="exact-empty">{{ deviceListEmptyText }}</div>
         <article
@@ -53,14 +57,20 @@
             <span>连接地址 {{ deviceAddress(device) }}</span>
           </div>
           <div class="exact-device-meta">
-            <span class="status-badge" :class="statusBadgeClass(device)">{{ runtimePhaseLabel(device.runtime) }}</span>
+            <span class="status-badge" :class="statusBadgeClass(device)">{{ runtimePresentation(device.runtime, device.runtimeStale).lifecycle }}</span>
+            <span>{{ runtimePresentation(device.runtime, device.runtimeStale).transportProtocol }}</span>
+            <span>采集健康 {{ runtimePresentation(device.runtime, device.runtimeStale).health }}</span>
+            <span>{{ runtimePresentation(device.runtime, device.runtimeStale).points }}</span>
+            <span>最近有效 {{ runtimePresentation(device.runtime, device.runtimeStale).lastValid }}</span>
+            <span v-if="device.runtimeError || runtimePresentation(device.runtime).reason">{{ device.runtimeError || runtimePresentation(device.runtime).reason }}</span>
+            <span v-if="deviceStore.deviceErrors[device.normalizedId]" role="alert">{{ deviceStore.deviceErrors[device.normalizedId] }}</span>
             <span>采集周期 {{ device.collectionInterval ?? '-' }} ms</span>
           </div>
           <div class="exact-device-actions">
-            <button type="button" :disabled="deviceStore.operating" @click.stop="startSelectedDevice(device.normalizedId)">启动</button>
-            <button type="button" :disabled="deviceStore.operating" @click.stop="stopSelectedDevice(device.normalizedId)">停止</button>
-            <button type="button" :disabled="deviceConfigOperatingId === `refresh:${device.normalizedId}`" @click.stop="operateDeviceConfig(device.normalizedId, 'refresh')">刷新配置</button>
-            <button type="button" class="danger" :disabled="deviceConfigOperatingId === `clear:${device.normalizedId}`" @click.stop="operateDeviceConfig(device.normalizedId, 'clear')">清理缓存</button>
+            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="startSelectedDevice(device.normalizedId)">启动</button>
+            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="stopSelectedDevice(device.normalizedId)">停止</button>
+            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'refresh')">刷新配置</button>
+            <button type="button" class="danger" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'clear')">清理缓存</button>
             <button type="button" @click.stop="openDeviceOperation(device, 'config')">配置</button>
             <button type="button" @click.stop="editDevice(device)">编辑</button>
             <button type="button" @click.stop="openDeviceDiff(device)">差异</button>
@@ -68,7 +78,7 @@
             <button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
             <button type="button" @click.stop="openDeviceOperation(device, 'control')">控制</button>
             <button type="button" @click.stop="openDeviceOperation(device, 'shadow')">影子</button>
-            <button v-if="isLocalDevice(device)" type="button" class="danger" @click.stop="deleteLocal(device.normalizedId)">删除本地</button>
+            <button v-if="isLocalDevice(device)" type="button" class="danger" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="deleteLocal(device.normalizedId)">删除本地</button>
           </div>
         </article>
       </div>
@@ -80,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
@@ -91,7 +101,7 @@ import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportB
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceListEmptyText } from "@/features/device/utils/device-list-utils";
 import { useAppStore } from "@/stores/app.store";
-import { runtimeOperationMessage, runtimePhaseLabel } from "@/features/diagnostic/utils/device-runtime-utils";
+import { runtimeOperationMessage, runtimePresentation } from "@/features/diagnostic/utils/device-runtime-utils";
 import { isLocalDevice, useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
@@ -110,7 +120,12 @@ const editingBundle = ref<LocalDeviceBundle | null>(null);
 const configImportInput = ref<HTMLInputElement | null>(null);
 const configFileExporting = ref(false);
 const configFileImporting = ref(false);
-const deviceConfigOperatingId = ref("");
+const detailError = ref("");
+let editorSession = 0;
+onBeforeUnmount(() => { ++editorSession; });
+
+watch(localEditorVisible, (visible) => { if (!visible) ++editorSession; });
+watch(() => deviceStore.selectedDeviceId, () => { ++editorSession; }, { flush: "sync" });
 
 const filteredDevices = computed(() => {
   const keyword = deviceKeyword.value.trim().toLowerCase();
@@ -136,6 +151,7 @@ onMounted(async () => {
 });
 
 watch(() => route.query.deviceId, () => {
+  ++editorSession;
   applyRouteDeviceContext();
 });
 
@@ -145,6 +161,7 @@ async function refreshDeviceListContext() {
 }
 
 function selectDevice(deviceId: string) {
+  ++editorSession;
   deviceStore.selectDevice(deviceId);
 }
 
@@ -170,31 +187,34 @@ function ensureSelectedDevice() {
 }
 
 async function syncDevices() {
-  await deviceStore.syncRemoteDevices();
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.syncRemoteDevices();
+  if (!result.ok) {
+    ElMessage.error(result.error || "远端配置同步失败");
     return;
   }
   applyRouteDeviceContext();
-  ElMessage.success("已触发远端配置同步并重新加载设备列表");
+  if (result.refreshError) ElMessage.warning(`远端同步已触发，列表暂不可用：${result.refreshError}`);
+  else ElMessage.success("已触发远端配置同步并刷新设备列表");
 }
 
 async function startSelectedDevice(deviceId: string) {
-  await deviceStore.startSmart(deviceId);
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.startSmart(deviceId);
+  if (!result.ok) {
+    ElMessage.error(`设备 ${deviceId}：${result.error}`);
     return;
   }
-  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "START"));
+  if (result.refreshError) ElMessage.warning(`设备 ${deviceId} 操作已受理，运行状态暂不可用：${result.refreshError}`);
+  else ElMessage.success(`设备 ${deviceId}：${runtimeOperationMessage(result.runtime, "START")}`);
 }
 
 async function stopSelectedDevice(deviceId: string) {
-  await deviceStore.stop(deviceId);
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.stop(deviceId);
+  if (!result.ok) {
+    ElMessage.error(`设备 ${deviceId}：${result.error}`);
     return;
   }
-  ElMessage.success(runtimeOperationMessage(deviceStore.runtimeMap[deviceId], "STOP"));
+  if (result.refreshError) ElMessage.warning(`设备 ${deviceId} 操作已受理，运行状态暂不可用：${result.refreshError}`);
+  else ElMessage.success(`设备 ${deviceId}：${runtimeOperationMessage(result.runtime, "STOP")}`);
 }
 
 async function deleteLocal(deviceId: string) {
@@ -207,9 +227,9 @@ async function deleteLocal(deviceId: string) {
   } catch {
     return;
   }
-  await deviceStore.deleteLocal(deviceId);
-  if (deviceStore.error) {
-    ElMessage.error(deviceStore.error);
+  const result = await deviceStore.deleteLocal(deviceId);
+  if (!result.ok) {
+    ElMessage.error(result.error || "本地设备删除失败");
     return;
   }
   applyRouteDeviceContext();
@@ -233,26 +253,25 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
   } catch {
     return;
   }
-  deviceConfigOperatingId.value = `${type}:${deviceId}`;
-  try {
-    const response = type === "clear" ? await clearDeviceConfig(deviceId) : await refreshDeviceConfig(deviceId);
-    const result = normalizeDeviceConfigActionResult(response, deviceId);
-    ElMessage.success(buildDeviceConfigActionMessage(type, result));
-    await deviceStore.refresh();
-    applyRouteDeviceContext();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "设备配置操作失败");
-  } finally {
-    deviceConfigOperatingId.value = "";
+  const operation = await deviceStore.operate(() => type === "clear" ? clearDeviceConfig(deviceId) : refreshDeviceConfig(deviceId), deviceId);
+  if (!operation.ok) {
+    ElMessage.error(`设备 ${deviceId}：${operation.error}`);
+    return;
   }
+  const result = normalizeDeviceConfigActionResult(operation.result, deviceId);
+  ElMessage.success(buildDeviceConfigActionMessage(type, result));
+  if (operation.refreshError) ElMessage.warning(`设备 ${deviceId} 状态暂不可用：${operation.refreshError}`);
 }
 
 function openLocalEditor() {
+  ++editorSession;
+  detailError.value = "";
   editingBundle.value = null;
   localEditorVisible.value = true;
 }
 
 async function handleLocalSaved() {
+  ++editorSession;
   localEditorVisible.value = false;
   await refreshDeviceListContext();
 }
@@ -323,9 +342,12 @@ async function handleConfigImportFile(event: Event) {
 
 async function editDevice(device: DeviceViewModel) {
   selectDevice(device.normalizedId);
+  const session = editorSession;
+  detailError.value = "";
   if (isLocalDevice(device)) {
     try {
       const detail = await getLocalDevice(device.normalizedId);
+      if (session !== editorSession || deviceStore.selectedDeviceId !== device.normalizedId) return;
       const bundle = extractLocalDeviceBundle(detail);
       if (!bundle) {
         throw new Error("本地设备详情缺少可编辑配置");
@@ -333,7 +355,8 @@ async function editDevice(device: DeviceViewModel) {
       editingBundle.value = bundle;
       localEditorVisible.value = true;
     } catch (caught) {
-      ElMessage.error(caught instanceof Error ? caught.message : "本地设备详情加载失败");
+      if (session !== editorSession || deviceStore.selectedDeviceId !== device.normalizedId) return;
+      detailError.value = `设备 ${device.normalizedId}：${caught instanceof Error ? caught.message : "本地设备详情加载失败"}`;
     }
     return;
   }

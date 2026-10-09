@@ -17,27 +17,28 @@
         <button type="button" :disabled="loading" @click="loadRuntimeOverview">{{ loading ? '刷新中' : '刷新运行列表' }}</button>
       </div>
     </div>
+    <p v-if="overviewError" class="runtime-status-error" role="alert">运行快照不可用/已过期：{{ overviewError }}</p>
     <div class="exact-diagnostic-cards runtime-summary-cards">
       <div class="exact-diagnostic-card"><span>配置设备</span><strong>{{ runtimeSummary.total }}</strong></div>
-      <div class="exact-diagnostic-card"><span>正在运行</span><strong>{{ runtimeSummary.running }}</strong></div>
-      <div class="exact-diagnostic-card"><span>连接正常</span><strong>{{ runtimeSummary.connected }}</strong></div>
-      <div class="exact-diagnostic-card"><span>异常/退化</span><strong>{{ runtimeSummary.abnormal }}</strong></div>
+      <div class="exact-diagnostic-card"><span>正在运行</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.running }}</strong></div>
+      <div class="exact-diagnostic-card"><span>连接正常</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.connected }}</strong></div>
+      <div class="exact-diagnostic-card"><span>异常/退化</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.abnormal }}</strong></div>
     </div>
     <section class="exact-table-card runtime-device-table">
       <table>
-        <thead><tr><th>设备</th><th>阶段</th><th>运行</th><th>连接</th><th>重连</th><th>失败次数</th><th>代次</th><th>最近成功</th><th>退化原因</th><th>操作</th></tr></thead>
+        <thead><tr><th>设备</th><th>阶段</th><th>期望状态</th><th>传输 / 协议</th><th>采集健康</th><th>点位质量</th><th>代次</th><th>最近有效样本</th><th>退化原因</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-if="runtimeRows.length === 0"><td colspan="10" class="exact-empty">暂无运行态快照，可点击刷新运行列表</td></tr>
           <tr v-for="row in runtimeRows" :key="row.deviceId">
             <td><strong>{{ deviceNameOf(row.deviceId) }}</strong><br><code>{{ row.deviceId }}</code></td>
-            <td>{{ row.phase || '-' }}</td>
-            <td><span class="status-badge" :class="row.running ? 'is-online' : ''">{{ row.running ? '运行中' : '未运行' }}</span></td>
-            <td><span class="status-badge" :class="row.connected ? 'is-online' : 'is-error'">{{ row.connected ? '已连接' : '未连接' }}</span></td>
-            <td>{{ row.reconnecting ? '重连中' : '-' }}</td>
-            <td>{{ row.consecutiveFailures ?? '-' }}</td>
+            <td>{{ runtimePresentation(row, Boolean(deviceStore.runtimeErrors[row.deviceId])).lifecycle }}</td>
+            <td>{{ runtimePresentation(row).desired }}</td>
+            <td>{{ runtimePresentation(row, Boolean(deviceStore.runtimeErrors[row.deviceId])).transportProtocol }}</td>
+            <td>{{ runtimePresentation(row, Boolean(deviceStore.runtimeErrors[row.deviceId])).health }}</td>
+            <td>{{ runtimePresentation(row).points }}</td>
             <td>{{ row.generation ?? '-' }}</td>
-            <td>{{ formatTime(row.lastSuccessfulCollectionAt) }}</td>
-            <td>{{ row.degradedReason || '-' }}</td>
+            <td>{{ runtimePresentation(row).lastValid }}</td>
+            <td>{{ deviceStore.runtimeErrors[row.deviceId] || runtimePresentation(row).reason || '-' }}</td>
             <td><button type="button" @click="selectRuntimeDevice(row.deviceId)">查状态</button></td>
           </tr>
         </tbody>
@@ -51,14 +52,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
-import { getDeviceRuntime, getDeviceStatus, getRunningDevices, isDeviceRunning } from "@/api/device.api";
+import { isDeviceRunning } from "@/api/device.api";
 import { buildDeviceRequestContext, isSameDeviceRequestContext } from "@/features/device/utils/device-request-lifecycle";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
-import type { DeviceInfo, DeviceRuntimeSnapshot } from "@/types/device";
-import { buildDeviceRuntimeSummary, buildUnavailableRunningFlagDetail, normalizeDeviceRunningFlag, normalizeDeviceRuntimeRows, normalizeDeviceStatusDetail, normalizeRunningDeviceIds } from "../utils/device-runtime-utils";
+import { canonicalDeviceId, useDeviceStore } from "@/stores/device.store";
+import type { DeviceInfo } from "@/types/device";
+import { buildDeviceRuntimeSummary, buildUnavailableRunningFlagDetail, normalizeDeviceRunningFlag, normalizeDeviceStatusDetail, runtimePresentation } from "../utils/device-runtime-utils";
 
 const props = defineProps<{
   devices: DeviceInfo[];
@@ -68,9 +70,10 @@ const emit = defineEmits<{
   (event: "select-device", deviceId: string): void;
 }>();
 
-const loading = ref(false);
-const runtimeRows = ref<DeviceRuntimeSnapshot[]>([]);
-const runningDeviceIds = ref<string[]>([]);
+const deviceStore = useDeviceStore();
+const loading = computed(() => deviceStore.loading);
+const runtimeRows = computed(() => Object.values(deviceStore.runtimeMap));
+const overviewError = computed(() => deviceStore.error || (Object.values(deviceStore.runtimeErrors).filter(Boolean).join("；")));
 const statusDeviceId = ref(props.selectedDeviceId || "");
 const statusDetail = ref<unknown>({ message: "请选择设备后查询单设备运行状态" });
 const statusLoading = ref(false);
@@ -79,20 +82,12 @@ const statusCheckTargetId = ref("");
 const statusError = ref("");
 
 const statusRequestOwner = createLatestRequestOwner(isSameDeviceRequestContext);
-const runningFlagOwner = createLatestRequestOwner(isSameDeviceRequestContext);
+const runningFlagOwner = statusRequestOwner;
 
 const runtimeSummary = computed(() => buildDeviceRuntimeSummary(runtimeRows.value, props.devices.length || runtimeRows.value.length));
 
 async function loadRuntimeOverview() {
-  loading.value = true;
-  try {
-    const [runningResult, runtimeResult] = await Promise.allSettled([getRunningDevices(), getDeviceRuntime()]);
-    runningDeviceIds.value = runningResult.status === "fulfilled" ? normalizeRunningDeviceIds(runningResult.value) : [];
-    const rows = runtimeResult.status === "fulfilled" ? normalizeDeviceRuntimeRows(runtimeResult.value) : [];
-    runtimeRows.value = rows.length ? rows : runningDeviceIds.value.map((deviceId) => ({ deviceId, running: true, connected: true }));
-  } finally {
-    loading.value = false;
-  }
+  await deviceStore.refresh();
 }
 
 async function loadDeviceStatus() {
@@ -107,13 +102,13 @@ async function loadDeviceStatus() {
   statusCheckTargetId.value = targetDeviceId;
   statusError.value = "";
   try {
-    const [statusResult, runningResult] = await Promise.allSettled([getDeviceStatus(targetDeviceId), isDeviceRunning(targetDeviceId)]);
+    const [statusResult, runningResult] = await Promise.allSettled([deviceStore.refreshRuntime(targetDeviceId), isDeviceRunning(targetDeviceId)]);
     if (!statusRequestOwner.canCommit(ticket, buildDeviceRequestContext(statusDeviceId.value))) {
       return;
     }
-    const detail = statusResult.status === "fulfilled"
-      ? normalizeDeviceStatusDetail(statusResult.value, targetDeviceId)
-      : normalizeDeviceStatusDetail({ message: "单设备状态查询失败" }, targetDeviceId);
+    const runtimeError = statusResult.status === "rejected" ? statusResult.reason : statusResult.value;
+    const detail = normalizeDeviceStatusDetail(deviceStore.runtimeMap[targetDeviceId] || { deviceId: targetDeviceId }, targetDeviceId);
+    if (runtimeError) statusError.value = runtimeError instanceof Error ? runtimeError.message : String(runtimeError);
     if (runningResult.status === "fulfilled") {
       detail.running = normalizeDeviceRunningFlag(runningResult.value);
       detail.isRunning = detail.running;
@@ -175,20 +170,14 @@ function selectRuntimeDevice(deviceId: string) {
 }
 
 function deviceIdOf(device: DeviceInfo): string {
-  return String(device.deviceId || device.id || "");
+  return canonicalDeviceId(device);
 }
 
 function deviceNameOf(deviceId: string): string {
   return props.devices.find((device) => deviceIdOf(device) === deviceId)?.deviceName || deviceId;
 }
 
-function formatTime(value: unknown): string {
-  if (!value) {
-    return "-";
-  }
-  const date = new Date(typeof value === "number" ? value : String(value));
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
-}
+
 
 function prettyJson(value: unknown): string {
   return JSON.stringify(value ?? {}, null, 2);
@@ -206,6 +195,15 @@ watch(() => props.selectedDeviceId, (deviceId) => {
     void loadDeviceStatus();
   }
 });
+
+watch(statusDeviceId, () => {
+  statusRequestOwner.invalidate();
+  statusLoading.value = false;
+  runningCheckLoading.value = false;
+  statusError.value = "";
+  statusDetail.value = { message: "请选择设备后查询单设备运行状态" };
+}, { flush: "sync" });
+onBeforeUnmount(() => { statusRequestOwner.invalidate(); });
 
 onMounted(() => {
   void loadRuntimeOverview();

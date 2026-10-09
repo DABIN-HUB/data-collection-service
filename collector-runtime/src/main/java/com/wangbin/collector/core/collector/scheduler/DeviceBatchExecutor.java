@@ -152,106 +152,148 @@ public class DeviceBatchExecutor {
     }
 
     void processDeviceBatch(DeviceBatchTask batchTask, List<DataPoint> duePoints) {
+        if (batchTask == null || duePoints == null || duePoints.isEmpty()) return;
         String deviceId = batchTask.deviceId;
-        List<DataPoint> points = duePoints;
-        if (points == null || points.isEmpty()) {
-            return;
-        }
         long generation = batchTask.generation;
-
         long startTime = System.currentTimeMillis();
-        boolean success = false;
+        CollectionProcessingReceipt receipt = new CollectionProcessingReceipt(duePoints);
         String failureReason = "COMM_ERROR";
         String failureDetail = null;
+        boolean awaitingCore = false;
         try {
-            if (!isBatchTaskExecutionStillValid(batchTask)) {
-                return;
-            }
-
+            if (!isBatchTaskExecutionStillValid(batchTask)) return;
             if (!collectionManager.isDeviceConnected(deviceId)) {
-                failureReason = "COMM_ERROR";
                 reconnectCoordinator.scheduleIfNeeded(deviceId, generation);
-                log.debug("设备已断开，跳过本轮批量任务，等待异步重连完成，设备={}", deviceId);
                 return;
             }
-
-            Future<Map<String, Object>> collectFuture = submitCollectTask(deviceId, generation, points);
-            if (collectFuture == null) {
-                return;
-            }
+            Future<Map<String, Object>> collectFuture = submitCollectTask(deviceId, generation, duePoints, receipt);
+            if (collectFuture == null) return;
             batchTask.registerInFlight(collectFuture);
             registerCollectFuture(deviceId, collectFuture);
-
-            long collectTimeoutMs = resolveCollectTimeoutMs(deviceId);
             Map<String, Object> values;
             try {
-                values = collectFuture.get(collectTimeoutMs, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
+                values = collectFuture.get(resolveCollectTimeoutMs(deviceId), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException exception) {
+                receipt.cancel("COMM_ERROR");
                 collectFuture.cancel(true);
-                failureReason = "COMM_ERROR";
                 failureDetail = "采集超时";
-                batchTask.recordFailure();
-                log.warn("批量采集超时, 设备={}, 超时毫秒={}", deviceId, collectTimeoutMs);
                 return;
-            } catch (CancellationException e) {
-                log.debug("批量采集已取消, 设备={}", deviceId);
+            } catch (CancellationException exception) {
+                receipt.cancel("COMM_ERROR");
                 return;
-            } catch (InterruptedException e) {
+            } catch (InterruptedException exception) {
+                receipt.cancel("COMM_ERROR");
                 collectFuture.cancel(true);
                 Thread.currentThread().interrupt();
-                log.warn("批量采集被中断, 设备={}", deviceId);
                 return;
             } finally {
                 batchTask.unregisterInFlight(collectFuture);
                 unregisterCollectFuture(deviceId, collectFuture);
             }
-
             if (!isBatchTaskExecutionStillValid(batchTask)) {
+                receipt.cancel("PROCESS_ERROR");
                 return;
             }
-            if (values == null || values.isEmpty()) {
-                failureReason = "NO_VALUE";
-                failureDetail = "协议请求已完成，但没有返回配置点数据";
-                return;
-            }
-
-            CompletableFuture<Void> processFuture = submitProcessTask(deviceId, generation, points, values);
-            if (processFuture == null) {
-                return;
-            }
-            if (acquisitionRuntimeTracker != null) {
-                acquisitionRuntimeTracker.recordPollingResults(deviceId, generation, points, values);
-            }
-            batchTask.registerInFlight(processFuture);
-            registerProcessFuture(deviceId, processFuture);
-            processFuture.whenComplete((ignored, throwable) -> {
-                batchTask.unregisterInFlight(processFuture);
-                unregisterProcessFuture(deviceId, processFuture);
+            receipt.seal();
+            // 核心异步链复用本设备读取超时预算；超时副本不能破坏回执本身的逐点完成结果。
+            CompletableFuture<Void> coreFuture = receipt.completion().copy()
+                    .orTimeout(resolveCollectTimeoutMs(deviceId), TimeUnit.MILLISECONDS)
+                    .exceptionally(error -> {
+                        receipt.cancel("PROCESS_ERROR");
+                        return receipt.completion().join();
+                    }).thenAccept(results -> {
+                collectionTaskGuard.commitIfCurrent(deviceId, generation, () -> {
+                    if (!isBatchTaskExecutionStillValid(batchTask)) return;
+                    Map<String, DataPoint> observedPointById = new java.util.LinkedHashMap<>();
+                    for (DataPoint point : duePoints) {
+                        if (point == null) continue;
+                        CollectionProcessingReceipt.PointCompletion result = results.get(point.getPointId());
+                        if (result != null && !"CACHE_READ".equals(result.reason())
+                                && !"STALE_SAMPLE".equals(result.reason())) {
+                            observedPointById.putIfAbsent(point.getPointId(), point);
+                        }
+                    }
+                    List<DataPoint> observedPoints = List.copyOf(observedPointById.values());
+                    if (observedPoints.isEmpty()) return;
+                    if (acquisitionRuntimeTracker != null) {
+                        AcquisitionRuntimeTracker.WindowSnapshot snapshot = null;
+                        for (DataPoint point : observedPoints) {
+                            CollectionProcessingReceipt.PointCompletion result = results.get(point.getPointId());
+                            if (!result.valid() && result.sampleAt() == 0L && "PROCESS_ERROR".equals(result.reason())) {
+                                if (snapshot == null) snapshot = acquisitionRuntimeTracker.snapshot(deviceId, generation);
+                                AcquisitionRuntimeTracker.PointFactSnapshot fact = snapshot.points().get(point.getPointId());
+                                if (fact == null || fact.lastFailureAt() < startTime) {
+                                    // 入口拒绝和回执超时没有核心点位事实，先补错误，避免 null 返回值覆盖原因或重复计数。
+                                    acquisitionRuntimeTracker.recordPollingFailure(deviceId, generation,
+                                            List.of(point), result.reason());
+                                }
+                            }
+                        }
+                        acquisitionRuntimeTracker.recordPollingResults(deviceId, generation, observedPoints, values, startTime);
+                    }
+                    Map<String, Object> validValues = new java.util.LinkedHashMap<>();
+                    long sampleAt = 0L;
+                    for (Map.Entry<String, CollectionProcessingReceipt.PointCompletion> entry : results.entrySet()) {
+                        if (entry.getValue().valid()) {
+                            if (values != null && values.get(entry.getKey()) != null) {
+                                validValues.put(entry.getKey(), values.get(entry.getKey()));
+                                sampleAt = Math.max(sampleAt, entry.getValue().sampleAt());
+                            }
+                        }
+                    }
+                    int validCount = validValues.size();
+                    int failedCount = observedPoints.size() - validCount;
+                    long executionTime = System.currentTimeMillis() - startTime;
+                    if (failedCount == 0 && validCount > 0) {
+                        batchTask.recordSuccess();
+                        collectionStatistics.collectionSuccess(deviceId, executionTime);
+                    } else {
+                        batchTask.recordFailure();
+                        collectionStatistics.collectionFailed(deviceId);
+                    }
+                    performanceMonitor.recordBatchOutcome(deviceId, generation, validCount, failedCount,
+                            executionTime, sampleAt);
+                    if (!validValues.isEmpty()) {
+                        List<DataPoint> validPoints = observedPoints.stream()
+                                .filter(point -> validValues.containsKey(point.getPointId())).toList();
+                        submitProcessTask(deviceId, generation, validPoints, validValues);
+                    }
+                    if (executionTime > 100) adjustBatchSize(deviceId, -10);
+                    else if (executionTime < 20) adjustBatchSize(deviceId, 5);
+                });
             });
-            success = true;
-            batchTask.recordSuccess();
-        } catch (Exception e) {
-            failureReason = classifyFailure(e);
-            failureDetail = failureDetail(e);
-            batchTask.recordFailure();
-            log.error("设备批量采集失败, 设备={}", deviceId, e);
-        } finally {
-            long executionTime = System.currentTimeMillis() - startTime;
-            if (success) {
-                collectionStatistics.collectionSuccess(deviceId, executionTime);
-                performanceMonitor.recordBatchSuccess(deviceId, generation, points.size(), executionTime);
-            } else {
-                if (acquisitionRuntimeTracker != null) {
-                    acquisitionRuntimeTracker.recordPollingFailure(deviceId, generation, points,
-                            failureReason, failureDetail);
+            batchTask.registerInFlight(coreFuture);
+            registerProcessFuture(deviceId, coreFuture);
+            coreFuture.whenComplete((ignored, error) -> {
+                if (coreFuture.isCancelled()) receipt.cancel("PROCESS_ERROR");
+                batchTask.unregisterInFlight(coreFuture);
+                unregisterProcessFuture(deviceId, coreFuture);
+                if (error != null && !(error instanceof CancellationException)) {
+                    log.error("核心采集回执结算失败，设备={}", deviceId, error);
                 }
-                collectionStatistics.collectionFailed(deviceId);
-                performanceMonitor.recordBatchFailure(deviceId, generation);
-            }
-            if (executionTime > 100) {
-                adjustBatchSize(deviceId, -10);
-            } else if (executionTime < 20) {
-                adjustBatchSize(deviceId, 5);
+            });
+            awaitingCore = true;
+            // 取消可能发生在读取有效性检查与回执 Future 注册之间，注册后再核对一次才能关闭取消窗口。
+            if (!isBatchTaskExecutionStillValid(batchTask)) coreFuture.cancel(true);
+        } catch (Exception exception) {
+            receipt.cancel("PROCESS_ERROR");
+            failureReason = classifyFailure(exception);
+            failureDetail = failureDetail(exception);
+            log.error("设备批量采集失败，设备={}", deviceId, exception);
+        } finally {
+            if (!awaitingCore) {
+                receipt.cancel(failureReason);
+                String reason = failureReason;
+                String detail = failureDetail;
+                collectionTaskGuard.commitIfCurrent(deviceId, generation, () -> {
+                    if (!isBatchTaskExecutionStillValid(batchTask)) return;
+                    batchTask.recordFailure();
+                    if (acquisitionRuntimeTracker != null) acquisitionRuntimeTracker.recordPollingFailure(
+                            deviceId, generation, duePoints, reason, detail);
+                    collectionStatistics.collectionFailed(deviceId);
+                    performanceMonitor.recordBatchOutcome(deviceId, generation, 0,
+                            receipt.completion().join().size(), System.currentTimeMillis() - startTime, 0L);
+                });
             }
         }
     }
@@ -276,11 +318,15 @@ public class DeviceBatchExecutor {
     Future<Map<String, Object>> submitCollectTask(String deviceId,
                                                   long generation,
                                                   List<DataPoint> points) {
+        return submitCollectTask(deviceId, generation, points, null);
+    }
+
+    private Future<Map<String, Object>> submitCollectTask(String deviceId, long generation,
+                                                         List<DataPoint> points, CollectionProcessingReceipt receipt) {
         try {
             return asyncCollectorExecutor.submit(() ->
                     collectionTaskGuard.callWithContext(
-                            deviceId,
-                            generation,
+                            new CollectionTaskGuard.CollectionTaskContext(deviceId, generation, receipt),
                             () -> collectionManager.readPoints(deviceId, points)
                     ));
         } catch (RejectedExecutionException e) {
@@ -326,7 +372,8 @@ public class DeviceBatchExecutor {
             log.debug("跳过旧代次采集数据, 设备={}, 运行代次={}", deviceId, generation);
             return;
         }
-        collectedDataProcessor.process(deviceId, points, values);
+        collectionTaskGuard.commitIfCurrent(deviceId, generation,
+                () -> collectedDataProcessor.process(deviceId, points, values));
     }
 
     void adjustBatchSize(String deviceId, int percentChange) {

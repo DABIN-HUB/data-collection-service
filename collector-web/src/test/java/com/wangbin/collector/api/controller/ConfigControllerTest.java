@@ -14,6 +14,7 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.CollectionService;
+import com.wangbin.collector.core.collector.scheduler.DeviceLifecycleCoordinator;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.argThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -67,6 +69,9 @@ class ConfigControllerTest {
 
     @MockBean
     private CollectionService collectionService;
+
+    @MockBean
+    private DeviceLifecycleCoordinator lifecycleCoordinator;
 
     @MockBean
     private PointRuntimeStateService pointRuntimeStateService;
@@ -148,9 +153,11 @@ class ConfigControllerTest {
                         "dataType", "FLOAT")),
                 "startAfterSave", true);
 
-        when(configManager.saveLocalDeviceConfig(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false)))
-                .thenReturn(true);
-        when(collectionService.startLocalDevice("local-1")).thenReturn(true);
+        when(configManager.saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false)))
+                .thenReturn(new ConfigManager.DeviceConfigCommitResult("local-1", 0L, 1L, 1));
+        when(lifecycleCoordinator.getIntentRevision("local-1")).thenReturn(5L);
+        when(lifecycleCoordinator.startDeviceAfterConfigSave("local-1", 5L))
+                .thenReturn(new DeviceLifecycleCoordinator.StartAfterConfigSaveResult(true, "ACCEPTED"));
 
         mockMvc.perform(post("/api/config/local/devices")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -160,10 +167,17 @@ class ConfigControllerTest {
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.data.configSource", is("local")))
                 .andExpect(jsonPath("$.data.temporaryConfig", is(true)))
+                .andExpect(jsonPath("$.data.deviceId", is("local-1")))
+                .andExpect(jsonPath("$.data.saved", is(true)))
+                .andExpect(jsonPath("$.data.changed", is(true)))
+                .andExpect(jsonPath("$.data.configVersion", is(1)))
+                .andExpect(jsonPath("$.data.startRequested", is(true)))
+                .andExpect(jsonPath("$.data.startStatus", is("ACCEPTED")))
                 .andExpect(jsonPath("$.data.started", is(true)));
 
-        verify(configManager).saveLocalDeviceConfig(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false));
-        verify(collectionService).startLocalDevice("local-1");
+        verify(configManager).saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false));
+        verify(lifecycleCoordinator).startDeviceAfterConfigSave("local-1", 5L);
+        verify(collectionService, never()).startLocalDevice("local-1");
     }
 
     @Test

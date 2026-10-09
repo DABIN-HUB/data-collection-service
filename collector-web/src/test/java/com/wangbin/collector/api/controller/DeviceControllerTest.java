@@ -41,7 +41,9 @@ class DeviceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code", is(200)))
                 .andExpect(jsonPath("$.status", is("success")))
-                .andExpect(jsonPath("$.message", is("设备启动成功")))
+                .andExpect(jsonPath("$.message", is("启动操作已完成，等待有效采集数据")))
+                .andExpect(jsonPath("$.data.accepted", is(true)))
+                .andExpect(jsonPath("$.data.runtime", nullValue()))
                 .andExpect(jsonPath("$.deviceId", is("dev-1")))
                 .andExpect(jsonPath("$.timestamp").exists());
     }
@@ -54,7 +56,8 @@ class DeviceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").doesNotExist())
                 .andExpect(jsonPath("$.status", is("error")))
-                .andExpect(jsonPath("$.message", is("设备已启动或启动失败")))
+                .andExpect(jsonPath("$.message", is("启动未完成，请检查设备配置、连接及运行资源")))
+                .andExpect(jsonPath("$.data.accepted", is(false)))
                 .andExpect(jsonPath("$.deviceId", is("dev-1")));
     }
 

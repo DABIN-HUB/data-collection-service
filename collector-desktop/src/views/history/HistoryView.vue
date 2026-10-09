@@ -606,7 +606,7 @@ function resolveTargetDeviceId(preferredDeviceId: string): string {
 }
 
 function deviceMatchesId(device: DeviceViewModel, value: string): boolean {
-  return [device.normalizedId, device.deviceId, device.id, device.connectionKey]
+  return [device.deviceId || device.id || device.normalizedId]
     .filter((item) => item !== undefined && item !== null)
     .map(String)
     .includes(value);
@@ -645,7 +645,7 @@ function routeQueryKey(): string {
 }
 
 function deviceIdOf(device?: DeviceViewModel): string {
-  return String(device?.normalizedId || device?.deviceId || device?.id || device?.connectionKey || "");
+  return String(device?.deviceId || device?.id || device?.normalizedId || "");
 }
 
 function pointKey(point?: DataPoint): string {

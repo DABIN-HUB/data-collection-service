@@ -1,4 +1,9 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
+import { createApp } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
+
+import DiagnosticDetailPanel from "../components/DiagnosticDetailPanel.vue";
 
 import {
   buildCacheDetail,
@@ -45,6 +50,53 @@ describe("diagnostic-detail-utils", () => {
       expect.objectContaining({ deviceId: "dev-1", statusText: "ONLINE", connectedText: "已连接", successRateText: "98%", bytesText: "12 / 34" }),
       expect.objectContaining({ deviceId: "dev-2", statusText: "OFFLINE", connectedText: "未连接", successRateText: "-", expectedOnly: true, missing: true })
     ]);
+  });
+
+  it("监控采集健康与就绪只来自 runtime，连接和连接错误计数不替代健康", () => {
+    const rows = buildDeviceConnectionRows({
+      connections: [
+        { deviceId: "healthy", connected: true, errors: 99, runtime: { deviceId: "healthy", deviceHealth: "ONLINE_HEALTHY", ready: true } },
+        { deviceId: "partial", connected: true, errors: 0, runtime: { deviceId: "partial", deviceHealth: "ONLINE_PARTIAL", ready: false, healthReason: "部分点位采集失败" } },
+        { deviceId: "no-data", connected: true, errors: 0, runtime: { deviceId: "no-data", deviceHealth: "ONLINE_NO_DATA" } },
+        { deviceId: "legacy", connected: true, errors: 0 },
+        { deviceId: "empty", connected: true, runtime: {} }
+      ]
+    });
+    expect(rows).toEqual([
+      expect.objectContaining({ deviceId: "healthy", healthText: "在线健康", readyText: "已就绪", healthTone: "is-online" }),
+      expect.objectContaining({ deviceId: "partial", healthText: "在线部分有效", readyText: "未就绪", healthTone: "is-warning", healthReason: "部分点位采集失败" }),
+      expect.objectContaining({ deviceId: "no-data", healthText: "在线无有效数据", readyText: "未知", healthTone: "is-warning" }),
+      expect.objectContaining({ deviceId: "legacy", healthText: "未知", readyText: "未知", healthTone: "" }),
+      expect.objectContaining({ deviceId: "empty", healthText: "未知", readyText: "未知", healthTone: "" })
+    ]);
+  });
+
+  it("监控表格显示独立的采集健康与就绪列，旧服务端显示未知", () => {
+    const root = document.createElement("div");
+    const app = createApp(DiagnosticDetailPanel, {
+      cacheMetrics: {}, performanceMetrics: {}, exceptionStats: {}, storageMetrics: {}, pipelineMetrics: {},
+      deviceMetrics: { connections: [
+        { deviceId: "offline", connected: true, runtime: { deviceId: "offline", deviceHealth: "OFFLINE", ready: false, healthReason: "采集器已停止" } },
+        { deviceId: "legacy", connected: true, errors: 0 }
+      ] }
+    });
+    app.use(createRouter({ history: createMemoryHistory(), routes: [{ path: "/", component: { render: () => null } }] }));
+    try {
+      app.mount(root);
+      const table = root.querySelector(".diagnostic-connection-table");
+      expect(table?.querySelector("thead")?.textContent).toContain("采集健康");
+      expect(table?.querySelector("thead")?.textContent).toContain("采集就绪");
+      const rows = table?.querySelectorAll("tbody tr");
+      expect(rows?.[0]?.children[3]?.textContent).toBe("离线");
+      expect(rows?.[0]?.children[3]?.querySelector(".status-badge")?.classList.contains("is-error")).toBe(true);
+      expect(rows?.[0]?.children[4]?.textContent).toBe("未就绪");
+      expect(rows?.[0]?.textContent).toContain("采集器已停止");
+      expect(rows?.[1]?.children[3]?.textContent).toBe("未知");
+      expect(rows?.[1]?.children[4]?.textContent).toBe("未知");
+      expect(rows?.[1]?.children[3]?.querySelector(".status-badge")?.classList.contains("is-online")).toBe(false);
+    } finally {
+      app.unmount();
+    }
   });
 
   it("归一化调度性能详情", () => {

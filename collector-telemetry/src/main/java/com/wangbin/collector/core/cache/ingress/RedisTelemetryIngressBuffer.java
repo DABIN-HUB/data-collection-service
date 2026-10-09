@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 基于 Redis pending 与本地有界队列的遥测入口过载缓冲。
@@ -34,6 +36,8 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     private final CollectionTaskGuard collectionTaskGuard;
     private final RuntimeInstanceIdentity runtimeInstanceIdentity;
     private final BlockingQueue<TelemetryIngressEnvelope> localQueue;
+    private final AtomicBoolean redisReplayActive = new AtomicBoolean();
+    private final AtomicBoolean localReplayActive = new AtomicBoolean();
     private final RateLimitedLogReporter overloadLogReporter = new RateLimitedLogReporter(log);
     private final LongAdder rejectedTasks = new LongAdder();
     private final LongAdder rejectedItems = new LongAdder();
@@ -203,54 +207,88 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
     }
 
     private void replayRedisQueue() {
-        int batchSize = Math.max(1, properties.getReplayBatchSize());
-        for (int index = 0; index < batchSize; index++) {
-            String json;
-            try {
-                json = currentOrClaim();
-            } catch (RuntimeException exception) {
-                log.warn("读取遥测入口 Redis 待处理队列失败", exception);
-                return;
-            }
-            if (json == null) {
-                return;
-            }
-            try {
-                replayOne(deserialize(json));
-                removeProcessing(json);
-            } catch (JsonProcessingException exception) {
-                moveToDeadLetter(json, exception);
-            } catch (RuntimeException exception) {
-                log.warn("遥测入口缓冲回放失败，将在下一个周期继续重试", exception);
-                return;
-            }
+        if (redisReplayActive.compareAndSet(false, true)) replayRedisNext(Math.max(1, properties.getReplayBatchSize()));
+    }
+
+    private void replayRedisNext(int remaining) {
+        if (remaining <= 0) {
+            redisReplayActive.set(false);
+            return;
+        }
+        String json;
+        try {
+            json = currentOrClaim();
+        } catch (RuntimeException exception) {
+            redisReplayActive.set(false);
+            log.warn("读取遥测入口 Redis 待处理队列失败", exception);
+            return;
+        }
+        if (json == null) {
+            redisReplayActive.set(false);
+            return;
+        }
+        try {
+            replayOne(deserialize(json)).whenComplete((ignored, error) -> {
+                if (error != null) {
+                    redisReplayActive.set(false);
+                    log.warn("遥测可靠补偿尚未完成，保留待处理消息", error);
+                    return;
+                }
+                try {
+                    removeProcessing(json);
+                    replayCompletedItems.increment();
+                    replayRedisNext(remaining - 1);
+                } catch (RuntimeException exception) {
+                    redisReplayActive.set(false);
+                    log.warn("遥测补偿确认移除失败，保留重试", exception);
+                }
+            });
+        } catch (JsonProcessingException exception) {
+            moveToDeadLetter(json, exception);
+            redisReplayActive.set(false);
+        } catch (RuntimeException exception) {
+            redisReplayActive.set(false);
+            log.warn("遥测入口缓冲回放失败，保留下一周期重试", exception);
         }
     }
 
     private void replayLocalQueue() {
-        int batchSize = Math.max(1, properties.getReplayBatchSize());
-        for (int index = 0; index < batchSize; index++) {
-            TelemetryIngressEnvelope envelope = localQueue.peek();
-            if (envelope == null) {
-                return;
-            }
-            try {
-                replayOne(envelope);
+        if (localReplayActive.compareAndSet(false, true)) replayLocalNext(Math.max(1, properties.getReplayBatchSize()));
+    }
+
+    private void replayLocalNext(int remaining) {
+        if (remaining <= 0) {
+            localReplayActive.set(false);
+            return;
+        }
+        TelemetryIngressEnvelope envelope = localQueue.peek();
+        if (envelope == null) {
+            localReplayActive.set(false);
+            return;
+        }
+        try {
+            replayOne(envelope).whenComplete((ignored, error) -> {
+                if (error != null) {
+                    localReplayActive.set(false);
+                    log.warn("遥测入口本地补偿尚未完成，保留消息", error);
+                    return;
+                }
                 localQueue.poll();
-            } catch (RuntimeException exception) {
-                log.warn("遥测入口本地降级队列回放失败，将在下一个周期继续重试", exception);
-                return;
-            }
+                replayCompletedItems.increment();
+                replayLocalNext(remaining - 1);
+            });
+        } catch (RuntimeException exception) {
+            localReplayActive.set(false);
+            log.warn("遥测入口本地回放失败，保留下一周期重试", exception);
         }
     }
 
-    private void replayOne(TelemetryIngressEnvelope envelope) {
+    private CompletableFuture<Void> replayOne(TelemetryIngressEnvelope envelope) {
         if (!shouldReplay(envelope)) {
             droppedItems.increment();
-            return;
+            return CompletableFuture.completedFuture(null);
         }
-        pipeline.process(envelope.toContext());
-        replayCompletedItems.increment();
+        return pipeline.processRecovery(envelope.toContext(collectionTaskGuard));
     }
 
     private boolean shouldReplay(TelemetryIngressEnvelope envelope) {
@@ -271,6 +309,7 @@ public class RedisTelemetryIngressBuffer implements TelemetryIngressBuffer {
         if (!current) {
             staleSameRuntimeDroppedItems.increment();
         }
+        // 同进程旧代次沿用明确丢弃策略；跨进程与旧格式消息仍只恢复历史和可靠上报。
         return current;
     }
 

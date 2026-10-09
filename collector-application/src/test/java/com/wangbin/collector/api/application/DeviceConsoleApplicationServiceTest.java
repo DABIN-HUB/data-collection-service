@@ -47,8 +47,21 @@ class DeviceConsoleApplicationServiceTest {
         ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
 
         assertEquals("success", result.getStatus());
-        assertEquals("设备启动成功", result.getMessage());
+        assertEquals("启动操作已完成，等待有效采集数据", result.getMessage());
         assertEquals("dev-1", result.getDeviceId());
+    }
+
+    @Test
+    void successfulStartMustRemainAcceptedWhenRuntimeQueryFails() {
+        when(collectionService.startDevice("dev-1")).thenReturn(true);
+        when(collectionService.getDeviceRuntimeSnapshot("dev-1")).thenThrow(new IllegalStateException("runtime unavailable"));
+
+        ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
+
+        assertEquals("success", result.getStatus());
+        assertTrue(result.getData().isAccepted());
+        assertNull(result.getData().getRuntime());
+        verify(collectionService).startDevice("dev-1");
     }
 
     @Test
@@ -58,7 +71,7 @@ class DeviceConsoleApplicationServiceTest {
         ApiResult<DeviceOperationResponse> result = service.startDevice("dev-1");
 
         assertEquals("error", result.getStatus());
-        assertEquals("设备已启动或启动失败", result.getMessage());
+        assertEquals("启动未完成，请检查设备配置、连接及运行资源", result.getMessage());
         assertEquals("dev-1", result.getDeviceId());
     }
 
@@ -80,7 +93,7 @@ class DeviceConsoleApplicationServiceTest {
         ApiResult<DeviceOperationResponse> result = service.startLocalDevice("local-1");
 
         assertEquals("success", result.getStatus());
-        assertEquals("本地临时设备启动成功", result.getMessage());
+        assertEquals("本地设备启动操作已完成，等待有效采集数据", result.getMessage());
         assertEquals("local-1", result.getDeviceId());
     }
 

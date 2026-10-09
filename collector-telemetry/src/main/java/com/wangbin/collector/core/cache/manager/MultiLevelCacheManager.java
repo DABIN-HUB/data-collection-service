@@ -24,11 +24,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.locks.Lock;
+import java.util.function.Predicate;
 
 /**
  * 多级缓存管理器。
@@ -36,6 +37,8 @@ import java.util.concurrent.locks.Lock;
 @Slf4j
 @Component("multiLevelCacheManager")
 public class MultiLevelCacheManager implements CacheManager {
+
+    private static final int MUTATION_STRIPES = 1024;
 
     @Nullable
     private final LocalCacheManager localCacheManager;
@@ -62,7 +65,9 @@ public class MultiLevelCacheManager implements CacheManager {
 
     private final ExecutorService asyncExecutor;
 
-    private final Striped<Lock> cacheLocks = Striped.lazyWeakLock(1024);
+    private final Striped<Lock> cacheLocks = Striped.lazyWeakLock(MUTATION_STRIPES);
+    // 固定条带避免按点位积累无界版本；哈希碰撞只会保守地放弃旧回写。
+    private final AtomicLongArray mutationRevisions = new AtomicLongArray(MUTATION_STRIPES);
 
     /**
      * 创建多级缓存管理器。
@@ -165,6 +170,7 @@ public class MultiLevelCacheManager implements CacheManager {
         Lock lock = cacheLocks.get(key.getFullKey());
         lock.lock();
         try {
+            long mutationRevision = advanceMutationRevision(key);
             boolean allSuccess = true;
             if (writeThrough) {
                 for (int i = cacheManagers.size() - 1; i >= 0; i--) {
@@ -190,7 +196,7 @@ public class MultiLevelCacheManager implements CacheManager {
                             String.format("主缓存写入失败: %s", primaryManager.getCacheType()),
                             key);
                 }
-                asyncRemoveLowerLevels(key, primaryManager.getCacheLevel());
+                asyncRemoveLowerLevels(key, primaryManager.getCacheLevel(), mutationRevision);
             } else {
                 CacheManager primaryManager = getPrimaryCacheManager(key);
                 boolean success = primaryManager != null && primaryManager.put(key, value, expireTime);
@@ -251,6 +257,7 @@ public class MultiLevelCacheManager implements CacheManager {
         Lock lock = cacheLocks.get(key.getFullKey());
         lock.lock();
         try {
+            long readRevision = currentMutationRevision(key);
             T value = null;
             int hitLevel = -1;
 
@@ -261,12 +268,15 @@ public class MultiLevelCacheManager implements CacheManager {
 
                 try {
                     T foundValue = manager.get(key, type);
+                    if (readRevision != currentMutationRevision(key)) {
+                        break;
+                    }
                     if (foundValue != null) {
                         value = foundValue;
                         hitLevel = manager.getCacheLevel();
                         updateHitStatistics(hitLevel);
                         if (readThrough && hitLevel > 1) {
-                            asyncUpdateLowerLevels(key, value, hitLevel);
+                            asyncUpdateLowerLevels(key, value, hitLevel, readRevision);
                         }
                         break;
                     }
@@ -322,36 +332,61 @@ public class MultiLevelCacheManager implements CacheManager {
         totalReads.addAndGet(keys.size());
         Map<CacheKey, T> result = new HashMap<>();
         List<CacheKey> redisCandidates = new ArrayList<>();
+        long[] redisReadRevisions = new long[keys.size()];
 
         for (CacheKey key : keys) {
+            Lock lock = cacheLocks.get(key.getFullKey());
+            lock.lock();
+            long readRevision = currentMutationRevision(key);
             try {
                 T localValue = localCacheManager.get(key);
+                if (readRevision != currentMutationRevision(key)) {
+                    totalMisses.incrementAndGet();
+                    continue;
+                }
                 if (localValue != null) {
                     result.put(key, localValue);
                     updateHitStatistics(localCacheManager.getCacheLevel());
                 } else {
+                    redisReadRevisions[redisCandidates.size()] = readRevision;
                     redisCandidates.add(key);
                 }
             } catch (Exception e) {
                 log.warn("本地缓存批量读取失败，将回退到 Redis: 键={}", key, e);
                 recordCacheException(e, key);
+                redisReadRevisions[redisCandidates.size()] = readRevision;
                 redisCandidates.add(key);
+            } finally {
+                lock.unlock();
             }
         }
 
         if (!redisCandidates.isEmpty()) {
             try {
                 Map<CacheKey, T> redisValues = redisCacheManager.pipelineGetAll(redisCandidates, null);
-                for (CacheKey key : redisCandidates) {
-                    T value = redisValues.get(key);
-                    if (value != null) {
-                        result.put(key, value);
-                        updateHitStatistics(redisCacheManager.getCacheLevel());
-                        if (readThrough) {
-                            asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel());
+                for (int i = 0; i < redisCandidates.size(); i++) {
+                    CacheKey key = redisCandidates.get(i);
+                    Lock lock = cacheLocks.get(key.getFullKey());
+                    lock.lock();
+                    try {
+                        // Redis 批量调用不持跨键锁，响应必须沿用读取前版本，不能在提交回写时重新捕获。
+                        long readRevision = redisReadRevisions[i];
+                        if (readRevision != currentMutationRevision(key)) {
+                            totalMisses.incrementAndGet();
+                            continue;
                         }
-                    } else {
-                        totalMisses.incrementAndGet();
+                        T value = redisValues.get(key);
+                        if (value != null) {
+                            result.put(key, value);
+                            updateHitStatistics(redisCacheManager.getCacheLevel());
+                            if (readThrough) {
+                                asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel(), readRevision);
+                            }
+                        } else {
+                            totalMisses.incrementAndGet();
+                        }
+                    } finally {
+                        lock.unlock();
                     }
                 }
             } catch (Exception e) {
@@ -394,6 +429,7 @@ public class MultiLevelCacheManager implements CacheManager {
         Lock lock = cacheLocks.get(key.getFullKey());
         lock.lock();
         try {
+            advanceMutationRevision(key);
             boolean allSuccess = true;
             for (CacheManager manager : cacheManagers) {
                 boolean success = manager.delete(key);
@@ -405,6 +441,57 @@ public class MultiLevelCacheManager implements CacheManager {
                             String.format("缓存删除失败: %s [层级: %d]",
                                     manager.getCacheType(), manager.getCacheLevel()),
                             key);
+                }
+            }
+            return allSuccess;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * 配置失效时逐层条件删除，保留较新版本；空层同样使此前排队的读穿回写失效。
+     *
+     * @param key 需要失效的缓存键
+     * @param shouldDelete 按每层当前值判断是否删除的条件
+     * @return 所有缓存层的读取、判断和必要删除是否成功
+     */
+    public boolean deleteIf(CacheKey key, Predicate<Object> shouldDelete) {
+        if (!isOperational() || key == null || shouldDelete == null) {
+            return false;
+        }
+
+        totalDeletes.incrementAndGet();
+        Lock lock = cacheLocks.get(key.getFullKey());
+        lock.lock();
+        try {
+            advanceMutationRevision(key);
+            boolean allSuccess = true;
+            for (CacheManager manager : cacheManagers) {
+                try {
+                    // 管理性失效使用可抛异常的原语，避免普通 get 把读取失败折叠成空层并误报成功。
+                    AbstractCacheManager abstractManager = manager instanceof AbstractCacheManager base ? base : null;
+                    if (abstractManager != null) {
+                        abstractManager.checkInitialized();
+                    }
+                    Object value = abstractManager != null ? abstractManager.doGet(key) : manager.get(key);
+                    if (value != null && shouldDelete.test(value)) {
+                        boolean success = abstractManager != null
+                                ? abstractManager.doDelete(key) : manager.delete(key);
+                        if (!success) {
+                            allSuccess = false;
+                            log.warn("缓存条件删除失败: {} [层级: {}], 键={}",
+                                    manager.getCacheType(), manager.getCacheLevel(), key);
+                            recordCacheWarning(
+                                    String.format("缓存条件删除失败: %s [层级: %d]",
+                                            manager.getCacheType(), manager.getCacheLevel()), key);
+                        }
+                    }
+                } catch (Exception e) {
+                    allSuccess = false;
+                    log.warn("缓存条件删除失败: {} [层级: {}], 键={}",
+                            manager.getCacheType(), manager.getCacheLevel(), key, e);
+                    recordCacheException(e, key);
                 }
             }
             return allSuccess;
@@ -444,21 +531,26 @@ public class MultiLevelCacheManager implements CacheManager {
             return false;
         }
 
-        boolean allSuccess = true;
-        for (CacheManager manager : cacheManagers) {
-            boolean success = manager.deleteByPattern(pattern);
-            if (!success) {
-                allSuccess = false;
-                log.warn("按模式删除缓存失败: {} [层级: {}]",
-                        manager.getCacheType(), manager.getCacheLevel());
-                recordCacheWarning(
-                        String.format("按模式删除缓存失败: %s [层级: %d]",
-                                manager.getCacheType(), manager.getCacheLevel()),
-                        null);
+        List<Lock> locks = lockAllCacheStripes();
+        try {
+            advanceAllMutationRevisions();
+            boolean allSuccess = true;
+            for (CacheManager manager : cacheManagers) {
+                boolean success = manager.deleteByPattern(pattern);
+                if (!success) {
+                    allSuccess = false;
+                    log.warn("按模式删除缓存失败: {} [层级: {}]",
+                            manager.getCacheType(), manager.getCacheLevel());
+                    recordCacheWarning(
+                            String.format("按模式删除缓存失败: %s [层级: %d]",
+                                    manager.getCacheType(), manager.getCacheLevel()),
+                            null);
+                }
             }
+            return allSuccess;
+        } finally {
+            unlockCacheStripes(locks);
         }
-
-        return allSuccess;
     }
 
     /**
@@ -530,13 +622,19 @@ public class MultiLevelCacheManager implements CacheManager {
             return;
         }
 
-        for (CacheManager manager : cacheManagers) {
-            try {
-                manager.clear();
-                log.info("缓存清空完成: {}", manager.getCacheType());
-            } catch (Exception e) {
-                log.error("缓存清空失败: {}", manager.getCacheType(), e);
+        List<Lock> locks = lockAllCacheStripes();
+        try {
+            advanceAllMutationRevisions();
+            for (CacheManager manager : cacheManagers) {
+                try {
+                    manager.clear();
+                    log.info("缓存清空完成: {}", manager.getCacheType());
+                } catch (Exception e) {
+                    log.error("缓存清空失败: {}", manager.getCacheType(), e);
+                }
             }
+        } finally {
+            unlockCacheStripes(locks);
         }
     }
 
@@ -701,13 +799,20 @@ public class MultiLevelCacheManager implements CacheManager {
      */
     private <T> void populateFromRedisIndividually(List<CacheKey> keys, Map<CacheKey, T> result) {
         for (CacheKey key : keys) {
+            Lock lock = cacheLocks.get(key.getFullKey());
+            lock.lock();
             try {
+                long readRevision = currentMutationRevision(key);
                 T value = redisCacheManager.get(key);
+                if (readRevision != currentMutationRevision(key)) {
+                    totalMisses.incrementAndGet();
+                    continue;
+                }
                 if (value != null) {
                     result.put(key, value);
                     updateHitStatistics(redisCacheManager.getCacheLevel());
                     if (readThrough) {
-                        asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel());
+                        asyncUpdateLowerLevels(key, value, redisCacheManager.getCacheLevel(), readRevision);
                     }
                 } else {
                     totalMisses.incrementAndGet();
@@ -716,6 +821,8 @@ public class MultiLevelCacheManager implements CacheManager {
                 totalMisses.incrementAndGet();
                 log.warn("Redis 单键补偿读取失败: 键={}", key, ex);
                 recordCacheException(ex, key);
+            } finally {
+                lock.unlock();
             }
         }
     }
@@ -723,13 +830,18 @@ public class MultiLevelCacheManager implements CacheManager {
     /**
      * 执行当前业务逻辑。
      */
-    private <T> void asyncUpdateLowerLevels(CacheKey key, T value, int currentLevel) {
+    private <T> void asyncUpdateLowerLevels(CacheKey key, T value, int currentLevel, long readRevision) {
         if (!readThrough || currentLevel <= 1) {
             return;
         }
 
         asyncExecutor.submit(() -> {
+            Lock lock = cacheLocks.get(key.getFullKey());
+            lock.lock();
             try {
+                if (!isOperational() || readRevision != currentMutationRevision(key)) {
+                    return;
+                }
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.put(key, value);
@@ -739,6 +851,8 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             } catch (Exception e) {
                 log.error("缓存回写失败: 键={}", key, e);
+            } finally {
+                lock.unlock();
             }
         });
     }
@@ -746,13 +860,18 @@ public class MultiLevelCacheManager implements CacheManager {
     /**
      * 执行当前业务逻辑。
      */
-    private void asyncRemoveLowerLevels(CacheKey key, int currentLevel) {
+    private void asyncRemoveLowerLevels(CacheKey key, int currentLevel, long mutationRevision) {
         if (currentLevel <= 1) {
             return;
         }
 
         asyncExecutor.submit(() -> {
+            Lock lock = cacheLocks.get(key.getFullKey());
+            lock.lock();
             try {
+                if (!isOperational() || mutationRevision != currentMutationRevision(key)) {
+                    return;
+                }
                 for (CacheManager manager : cacheManagers) {
                     if (manager.getCacheLevel() < currentLevel) {
                         manager.delete(key);
@@ -762,8 +881,48 @@ public class MultiLevelCacheManager implements CacheManager {
                 }
             } catch (Exception e) {
                 log.error("缓存清除失败: 键={}", key, e);
+            } finally {
+                lock.unlock();
             }
         });
+    }
+
+    private int mutationStripe(CacheKey key) {
+        int hash = key.getFullKey().hashCode();
+        return (hash ^ (hash >>> 16)) & (MUTATION_STRIPES - 1);
+    }
+
+    private long currentMutationRevision(CacheKey key) {
+        return mutationRevisions.get(mutationStripe(key));
+    }
+
+    private long advanceMutationRevision(CacheKey key) {
+        return mutationRevisions.incrementAndGet(mutationStripe(key));
+    }
+
+    /**
+     * 全量或模式删除按固定顺序持有全部条带，避免旧任务在失效过程中完成回写。
+     */
+    private List<Lock> lockAllCacheStripes() {
+        List<Lock> locks = new ArrayList<>(cacheLocks.size());
+        for (int i = 0; i < cacheLocks.size(); i++) {
+            Lock lock = cacheLocks.getAt(i);
+            lock.lock();
+            locks.add(lock);
+        }
+        return locks;
+    }
+
+    private void advanceAllMutationRevisions() {
+        for (int i = 0; i < mutationRevisions.length(); i++) {
+            mutationRevisions.incrementAndGet(i);
+        }
+    }
+
+    private void unlockCacheStripes(List<Lock> locks) {
+        for (int i = locks.size() - 1; i >= 0; i--) {
+            locks.get(i).unlock();
+        }
     }
 
 
@@ -775,17 +934,24 @@ public class MultiLevelCacheManager implements CacheManager {
             return;
         }
 
-        log.info("开始预热缓存: 键={}", key);
-        for (CacheManager manager : cacheManagers) {
-            try {
-                manager.put(key, value);
-                log.debug("缓存预热完成: {} [层级: {}]",
-                        manager.getCacheType(), manager.getCacheLevel());
-            } catch (Exception e) {
-                log.error("缓存预热失败: {}", manager.getCacheType(), e);
+        Lock lock = cacheLocks.get(key.getFullKey());
+        lock.lock();
+        try {
+            advanceMutationRevision(key);
+            log.info("开始预热缓存: 键={}", key);
+            for (CacheManager manager : cacheManagers) {
+                try {
+                    manager.put(key, value);
+                    log.debug("缓存预热完成: {} [层级: {}]",
+                            manager.getCacheType(), manager.getCacheLevel());
+                } catch (Exception e) {
+                    log.error("缓存预热失败: {}", manager.getCacheType(), e);
+                }
             }
+            log.info("缓存预热完成: 键={}", key);
+        } finally {
+            lock.unlock();
         }
-        log.info("缓存预热完成: 键={}", key);
     }
 
     /**

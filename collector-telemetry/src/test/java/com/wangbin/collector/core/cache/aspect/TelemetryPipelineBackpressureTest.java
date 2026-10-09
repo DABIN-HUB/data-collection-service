@@ -6,6 +6,9 @@ import com.wangbin.collector.core.cache.service.TelemetryStreamMetrics;
 import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -23,8 +26,16 @@ import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TelemetryPipelineBackpressureTest {
+
+    private final CollectionTaskGuard guard = new CollectionTaskGuard();
+    private final AcquisitionRuntimeTracker tracker = new AcquisitionRuntimeTracker(guard);
+    private final ConfigManager configManager = mock(ConfigManager.class);
 
     private ThreadPoolExecutor entryExecutor;
     private ThreadPoolExecutor stageExecutor;
@@ -41,7 +52,6 @@ class TelemetryPipelineBackpressureTest {
         stageExecutor = fixedPool("telemetry-stage", 1, 512);
         SlowStage slowStage = new SlowStage();
         FailingStage failingStage = new FailingStage();
-        CollectionTaskGuard guard = new CollectionTaskGuard();
         CollectorDataPostProcessor processor = new CollectorDataPostProcessor(
                 entryExecutor,
                 new TelemetryPostProcessPipeline(
@@ -49,11 +59,15 @@ class TelemetryPipelineBackpressureTest {
                         stageExecutor,
                         stageExecutor,
                         stageExecutor,
-                        stageExecutor),
+                        stageExecutor,
+                        tracker,
+                        (device, currentGeneration, sampleAt) -> {},
+                        configManager),
                 guard);
         String deviceId = "telemetry-dev";
         long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 6);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> firstRoundValues = partialValues(points);
         Map<String, Object> secondRoundValues = partialValues(points);
 
@@ -88,13 +102,17 @@ class TelemetryPipelineBackpressureTest {
                 Runnable::run,
                 stageExecutor,
                 Runnable::run,
-                Runnable::run);
-        List<DataPoint> points = points("stream-pressure-dev", 4);
+                Runnable::run,
+                tracker,
+                (device, currentGeneration, sampleAt) -> {},
+                configManager);
+        String deviceId = "stream-pressure-dev";
+        long generation = guard.activateNextGeneration(deviceId);
+        List<DataPoint> points = points(deviceId, 4);
+        registerPoints(deviceId, generation, points);
 
         for (DataPoint point : points) {
-            pipeline.process(new TelemetryPostProcessContext(
-                    point.getDeviceId(), point, ProcessResult.success(1, 1), null,
-                    System.currentTimeMillis(), null));
+            pipeline.process(context(point, generation));
         }
 
         assertTrue(streamService.awaitEntered());
@@ -115,13 +133,17 @@ class TelemetryPipelineBackpressureTest {
                 Runnable::run,
                 stageExecutor,
                 Runnable::run,
-                Runnable::run);
-        List<DataPoint> points = points("stream-reject-dev", 5);
+                Runnable::run,
+                tracker,
+                (device, currentGeneration, sampleAt) -> {},
+                configManager);
+        String deviceId = "stream-reject-dev";
+        long generation = guard.activateNextGeneration(deviceId);
+        List<DataPoint> points = points(deviceId, 5);
+        registerPoints(deviceId, generation, points);
 
         for (DataPoint point : points) {
-            pipeline.process(new TelemetryPostProcessContext(
-                    point.getDeviceId(), point, ProcessResult.success(1, 1), null,
-                    System.currentTimeMillis(), null));
+            pipeline.process(context(point, generation));
         }
 
         assertTrue(streamService.awaitEntered());
@@ -132,6 +154,57 @@ class TelemetryPipelineBackpressureTest {
                 pipeline.metrics().stageRejectedCompensatedEvents());
         assertEquals(0L, pipeline.metrics().stageRejectedUncompensatedEvents());
         streamService.release();
+    }
+
+    @Test
+    void blockedDownstreamMustNotHoldDeviceStopGate() throws Exception {
+        entryExecutor = fixedPool("stop-entry", 1, 1);
+        stageExecutor = fixedPool("stop-stream", 1, 1);
+        BlockingStreamService streamService = new BlockingStreamService();
+        TelemetryPostProcessPipeline pipeline = new TelemetryPostProcessPipeline(
+                List.of(new StreamTelemetryPostProcessStage(streamService, new TelemetryStreamProperties())),
+                Runnable::run, stageExecutor, Runnable::run, Runnable::run,
+                tracker, (device, currentGeneration, sampleAt) -> {}, configManager);
+        String deviceId = "downstream-stop-dev";
+        long generation = guard.activateNextGeneration(deviceId);
+        List<DataPoint> points = points(deviceId, 1);
+        registerPoints(deviceId, generation, points);
+        pipeline.process(context(points.get(0), generation));
+        assertTrue(streamService.awaitEntered());
+        try {
+            entryExecutor.submit(() -> guard.clearDevice(deviceId)).get(1, TimeUnit.SECONDS);
+            assertEquals(false, guard.isCurrent(deviceId, generation));
+        } finally {
+            streamService.release();
+        }
+    }
+
+    private TelemetryPostProcessContext context(DataPoint point, long generation) {
+        ProcessResult result = result(1);
+        long sampleAt = ((Number) result.getMetadata(ProcessResultMetadataKeys.COLLECT_TIME)).longValue();
+        return new TelemetryPostProcessContext(point.getDeviceId(), point, result, result,
+                sampleAt, generation, guard, null, false);
+    }
+
+    private void registerPoints(String deviceId, long generation, List<DataPoint> points) {
+        tracker.open(deviceId, generation, points);
+        for (DataPoint point : points) {
+            when(configManager.getDataPointByPointId(deviceId, point.getPointId())).thenReturn(point);
+        }
+        when(configManager.runIfConfigurationCurrent(eq(deviceId), eq(1L), any(Runnable.class)))
+                .thenAnswer(invocation -> {
+                    invocation.getArgument(2, Runnable.class).run();
+                    return true;
+                });
+    }
+
+    private ProcessResult result(Object value) {
+        ProcessResult result = ProcessResult.success(value, value);
+        result.setQuality(100);
+        result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, System.currentTimeMillis());
+        result.addMetadata(ProcessResultMetadataKeys.SOURCE, "POLLING");
+        result.addMetadata(ProcessResultMetadataKeys.CONFIG_VERSION, 1L);
+        return result;
     }
 
     private List<DataPoint> points(String deviceId, int count) {
@@ -150,7 +223,7 @@ class TelemetryPipelineBackpressureTest {
     private Map<String, Object> partialValues(List<DataPoint> points) {
         Map<String, Object> values = new HashMap<>();
         for (int i = 0; i < points.size(); i += 2) {
-            values.put(points.get(i).getPointId(), i);
+            values.put(points.get(i).getPointId(), result(i));
         }
         return values;
     }

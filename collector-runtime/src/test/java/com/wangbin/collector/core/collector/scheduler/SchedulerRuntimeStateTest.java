@@ -56,6 +56,7 @@ class SchedulerRuntimeStateTest {
     @Test
     void commitRunningShouldRequireMatchingStartingGeneration() {
         String deviceId = "dev-generation";
+        runtimeState.requestRunning(deviceId);
         runtimeState.markStartingIfNotActive(deviceId);
         runtimeState.markStartingGeneration(deviceId, 1L);
 
@@ -86,6 +87,36 @@ class SchedulerRuntimeStateTest {
         assertTrue(independentStateChange.get(1, TimeUnit.SECONDS));
         releaseExternalAction.countDown();
         blockedExternalAction.get(1, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void desiredStateDefaultsToStoppedAndLastGenerationSurvivesStop() {
+        org.junit.jupiter.api.Assertions.assertEquals(SchedulerRuntimeState.DesiredState.STOPPED,
+                runtimeState.getDesiredState("dev-intent-a"));
+        assertTrue(runtimeState.requestRunning("dev-intent-a"));
+        runtimeState.markStartingIfNotActive("dev-intent-a");
+        runtimeState.markStartingGeneration("dev-intent-a", 3L);
+        runtimeState.requestStopped("dev-intent-a");
+        runtimeState.removeDevice("dev-intent-a");
+        org.junit.jupiter.api.Assertions.assertEquals(3L, runtimeState.lastGeneration("dev-intent-a"));
+        org.junit.jupiter.api.Assertions.assertEquals(SchedulerRuntimeState.DesiredState.STOPPED,
+                runtimeState.getDesiredState("dev-intent-b"));
+        org.junit.jupiter.api.Assertions.assertEquals(0L, runtimeState.lastGeneration("dev-intent-b"));
+    }
+
+    @Test
+    void shutdownMustRejectMatchingGenerationCommitAndAnyNewStartIntent() {
+        String deviceId = "dev-shutdown-commit";
+        assertTrue(runtimeState.requestRunning(deviceId));
+        runtimeState.markStartingIfNotActive(deviceId);
+        runtimeState.markStartingGeneration(deviceId, 1L);
+        runtimeState.beginShutdown();
+        assertFalse(runtimeState.commitRunning(deviceId, 1L, List.of(task(deviceId, 1L))));
+        assertFalse(runtimeState.requestRunning(deviceId));
+        assertFalse(runtimeState.isRunning(deviceId));
+        org.junit.jupiter.api.Assertions.assertEquals(SchedulerRuntimeState.DesiredState.STOPPED,
+                runtimeState.getDesiredState(deviceId));
+        org.junit.jupiter.api.Assertions.assertEquals(1L, runtimeState.lastGeneration(deviceId));
     }
 
     private DeviceBatchTask task(String deviceId, long generation) {

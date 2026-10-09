@@ -157,11 +157,32 @@ public class PerformanceMonitor implements DeviceDataActivityReporter {
             acquisitionRuntimeTracker.recordDeviceEvent(deviceId, sourceGeneration, collectTime);
         }
     }
+    /** 核心完成后按有效点结算；部分失败计失败批次但保留本代有效样本。 */
+    void recordBatchOutcome(String deviceId, long generation, int validCount, int failedCount,
+                            long executionTime, long sampleAt) {
+        DevicePerformance perf = devicePerformance.get(deviceId);
+        if (perf == null || perf.runtimeGeneration != generation) return;
+        totalProcessedPoints.addAndGet(validCount);
+        perf.totalPoints.addAndGet(validCount);
+        if (validCount > 0 && sampleAt > 0L) perf.recordDataSuccess(generation, sampleAt);
+        if (failedCount > 0 || validCount == 0) {
+            totalFailedBatches.incrementAndGet();
+            perf.recordFailure(generation);
+        } else {
+            totalSuccessfulBatches.incrementAndGet();
+            perf.successfulBatches.incrementAndGet();
+            perf.totalExecutionTime.addAndGet(executionTime);
+            perf.updateResponseTimeHistory(executionTime);
+        }
+    }
+
     void recordBatchSuccess(String deviceId, int pointCount, long executionTime) {
         recordBatchSuccess(deviceId, 0L, pointCount, executionTime);
     }
 
     void recordBatchSuccess(String deviceId, long generation, int pointCount, long executionTime) {
+        DevicePerformance current = devicePerformance.get(deviceId);
+        if (current == null || current.runtimeGeneration != generation) return;
         totalProcessedPoints.addAndGet(pointCount);
         totalSuccessfulBatches.incrementAndGet();
 
@@ -183,6 +204,8 @@ public class PerformanceMonitor implements DeviceDataActivityReporter {
     }
 
     void recordBatchFailure(String deviceId, long generation) {
+        DevicePerformance current = devicePerformance.get(deviceId);
+        if (current == null || current.runtimeGeneration != generation) return;
         totalFailedBatches.incrementAndGet();
 
         DevicePerformance perf = devicePerformance.computeIfAbsent(
