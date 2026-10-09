@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-09-02 13:52:11 +0800
+更新时间：2026-10-09（设备配置页独立优化）
 
 ## 当前状态
 
@@ -12,6 +12,7 @@
 - Phase 1 ~ Phase 17：全部完成并通过验证。
 - `collector-desktop` 前端架构重构：已完成。
 - 不创建 Phase 18；后续优化作为独立任务重新确认范围。
+- 2026-10-09 独立优化：设备配置页 Frontend Design 实现、静态检查、构建、真实后端只读交互及最终截图复核已完成，状态为 `READY FOR USER VISUAL REVIEW`；最终效果待用户确认。范围与验证边界见文末。
 
 ## Baseline 验证结果
 
@@ -1397,3 +1398,52 @@ Smoke 验证后已停止临时 Headless Chrome、Vite dev server 和 mock backen
 - 后续独立优化建议：真实后端 / 真实设备联调、Element Plus bundle 优化、`@vueuse/core` PURE warning 跟踪、compatibility CSS variable 渐进收敛、coverage 体系、Prettier 独立格式化窗口。
 
 Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架构重构正式结束。
+
+## 独立优化：设备配置页 Frontend Design（2026-10-09）
+
+本次不新增 Phase 18，不改变已完成的架构重构结论。按用户“开始修改，使用 Frontend Design 优化页面，业务逻辑和接口调用要正确”的要求，只优化设备配置工作台。
+
+### 范围与实现
+
+- `DeviceOperationShell.vue`：仅配置分区启用 `config-workspace`，整合设备标题、基础信息和辅助操作；控制页、影子页仍保留原侧栏布局。
+- `DeviceConfigPanel.vue`：运行状态集中展示，协议配置按需展开，点位表格与只读详情并列，选中行高亮，窄窗口下详情移至表格下方。
+- `ProtocolDynamicForm.vue` / `protocol-form-utils.ts`：新增配置页可选完整标签展示，保留已知中文映射；原紧凑标签函数签名及其他调用方默认行为不变。
+- 长数值和时间戳采用单行省略及完整内容悬浮提示，不截断原始数据、不改变精度；协议表单末组占满可用宽度，桌面四列、窄窗口两列。
+- 协议连接仍来源于真实 Schema，设备状态仍由共享 `deviceStore` 提供，未修改后端 API、DTO、共享状态、全局主题、Electron Main/Preload 或依赖。
+- 修正点位详情“查看实时”与表格“写入”动作的混用：读写点位也可从详情进入实时查询，表格写入仍沿用既有命令分区提示。
+
+### 业务调用链检查
+
+- 协议配置读取保持 `getProtocol` + `getDeviceConfigBundle`。
+- 保存仍以同一个 Bundle 的 `configVersion` 作为 `baseVersion`，先校验后提交；409 不自动重读重提，保留错误提示和当前草稿。
+- 读请求继续保留设备/协议上下文、latest-request ownership、设备 epoch 校验及卸载失效处理。
+- 启动/停止继续通过 View 调用 `deviceStore.startSmart/stop`，不改本地设备启动路由或运行状态语义。
+- 实时/历史跳转仍携带实际 `deviceId` 和 `pointRef`，未用名称替代稳定点位标识。
+
+### 已执行验证（无测试）
+
+| 命令 | 结果 |
+|---|---|
+| `npm run lint` | 退出 0 |
+| `npm run stylelint` | 退出 0 |
+| `npm run typecheck` | 退出 0 |
+| `npm run build` | 退出 0，renderer / Electron 构建通过 |
+| `npm run build:web` | 退出 0，静态页面资源同步到后端源码目录 |
+
+未新增、修改或运行测试；未运行含测试的 `quality` / `verify`。构建仍提示既有 `@vueuse/core` PURE annotation 和 Element Plus 大 chunk warning，未扩大为依赖/性能优化。
+
+### 真实只读联调与视觉检查
+
+- 使用已构建的 Electron renderer 和现有客户端授权连接真实后端，未读取、输出或导出令牌。
+- 实际设备 `pf_modbus_tcp_fanuc-cnc`：Bundle、协议详情、实时数据和正确的 `/api/device/{deviceId}/runtime` 返回 HTTP 200；配置及运行快照业务码为 200，实时数据包含 16 个点位，运行快照为 `ONLINE` / `ready=true`。
+- 已实际操作：点位选择、分页（第二页 6 行）、编辑器打开/收起、点位/实时/告警/日志切换、详情实时与历史跳转、控制页与影子页导航。
+- 控制/影子分区不带 `config-workspace`，仍显示原侧栏；本次观察期间无 `pageerror`。
+- 1600×1000、1440×900、1280×800、1024×768 的文档和配置工作区无横向溢出，协议分组/字段无横向溢出；表格内部横向滚动为列宽保护措施。
+- 悬浮已验证显示完整原始值，未为了设计而四舍五入。独立截图审查指出的长值断行、标签截断及末组空白已修正；最新 1600×1000 实际页面及协议展开截图经最终像素复核，未见必须修正的遮挡、断行或无意义空白块，状态为 `READY FOR USER VISUAL REVIEW`，不代表用户已接受。
+
+### 未执行及发布边界
+
+- 未提交真实协议配置保存、点位保存、启动/停止、清理缓存、同步或删除，避免改变现有采集环境；写路径仅完成调用链和类型检查，不宣称写入闭环已验证。
+- Web 构建资源已同步到 `collector-boot/src/main/resources/static/desktop`；实查 9090 页面仍引用旧入口脚本，与最新构建不同。未重新打包/重启运行中的后端，不宣称现有 JAR 已加载新版页面。
+- 本次临时设计服务、Vite 和 Electron 验证进程已清理；4311、5173、9341 端口已关闭，9090 原后端仍在运行。
+- 本次不执行 Git 提交或推送；保留任务开始前的其他工作区修改。

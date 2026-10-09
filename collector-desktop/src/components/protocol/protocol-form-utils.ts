@@ -149,6 +149,11 @@ export function displayGroupName(name: string): string {
   return GROUP_LABELS[key] || inferGroupName(key);
 }
 
+export function displayFullProtocolFieldLabel(field: ProtocolFieldConfig): string {
+  const label = String(field.label || "").trim();
+  return FIELD_LABELS[normalizeKey(field.name)] || FIELD_LABELS[normalizeKey(label)] || label || field.name;
+}
+
 export function displayProtocolFieldLabel(field: ProtocolFieldConfig): string {
   const byName = FIELD_LABELS[normalizeKey(field.name)];
   if (byName) {

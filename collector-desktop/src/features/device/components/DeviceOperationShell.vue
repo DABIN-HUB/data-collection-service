@@ -1,13 +1,16 @@
 <template>
-  <section id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
+  <section id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel" :class="{ 'config-workspace': activeTab === 'config' }">
+    <nav v-if="activeTab === 'config'" class="config-breadcrumb" aria-label="当前位置">
+      <button type="button" @click="backToDeviceList">设备管理</button><span aria-hidden="true">/</span><span>设备配置</span>
+    </nav>
     <div class="local-editor-title">
       <div>
-        <span class="label-chip">设备配置</span>
+        <span v-if="activeTab !== 'config'" class="label-chip">设备配置</span>
         <h3>{{ selectedDeviceName }}</h3>
         <p>{{ selectedDeviceId || "从设备管理列表选择设备" }} · {{ selectedDeviceProtocol }} · {{ deviceAddress(deviceStore.selectedDevice) }}</p>
       </div>
       <div class="local-editor-title-actions">
-        <div class="local-editor-stats">
+        <div v-if="activeTab !== 'config'" class="local-editor-stats">
           <div class="local-editor-stat"><strong>{{ selectedOperationStatus }}</strong><span>运行状态</span></div>
           <div class="local-editor-stat"><strong>{{ deviceStore.selectedDevice?.collectionInterval || "-" }}</strong><span>采集周期 ms</span></div>
           <div class="local-editor-stat"><strong>{{ realtimePreviewRows.length }}</strong><span>{{ previewStatusText }}</span></div>
@@ -18,18 +21,21 @@
 
     <div class="local-editor-tabs" role="tablist" aria-label="设备操作工作台分区">
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'config' }" @click="openWorkbenchTab('config')">
-        <span>01</span><strong>工作台</strong><small>点位、实时和日志</small>
+        <template v-if="activeTab === 'config'"><strong>设备配置工作台</strong></template>
+        <template v-else><span>01</span><strong>工作台</strong><small>点位、实时和日志</small></template>
       </button>
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'control' }" @click="openWorkbenchTab('control')">
-        <span>02</span><strong>批量和协议命令</strong><small>单点、批量和协议命令</small>
+        <template v-if="activeTab === 'config'"><strong>批量和协议命令</strong></template>
+        <template v-else><span>02</span><strong>批量和协议命令</strong><small>单点、批量和协议命令</small></template>
       </button>
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'shadow' }" @click="openWorkbenchTab('shadow')">
-        <span>03</span><strong>设备影子</strong><small>reported、desired、delta</small>
+        <template v-if="activeTab === 'config'"><strong>设备影子</strong></template>
+        <template v-else><span>03</span><strong>设备影子</strong><small>reported、desired、delta</small></template>
       </button>
     </div>
 
     <div class="local-editor-layout">
-      <aside class="local-editor-rail device-operation-rail">
+      <aside v-if="activeTab !== 'config'" class="local-editor-rail device-operation-rail">
         <div>
           <span class="label-chip">当前设备</span>
           <strong>{{ selectedDeviceName }}</strong>
@@ -50,6 +56,19 @@
       </aside>
 
       <div class="local-editor-body device-operation-body">
+        <div v-if="activeTab === 'config'" class="config-overview">
+          <dl class="config-overview-fields">
+            <div><dt>设备分组</dt><dd>{{ deviceStore.selectedDevice?.displayGroup || '未分组' }}</dd></div>
+            <div><dt>配置来源</dt><dd>{{ deviceStore.selectedDevice?.configSource || 'local' }}</dd></div>
+            <div><dt>采集周期</dt><dd>{{ deviceStore.selectedDevice?.collectionInterval ?? '-' }} ms</dd></div>
+          </dl>
+          <div class="config-overview-actions">
+            <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新配置</button>
+            <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">运行状态</button>
+            <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">告警历史</button>
+            <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理缓存</button>
+          </div>
+        </div>
         <slot :device-id="selectedDeviceId" :device="deviceStore.selectedDevice" :realtime-preview-rows="realtimePreviewRows" />
       </div>
     </div>
@@ -624,6 +643,174 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 
   .device-operation-panel .local-editor-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+/* 配置页独立布局，不改变控制页与影子页的共享外壳。 */
+.device-operation-panel.config-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  padding: 16px 28px 20px;
+  flex-direction: column;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.config-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.config-breadcrumb button {
+  min-height: 24px;
+  padding: 0;
+  color: var(--console-text-muted);
+  border: 0;
+  background: transparent;
+}
+
+.config-workspace .local-editor-title {
+  min-height: 86px;
+  padding: 12px 0 18px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+}
+
+.config-workspace .local-editor-title h3 {
+  margin: 0;
+  overflow: visible;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.config-workspace .local-editor-title p {
+  margin-top: 6px;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.config-workspace .local-editor-tabs {
+  min-height: 40px;
+  padding: 0;
+  flex-shrink: 0;
+  gap: 28px;
+  background: transparent;
+}
+
+.config-workspace .local-editor-tab {
+  min-height: 40px;
+  padding: 0 0 12px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.config-workspace .local-editor-tab strong {
+  color: var(--console-text-muted);
+  font-weight: 400;
+}
+
+.config-workspace .local-editor-tab.is-active strong {
+  color: var(--console-text-secondary);
+  font-weight: 600;
+}
+
+.config-workspace .local-editor-tab.is-active::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  height: 2px;
+  background: var(--console-primary-hover);
+  content: "";
+}
+
+.config-workspace .local-editor-layout {
+  display: block;
+  flex: 1 0 auto;
+  overflow: visible;
+}
+
+.config-workspace .device-operation-body {
+  padding: 0;
+  overflow: visible;
+}
+
+.config-overview,
+.config-overview-fields,
+.config-overview-fields > div,
+.config-overview-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.config-overview {
+  min-height: 58px;
+  padding: 10px 0;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-overview-fields {
+  margin: 0;
+  gap: 12px 24px;
+  font-size: 12px;
+}
+
+.config-overview-fields > div {
+  gap: 10px;
+}
+
+.config-overview-fields dt {
+  color: var(--console-text-muted);
+}
+
+.config-overview-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.config-overview-actions {
+  gap: 8px;
+}
+
+.config-overview-actions button {
+  min-height: 30px;
+  font-size: 12px;
+}
+
+.config-workspace button:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .device-operation-panel.config-workspace {
+    padding: 14px;
+  }
+
+  .config-workspace .local-editor-title {
+    flex-wrap: wrap;
+  }
+
+  .config-workspace .local-editor-tabs {
+    gap: 20px;
   }
 }
 </style>

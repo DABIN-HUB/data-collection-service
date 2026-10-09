@@ -1,111 +1,64 @@
 <template>
   <section class="local-editor-pane device-config-workbench-pane">
     <template v-if="device">
-      <section class="local-section-card device-info-card">
-        <div class="local-section-head">
-          <div>
-            <span class="label-chip">设备基础</span>
-            <h3>设备基础信息</h3>
-          </div>
-          <span class="status-dot-text" :class="statusToneClass(deviceStatusText)"><i></i>{{ deviceStatusText }}</span>
-        </div>
-        <div class="device-info-grid">
-          <div class="field-card"><span>设备名称</span><strong>{{ device.displayName }}</strong></div>
-          <div class="field-card"><span>本地设备 ID</span><strong>{{ device.normalizedId }}</strong></div>
-          <div class="field-card"><span>设备分组</span><strong>{{ device.displayGroup || '未分组' }}</strong></div>
-          <div class="field-card"><span>协议类型</span><strong>{{ device.displayProtocol }}</strong></div>
-          <div class="field-card"><span>IP / 主机</span><strong>{{ device.ipAddress || device.host || '-' }}</strong></div>
-          <div class="field-card"><span>端口</span><strong>{{ device.port || '-' }}</strong></div>
-          <div class="field-card"><span>采集周期</span><strong>{{ device.collectionInterval || '-' }} ms</strong></div>
-          <div class="field-card"><span>配置来源</span><strong>{{ device.configSource || 'local' }}</strong></div>
+      <section class="local-section-card run-control-card" aria-label="设备运行状态">
+        <div class="runtime-heading"><h3>运行状态</h3><span>设备当前运行态</span></div>
+        <dl class="control-status-row">
+          <div class="state-pill"><dt>生命周期</dt><dd :class="statusToneClass(runtimeView.lifecycle)"><i></i>{{ runtimeView.lifecycle }}</dd></div>
+          <div class="state-pill"><dt>传输 / 协议</dt><dd>{{ runtimeView.transportProtocol }}</dd></div>
+          <div class="state-pill"><dt>采集健康</dt><dd :class="statusToneClass(runtimeView.health)">{{ runtimeView.health }}</dd></div>
+          <div class="state-pill"><dt>最近有效数据</dt><dd>{{ runtimeView.lastValid }}</dd></div>
+        </dl>
+        <div class="run-control-actions">
+          <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
+          <el-button type="primary" :disabled="savingConnection" @click="$emit('start', device.normalizedId)">启动采集</el-button>
+          <el-button type="danger" plain :disabled="savingConnection" @click="$emit('stop', device.normalizedId)">停止采集</el-button>
         </div>
       </section>
-
-      <div class="device-control-grid control-row">
-        <section class="connection-test-card local-section-card run-control-card">
-          <div class="local-section-head">
-            <div>
-              <span class="label-chip">运行控制</span>
-              <h3>运行控制</h3>
-            </div>
-            <p>读取当前设备运行态、连接状态和最近消息。</p>
-          </div>
-          <div class="control-status-row">
-            <div class="state-pill"><span>生命周期</span><strong :class="statusToneClass(connectionStatusText)"><i></i>{{ connectionStatusText }}</strong></div>
-            <div class="state-pill"><span>传输 / 协议</span><strong :class="statusToneClass(connectionHealthText)"><i></i>{{ connectionHealthText }}</strong></div>
-            <div class="state-pill state-pill-message"><span>最近消息</span><strong>{{ connectionMessage || runtimeView.reason || '状态未知' }}</strong></div>
-            <div class="header-actions run-control-actions">
-              <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
-              <el-button type="primary" :disabled="savingConnection" @click="$emit('start', device.normalizedId)">启动采集</el-button>
-              <el-button type="danger" plain :disabled="savingConnection" @click="$emit('stop', device.normalizedId)">停止采集</el-button>
-            </div>
-          </div>
-        </section>
-
-        <section class="local-section-card quick-nav-card">
-          <div class="local-section-head">
-            <div>
-              <span class="label-chip">快捷导航</span>
-              <h3>快捷导航</h3>
-            </div>
-          </div>
-          <div class="workbench-jump-row quick-actions">
-            <button type="button" @click="setActiveTab('points')">点位</button>
-            <button type="button" @click="setActiveTab('realtime')">实时</button>
-            <button type="button" @click="setActiveTab('alarm')">告警</button>
-            <button type="button" @click="setActiveTab('log')">日志</button>
-          </div>
-        </section>
+      <div class="runtime-note" role="status">
+        <span>{{ runtimeView.points }}</span>
+        <span v-if="runtimeView.reason">最近消息：{{ runtimeView.reason }}</span>
       </div>
-
-      <p>采集健康：{{ runtimeView.health }} · {{ runtimeView.points }} · 最近有效：{{ runtimeView.lastValid }}</p>
       <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
       <details class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
         <summary>
-          <span>高级协议连接配置</span>
-          <small>字段校验通过 · {{ connectionMessage || '连接参数按需展开' }}</small>
+          <span>协议连接配置</span>
+          <el-tag v-if="protocolSchema" size="small" effect="plain">{{ protocolSchema.title || protocolSchema.protocol }}</el-tag>
+          <small :class="protocolValidationTone">{{ protocolValidationText }}</small>
         </summary>
-        <div class="schema-head">
-          <div>
-            <span class="label-chip">协议连接</span>
-            <h3>协议连接配置</h3>
-            <p>字段由后端协议 Schema 动态生成，保存时按字段定义写入连接配置。</p>
-          </div>
-          <div class="schema-toolbar">
-            <el-button :loading="protocolLoading" @click="loadProtocolConfig">读取连接配置</el-button>
-            <el-button @click="showDiff">查看配置差异</el-button>
-            <el-button type="primary" :loading="savingConnection" @click="saveProtocolConfig">保存协议配置</el-button>
-          </div>
-        </div>
         <el-alert v-if="protocolError" :title="protocolError" type="warning" :closable="false" />
         <div v-if="protocolSchema" class="protocol-capability-strip">
-          <el-tag effect="plain">{{ protocolSchema.title || protocolSchema.protocol }}</el-tag>
           <el-tag :type="capabilityTag(protocolSchema.implementationState)" effect="light">实现：{{ protocolSchema.implementationState || '-' }}</el-tag>
           <el-tag :type="capabilityTag(protocolSchema.writeCapability)" effect="light">写入：{{ protocolSchema.writeCapability || '-' }}</el-tag>
           <el-tag :type="capabilityTag(protocolSchema.subscriptionCapability)" effect="light">订阅：{{ protocolSchema.subscriptionCapability || '-' }}</el-tag>
         </div>
-        <ProtocolDynamicForm v-model="protocolModel" :fields="protocolFields" @validate="protocolErrors = $event" />
+        <ProtocolDynamicForm v-if="protocolSchema" v-model="protocolModel" :fields="protocolFields" full-field-labels @validate="protocolErrors = $event" />
         <div class="schema-actions">
-          <el-tag v-if="protocolErrors.length === 0" type="success" effect="light">字段校验通过</el-tag>
-          <el-tag v-else type="warning" effect="light">{{ protocolErrors.length }} 个字段待完善</el-tag>
-          <span v-if="connectionMessage" class="schema-message">{{ connectionMessage }}</span>
+          <div class="schema-message"><span>保存更新协议连接配置；点位修改请在点位编辑中保存。</span><span v-if="connectionMessage" role="status">{{ connectionMessage }}</span></div>
+          <div class="schema-toolbar">
+            <el-button :loading="protocolLoading" :disabled="savingConnection" @click="loadProtocolConfig">读取连接配置</el-button>
+            <el-button @click="showDiff">查看配置差异</el-button>
+            <el-button type="primary" :loading="savingConnection" :disabled="protocolLoading || !configBundle || !protocolSchema" @click="saveProtocolConfig">保存协议配置</el-button>
+          </div>
         </div>
       </details>
 
       <section class="local-section-card device-data-panel">
         <div class="device-data-topline">
-          <div class="device-inner-tabbar" role="tablist" aria-label="设备运行数据分区">
+          <nav class="device-inner-tabbar" aria-label="设备运行数据分区">
             <button
               v-for="tab in dataTabs"
               :key="tab.key"
               type="button"
               class="device-inner-tab"
               :class="{ 'is-active': activeTab === tab.key }"
+              :aria-current="activeTab === tab.key ? 'page' : undefined"
               @click="setActiveTab(tab.key)"
             >
               {{ tab.label }}
+              <span v-if="tab.key === 'points'" class="tab-count">{{ pointRows.length }}</span>
             </button>
-          </div>
+          </nav>
           <div class="schema-toolbar data-toolbar">
             <el-button :loading="workbenchRowsLoading" @click="loadWorkbenchRows">刷新数据</el-button>
             <el-button @click="pointEditVisible = !pointEditVisible">{{ pointEditVisible ? '收起编辑' : '编辑点位' }}</el-button>
@@ -116,22 +69,22 @@
 
         <template v-if="activeTab === 'points'">
           <div class="point-data-meta-row">
-            <span>共 {{ pointRows.length }} 条</span>
-            <span>页大小：{{ pageSize }} 条/页</span>
-            <span>设备：{{ device.normalizedId }}</span>
+            <span>共 {{ pointRows.length }} 个点位</span>
+            <span>当前设备：{{ device.normalizedId }}</span>
+            <span v-if="selectedWorkbenchPoint" class="selected-point-label">已选择 {{ selectedWorkbenchPoint.pointName || selectedWorkbenchPoint.pointCode }}</span>
           </div>
           <div class="point-content point-data-grid">
             <div class="point-data-table-column table-area">
               <div class="table-scroll">
-                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" border class="industrial-point-table" highlight-current-row @row-click="selectWorkbenchPoint">
+                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" :row-key="pointRowKey" :row-class-name="pointRowClassName" class="industrial-point-table" highlight-current-row empty-text="暂无点位运行数据，可刷新数据或打开点位编辑查看配置" @row-click="selectWorkbenchPoint">
                   <el-table-column prop="pointCode" label="点位编码" min-width="140" />
                   <el-table-column prop="pointName" label="点位名称" min-width="140" />
                   <el-table-column prop="address" label="地址" min-width="96" />
                   <el-table-column prop="dataType" label="数据类型" width="96" />
                   <el-table-column prop="readWrite" label="读写" width="68" />
-                  <el-table-column label="当前值" min-width="110"><template #default="{ row }">{{ displayPointValue(row) }}</template></el-table-column>
+                  <el-table-column label="当前值" min-width="130" show-overflow-tooltip><template #default="{ row }">{{ displayPointValue(row) }}</template></el-table-column>
                   <el-table-column label="质量" width="92"><template #default="{ row }"><span class="quality-dot" :class="qualityToneClass(row)"><i></i>{{ qualityText(row) }}</span></template></el-table-column>
-                  <el-table-column label="时间戳" min-width="150"><template #default="{ row }">{{ formatPointTime(row) }}</template></el-table-column>
+                  <el-table-column label="时间戳" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ formatPointTime(row) }}</template></el-table-column>
                   <el-table-column label="操作" width="78" fixed="right"><template #default="{ row }"><button type="button" class="table-link-button" @click.stop="handlePointAction(row)">{{ pointActionText(row) }}</button></template></el-table-column>
                 </el-table>
               </div>
@@ -150,24 +103,24 @@
             </div>
             <aside class="compact-point-detail">
               <div class="compact-detail-head">
-                <span class="label-chip">点位详情</span>
+                <h3>点位详情</h3>
                 <button type="button" @click="pointEditVisible = !pointEditVisible">{{ pointEditVisible ? '收起' : '完整编辑' }}</button>
               </div>
               <template v-if="selectedWorkbenchPoint">
                 <strong>{{ selectedWorkbenchPoint.pointName || selectedWorkbenchPoint.pointCode || '未命名点位' }}</strong>
-                <p>{{ selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointId || '-' }} · {{ selectedWorkbenchPoint.address || '-' }}</p>
-                <div class="compact-detail-grid">
-                  <label>点位名称<input :value="selectedWorkbenchPoint.pointName || '-'" readonly /></label>
-                  <label>点位编码<input :value="selectedWorkbenchPoint.pointCode || '-'" readonly /></label>
-                  <label>地址<input :value="selectedWorkbenchPoint.address || '-'" readonly /></label>
-                  <label>数据类型<input :value="selectedWorkbenchPoint.dataType || '-'" readonly /></label>
-                  <label>读写<input :value="selectedWorkbenchPoint.readWrite || '-'" readonly /></label>
-                  <label>当前值<input :value="displayPointValue(selectedWorkbenchPoint)" readonly /></label>
-                  <label>质量<input :value="qualityText(selectedWorkbenchPoint)" readonly /></label>
-                  <label>时间戳<input :value="formatPointTime(selectedWorkbenchPoint)" readonly /></label>
+                <p>{{ selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointId || '-' }}</p>
+                <div class="point-value-display">
+                  <div><span>当前值</span><span class="quality-dot" :class="qualityToneClass(selectedWorkbenchPoint)"><i></i>{{ qualityText(selectedWorkbenchPoint) }}</span></div>
+                  <strong>{{ displayPointValue(selectedWorkbenchPoint) }}<small v-if="selectedWorkbenchPoint.unit">{{ selectedWorkbenchPoint.unit }}</small></strong>
                 </div>
+                <dl class="compact-detail-grid">
+                  <dt>地址</dt><dd>{{ selectedWorkbenchPoint.address || '-' }}</dd>
+                  <dt>数据类型</dt><dd>{{ selectedWorkbenchPoint.dataType || '-' }}</dd>
+                  <dt>读写权限</dt><dd>{{ selectedWorkbenchPoint.readWrite || '-' }}</dd>
+                  <dt>更新时间</dt><dd>{{ formatPointTime(selectedWorkbenchPoint) }}</dd>
+                </dl>
                 <div class="compact-detail-actions">
-                  <button type="button" @click="handlePointAction(selectedWorkbenchPoint)">查看实时</button>
+                  <button type="button" @click="openPointRealtime(selectedWorkbenchPoint)">查看实时</button>
                   <button type="button" @click="$emit('open-history', { deviceId: device.normalizedId, pointRef: String(selectedWorkbenchPoint.pointId || selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.address || ''), pointName: selectedWorkbenchPoint.pointName, pointLabel: selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointName })">查看历史</button>
                 </div>
               </template>
@@ -222,6 +175,7 @@ import {
   shouldCommitDeviceProtocolSave
 } from "@/features/device/utils/device-request-lifecycle";
 import type { DeviceViewModel } from "@/types/device";
+import type { DeviceConfigBundleResponse } from "@/types/config";
 import type { RealtimePointRow } from "@/types/monitor";
 import type { ProtocolSchema } from "@/types/protocol";
 import { createLatestRequestOwner } from "@/features/request/utils/latest-request-owner";
@@ -256,7 +210,7 @@ const protocolLoading = ref(false);
 const savingConnection = computed(() => deviceStore.isDeviceOperating(props.device?.normalizedId || ""));
 const protocolError = ref("");
 const connectionMessage = ref("");
-const configBundle = ref<{ configVersion: number; device?: any; connection?: any; points?: any[] } | null>(null);
+const configBundle = ref<DeviceConfigBundleResponse | null>(null);
 const diffVisible = ref(false);
 const diffText = ref("{}");
 const statusDetail = ref<DeviceStatusDetail | null>(null);
@@ -287,9 +241,15 @@ const runtimeView = computed(() => {
   return runtimePresentation(deviceStore.runtimeMap[id] || props.device?.runtime || statusDetail.value || undefined,
     Boolean(deviceStore.runtimeErrors[id] || props.device?.runtimeStale));
 });
-const connectionStatusText = computed(() => runtimeView.value.lifecycle);
-const connectionHealthText = computed(() => runtimeView.value.transportProtocol);
-const deviceStatusText = computed(() => runtimeView.value.lifecycle);
+const currentProtocolErrors = computed(() => validateProtocolModel(protocolFields.value, protocolModel.value));
+const protocolValidationText = computed(() => {
+  if (protocolLoading.value) return "正在读取连接配置";
+  if (protocolError.value) return "配置待处理，展开查看";
+  if (!protocolSchema.value || !configBundle.value) return "连接配置尚未读取";
+  if (!protocolFields.value.length) return "当前协议暂无连接字段";
+  return currentProtocolErrors.value.length ? `${currentProtocolErrors.value.length} 个字段待完善` : "字段校验通过";
+});
+const protocolValidationTone = computed(() => protocolError.value || currentProtocolErrors.value.length ? "is-warning" : protocolSchema.value && configBundle.value && !protocolLoading.value && protocolFields.value.length ? "is-success" : "is-muted");
 
 async function loadProtocolConfig() {
   const requestContext = currentProtocolConfigContext();
@@ -538,13 +498,13 @@ function setActiveTab(tab: DeviceDataTab) {
 
 function statusToneClass(value?: string): string {
   const normalized = String(value || "").toUpperCase();
-  if (["ONLINE", "RUNNING", "正常", "在线"].includes(normalized) || String(value || "").includes("正常")) {
+  if (["ONLINE", "RUNNING", "正常", "在线", "运行中", "在线健康", "健康"].includes(normalized)) {
     return "is-success";
   }
-  if (["ERROR", "异常", "离线", "OFFLINE"].includes(normalized)) {
-    return normalized === "ERROR" || normalized === "异常" ? "is-danger" : "is-muted";
+  if (["ERROR", "异常", "离线", "OFFLINE", "失败", "运行失败", "不健康"].includes(normalized)) {
+    return normalized === "离线" || normalized === "OFFLINE" ? "is-muted" : "is-danger";
   }
-  if (["CONNECTING", "重连中", "WARNING"].includes(normalized)) {
+  if (["CONNECTING", "重连中", "WARNING", "启动中", "连接中", "等待首采", "采集降级", "降级", "在线部分有效", "在线无有效数据"].includes(normalized)) {
     return "is-warning";
   }
   return "is-muted";
@@ -597,15 +557,19 @@ function pointActionText(row: RealtimePointRow): string {
 }
 
 function handlePointAction(row: RealtimePointRow) {
+  if (pointActionText(row) === "写入") {
+    ElMessage.info("请切换到批量和协议命令执行写入操作");
+    return;
+  }
+  openPointRealtime(row);
+}
+
+function openPointRealtime(row: RealtimePointRow) {
   if (!props.device) {
     return;
   }
   const pointRef = String(row.pointId || row.pointCode || row.address || "");
   if (!pointRef) {
-    return;
-  }
-  if (pointActionText(row) === "写入") {
-    ElMessage.info("请切换到批量和协议命令执行写入操作");
     return;
   }
   emit("open-realtime", {
@@ -618,6 +582,10 @@ function handlePointAction(row: RealtimePointRow) {
 
 function selectWorkbenchPoint(row: RealtimePointRow) {
   selectedWorkbenchPoint.value = row;
+}
+
+function pointRowClassName({ row }: { row: RealtimePointRow }): string {
+  return selectedWorkbenchPoint.value && pointRowKey(row) === pointRowKey(selectedWorkbenchPoint.value) ? "is-selected-point" : "";
 }
 
 watch(activeTab, (tab) => {
@@ -677,215 +645,120 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .local-section-card {
   min-width: 0;
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel);
+  border-radius: var(--console-radius-lg);
   background: var(--console-panel);
 }
 
-.device-info-card,
-.connection-test-card,
-.quick-nav-card,
-.protocol-schema-card,
-.device-data-panel {
-  padding: 10px 12px;
-}
-
-.local-section-head,
-.schema-head,
-.device-data-topline {
+.run-control-card {
   display: flex;
-  min-width: 0;
+  min-height: 90px;
+  padding: 16px 18px;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
-.local-section-head,
-.schema-head {
-  margin-bottom: 8px;
+.runtime-heading {
+  flex: 0 0 auto;
 }
 
-.local-section-head h3,
-.schema-head h3 {
-  margin: 0;
-  color: var(--console-text-primary);
+.runtime-heading h3 {
+  margin: 0 0 6px;
   font-size: 14px;
-  line-height: 1.2;
+  font-weight: 600;
 }
 
-.local-section-head p,
-.schema-head p,
-.schema-message {
-  margin: 0;
-  color: var(--console-text-muted);
-  font-size: 12px;
-}
-
-.run-control-card .local-section-head p,
-.quick-nav-card .local-section-head p {
-  display: none;
-}
-
-.label-chip {
-  display: inline-flex;
-  min-height: 20px;
-  padding: 2px 7px;
-  align-items: center;
-  border-radius: 999px;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.18);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.device-info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.field-card,
-.state-pill {
-  display: grid;
-  min-width: 0;
-  min-height: 44px;
-  padding: 7px 9px;
-  gap: 3px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
-}
-
-.field-card span,
-.state-pill span,
-.compact-detail-grid label {
+.runtime-heading span,
+.state-pill dt {
   color: var(--console-text-muted);
   font-size: 11px;
-  line-height: 1.15;
-}
-
-.field-card strong,
-.state-pill strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--console-text-secondary);
-  font-size: 13px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-dot-text,
-.state-pill strong,
-.quality-dot {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-dot-text i,
-.state-pill strong i,
-.quality-dot i {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.device-control-grid.control-row {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
-  gap: 12px;
-  align-items: stretch;
-  grid-auto-rows: minmax(92px, auto);
-}
-
-.run-control-card,
-.quick-nav-card {
-  display: flex;
-  min-height: 92px;
-  max-height: 105px;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0;
-}
-
-.run-control-card .label-chip,
-.quick-nav-card .label-chip {
-  display: none;
 }
 
 .control-status-row {
   display: flex;
-  width: 100%;
   min-width: 0;
+  margin: 0;
+  flex: 1 1 480px;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  flex-wrap: nowrap;
+  gap: 14px 24px;
+  flex-wrap: wrap;
 }
 
 .state-pill {
-  flex: 0 0 118px;
-  width: 118px;
-  height: 44px;
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  flex: 1 1 auto;
 }
 
-.state-pill-message {
-  flex-basis: 130px;
-  width: 130px;
+.state-pill dd {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.state-pill i,
+.quality-dot i {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.runtime-note {
+  display: flex;
+  margin: -3px 2px 2px;
+  gap: 6px 20px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-control-actions,
+.schema-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .run-control-actions {
-  display: flex;
-  width: auto;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  flex-wrap: nowrap;
+  margin-left: auto;
 }
 
-.quick-actions,
-.workbench-jump-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.quick-actions button {
-  width: 100%;
-  min-height: 30px;
-  height: 30px;
-  padding: 0 8px;
+.run-control-actions :deep(.el-button + .el-button),
+.schema-toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .protocol-config-collapse {
   min-height: 0;
   padding: 0;
   overflow: hidden;
-  border-radius: var(--console-radius-panel);
-  background: var(--console-panel);
 }
 
 .protocol-config-collapse > summary {
   display: flex;
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 52px;
+  padding: 12px 18px;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  color: var(--console-text-secondary);
-  border-radius: var(--console-radius-panel);
   cursor: pointer;
   list-style: none;
 }
@@ -902,154 +775,203 @@ onBeforeUnmount(() => {
 
 .protocol-config-collapse[open] > summary {
   border-bottom: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel) var(--console-radius-panel) 0 0;
-  background: var(--console-bg-soft);
 }
 
 .protocol-config-collapse[open] > summary::after {
   content: "收起";
 }
 
-.protocol-config-collapse > summary span {
+.protocol-config-collapse > summary > span:first-child {
   color: var(--console-text-primary);
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .protocol-config-collapse > summary small {
   margin-left: auto;
-  color: var(--console-text-muted);
   font-size: 11px;
+  text-align: right;
 }
 
-.protocol-config-collapse[open] > .schema-head,
 .protocol-config-collapse[open] > .protocol-capability-strip,
 .protocol-config-collapse[open] > .dynamic-form,
 .protocol-config-collapse[open] > .schema-actions,
 .protocol-config-collapse[open] > .el-alert {
-  margin: 10px 12px;
+  margin: 14px 18px;
+}
+
+.protocol-capability-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .protocol-config-collapse :deep(.dynamic-form) {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 16px;
-  row-gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 28px;
   align-items: start;
 }
 
-.protocol-config-collapse :deep(.protocol-field-group),
+.protocol-config-collapse :deep(.protocol-field-group) {
+  min-width: 0;
+}
+
+.protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd)) {
+  grid-column: 1 / -1;
+}
+
+.protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd) .protocol-form-grid) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.protocol-config-collapse :deep(.dynamic-form > .el-alert) {
+  grid-column: 1 / -1;
+}
+
 .protocol-config-collapse :deep(.protocol-form-grid) {
-  display: contents;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .protocol-config-collapse :deep(.protocol-field-group h4) {
+  margin-bottom: 12px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.protocol-config-collapse :deep(.protocol-field-group h4::before) {
   display: none;
 }
 
 .protocol-config-collapse :deep(.protocol-field-row) {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  min-height: 30px;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+}
+
+.protocol-config-collapse :deep(.protocol-field-label) {
+  overflow: visible;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .protocol-config-collapse :deep(.protocol-field-row.is-wide) {
-  grid-column: span 2;
+  grid-column: 1 / -1;
 }
 
-.protocol-config-collapse :deep(.protocol-field-control .el-input),
-.protocol-config-collapse :deep(.protocol-field-control .el-input-number),
-.protocol-config-collapse :deep(.protocol-field-control .el-select) {
-  width: 100%;
+.schema-actions {
+  display: flex;
+  padding-top: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--console-border-soft);
+  flex-wrap: wrap;
+}
+
+.schema-message {
+  display: grid;
+  gap: 5px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .device-data-panel {
   display: flex;
   min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .device-data-topline {
-  min-height: 36px;
-  margin-bottom: 10px;
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  padding: 0 18px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--console-border-soft);
+  flex-wrap: wrap;
 }
 
 .device-inner-tabbar {
   display: inline-flex;
-  min-height: 34px;
-  padding: 3px;
+  min-height: 54px;
   align-items: center;
-  gap: 4px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
+  gap: 24px;
 }
 
 .device-inner-tab {
-  min-height: 28px;
-  padding: 0 11px;
+  position: relative;
+  min-height: 54px;
+  padding: 0;
   color: var(--console-text-muted);
-  border-color: transparent;
-  border-radius: var(--console-radius-sm);
+  border: 0;
+  border-radius: 0;
   background: transparent;
-  font-size: 12px;
+  font-size: 13px;
 }
 
-.device-inner-tab:hover {
-  color: var(--console-text-secondary);
-  border-color: var(--console-border-active);
-}
-
+.device-inner-tab:hover,
 .device-inner-tab.is-active {
-  color: #fff;
-  border-color: var(--console-primary);
-  background: var(--console-primary);
+  color: var(--console-text-secondary);
+  background: transparent;
 }
 
-.data-toolbar,
-.schema-toolbar,
-.schema-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: nowrap;
+.device-inner-tab.is-active::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--console-primary-hover);
+  content: "";
 }
 
-.protocol-capability-strip,
+.tab-count {
+  margin-left: 5px;
+  padding: 1px 5px;
+  color: var(--console-info-text);
+  border-radius: var(--console-radius-sm);
+  background: var(--app-color-info-soft);
+  font-size: 10px;
+}
+
 .point-data-meta-row {
   display: flex;
-  min-width: 0;
+  min-height: 42px;
+  padding: 10px 18px;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.point-data-meta-row {
-  min-height: 24px;
-  margin: 0 0 8px;
+  gap: 8px 18px;
   color: var(--console-text-muted);
   font-size: 11px;
-  line-height: 1.2;
+  line-height: 1.5;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
-.point-content,
+.selected-point-label {
+  margin-left: auto;
+  color: var(--console-info-text);
+}
+
 .point-data-grid {
   display: grid;
+  min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 285px;
   align-items: stretch;
 }
 
-.point-data-table-column,
-.table-area {
+.point-data-table-column {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -1063,175 +985,220 @@ onBeforeUnmount(() => {
   overflow: auto;
 }
 
-.table-scroll > .industrial-point-table {
-  min-width: 100%;
+.industrial-point-table {
+  font-size: 12px;
 }
 
-.industrial-point-table {
-  overflow: hidden;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
+.industrial-point-table :deep(.el-table__cell) {
+  padding: 10px 0;
+}
+
+.industrial-point-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.industrial-point-table :deep(.el-table__row.is-selected-point) {
+  --el-table-tr-bg-color: var(--app-color-info-soft);
+}
+
+.industrial-point-table :deep(.is-selected-point td:first-child) {
+  box-shadow: inset 3px 0 var(--console-primary-hover);
 }
 
 .quality-dot {
-  font-size: 12px;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
 }
 
 .table-link-button {
   min-height: 24px;
   padding: 0;
-  color: #93c5fd;
+  color: var(--console-info-text);
   border: 0;
   background: transparent;
 }
 
 .industrial-pagination-row {
   display: flex;
-  min-height: 34px;
-  margin-top: 6px;
-  padding: 4px 8px;
+  min-height: 44px;
+  padding: 10px 18px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   color: var(--console-text-muted);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
+  border-top: 1px solid var(--console-border-soft);
+  font-size: 11px;
+  flex-wrap: wrap;
 }
 
 .compact-point-detail {
-  width: 300px;
-  max-width: 300px;
   min-width: 0;
   min-height: 0;
-  padding: 10px;
-  align-self: stretch;
-  overflow: auto;
+  padding: 0 18px 18px;
   color: var(--console-text-secondary);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel);
-  background: var(--console-bg-soft);
+  border-left: 1px solid var(--console-border-soft);
 }
 
 .compact-detail-head,
 .compact-detail-actions {
   display: flex;
-  margin-bottom: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compact-detail-head {
+  margin-bottom: 16px;
+}
+
+.compact-detail-head h3 {
+  margin: 0;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.compact-detail-head button {
+  min-height: 24px;
+  padding: 0;
+  color: var(--console-info-text);
+  border: 0;
+  background: transparent;
 }
 
 .compact-point-detail > strong {
   display: block;
-  overflow: hidden;
   color: var(--console-text-primary);
-  font-size: 13px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .compact-point-detail > p {
-  margin: 3px 0 8px;
-  overflow: hidden;
+  margin: 4px 0 16px;
   color: var(--console-text-muted);
   font-size: 11px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .compact-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  margin: 18px 0;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 12px 10px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.compact-detail-grid label {
+.compact-detail-grid dt {
+  color: var(--console-text-muted);
+}
+
+.compact-detail-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.point-value-display {
+  padding: 14px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-md);
+  background: var(--console-bg-soft);
+}
+
+.point-value-display > div {
   display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--console-text-muted);
+  font-size: 11px;
 }
 
-.compact-detail-grid input {
-  width: 100%;
-  height: 30px;
-  min-height: 30px;
-  padding: 0 7px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.point-value-display > strong {
+  display: block;
+  margin-top: 12px;
+  color: var(--console-text-primary);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.point-value-display small {
+  margin-left: 8px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .compact-detail-actions {
-  justify-content: flex-end;
-  margin: 9px 0 0;
+  margin: 18px 0 0;
+  justify-content: flex-start;
 }
 
 .embedded-point-editor {
   max-height: 420px;
-  margin-top: 10px;
-  padding-top: 10px;
+  margin: 0 18px 18px;
+  padding-top: 14px;
   overflow: auto;
   border-top: 1px solid var(--console-border-soft);
 }
 
-@media (max-width: 1600px) {
-  .protocol-config-collapse :deep(.dynamic-form) {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+.device-config-workbench-pane button:focus-visible,
+.protocol-config-collapse > summary:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 3px;
 }
 
-@media (max-width: 1440px) {
-  .device-info-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .point-content,
+@media (max-width: 1100px) {
   .point-data-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .compact-point-detail {
-    width: 100%;
-    max-width: none;
+    padding-top: 18px;
+    border-top: 1px solid var(--console-border-soft);
+    border-left: 0;
   }
 
   .protocol-config-collapse :deep(.dynamic-form) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd) .protocol-form-grid) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 1280px) {
-  .run-control-card,
-  .quick-nav-card {
-    max-height: none;
-  }
-
-  .device-control-grid.control-row {
-    grid-template-columns: 1fr;
-  }
-
-  .control-status-row,
-  .device-data-topline,
-  .industrial-pagination-row {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .state-pill,
-  .state-pill-message {
-    width: 100%;
-    flex-basis: auto;
+@media (max-width: 760px) {
+  .control-status-row {
+    display: grid;
+    flex-basis: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .run-control-actions {
-    width: 100%;
-    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .device-data-topline {
+    padding-bottom: 12px;
+  }
+
+  .device-inner-tabbar {
+    gap: 18px;
+  }
+
+  .protocol-config-collapse > summary {
     flex-wrap: wrap;
+  }
+
+  .protocol-config-collapse > summary small {
+    margin-left: 0;
   }
 }
 </style>

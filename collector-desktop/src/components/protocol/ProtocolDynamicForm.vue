@@ -59,6 +59,7 @@ import { computed, ref, watch } from "vue";
 import {
   buildProtocolInitialModel,
   displayGroupName,
+  displayFullProtocolFieldLabel,
   displayProtocolFieldLabel,
   groupProtocolFields,
   isWideProtocolField,
@@ -70,6 +71,7 @@ import type { ProtocolFieldConfig } from "@/types/protocol";
 const props = defineProps<{
   fields: ProtocolFieldConfig[];
   modelValue?: ProtocolFormModel;
+  fullFieldLabels?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -91,7 +93,7 @@ function updateField(name: string, value: string | number | boolean | null) {
 }
 
 function displayFieldLabel(field: ProtocolFieldConfig): string {
-  return displayProtocolFieldLabel(field);
+  return props.fullFieldLabels ? displayFullProtocolFieldLabel(field) : displayProtocolFieldLabel(field);
 }
 
 function fieldPlaceholder(field: ProtocolFieldConfig): string {
