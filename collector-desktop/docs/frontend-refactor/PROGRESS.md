@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-10-09（设备配置页独立优化）
+更新时间：2026-10-09（已确认协议连接目标图生产实施与 Frontend Design 监工）
 
 ## 当前状态
 
@@ -13,6 +13,8 @@
 - `collector-desktop` 前端架构重构：已完成。
 - 不创建 Phase 18；后续优化作为独立任务重新确认范围。
 - 2026-10-09 独立优化：设备配置页 Frontend Design 实现、静态检查、构建、真实后端只读交互及最终截图复核已完成，状态为 `READY FOR USER VISUAL REVIEW`；最终效果待用户确认。范围与验证边界见文末。
+- 2026-10-09 新增独立优化：按已展示 Frontend Design 方案实现批量和协议命令、设备影子；首次监工指出的四项样式问题已修正并通过真实渲染尺寸检查，五项门禁重新通过。二次监工已确认代码 / DOM 修正，但当时截图读取能力受限，独立像素复核尚未完成，不能标记操作页视觉通过；本轮不重新验收操作页。
+- 2026-10-09 协议连接独立实施：已按用户确认的 EtherNet/IP 完整目标图完成生产修改，新增工作台专用 Schema 表单和110字段展示尺寸，旧本地设备编辑表单不变。前期、实施中和最终 Frontend Design 均实际读取截图像素；必须修正项已闭环，最终独立监工为 `PASS`（所附截图像素复核 + 五协议三宽度运行记录核验），六项静态/构建门禁通过。不是整页逐像素完全相同、业务写入验证或用户最终验收；未部署运行中旧JAR，不新增 Phase 18。
 
 ## Baseline 验证结果
 
@@ -1447,3 +1449,106 @@ Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架�
 - Web 构建资源已同步到 `collector-boot/src/main/resources/static/desktop`；实查 9090 页面仍引用旧入口脚本，与最新构建不同。未重新打包/重启运行中的后端，不宣称现有 JAR 已加载新版页面。
 - 本次临时设计服务、Vite 和 Electron 验证进程已清理；4311、5173、9341 端口已关闭，9090 原后端仍在运行。
 - 本次不执行 Git 提交或推送；保留任务开始前的其他工作区修改。
+
+## 独立优化：控制 / 设备影子实现与协议连接设计（2026-10-09）
+
+### 范围与 Frontend Design 监督
+
+- 用户明确授权直接实现“批量和协议命令”“设备影子”，沿用已经展示的设备影子设计体系；协议连接配置必须先给整体多协议设计，确认前不实施。
+- 实施范围保存于 `.hermes/plans/device-operations-frontend-design.md`；共享 Shell 只统一设备标题、标签、基础上下文与运行态，未扩展到全局导航、主题、依赖、后端 API/DTO 或 Electron Main/Preload。
+- `ControlPanel.vue`：单点 / 批量 / 协议命令本地标签，左编辑右结果；批量 JSON 格式化及只读预览，结果目标、时间、写入、读回与逐字段返回分开；预览和逐字段结果每页 12 项，完整 JSON 保留。
+- `ShadowPanel.vue`：当前快照的 reported / 已保存 desired / delta 字段对照，右侧独立期望状态草稿，底部历史；完整值详情、原始 JSON、导出与读取动作保留。字段每页 20 项、历史每页 10 条，仅限制显示，不截断完整快照或导出。
+- `DeviceOperationShell.vue`：三个分区共用配置工作台层级，移除控制 / 影子重复侧栏；传输连接与协议就绪使用明确布尔运行快照，不从缓存点位或 running 推断连接正常 / ONLINE。
+- 真实截图检查发现 16 个 reported 字段使影子表格区域达到 820px，推动历史与编辑区失衡；已为状态表格设置 320px 内部滚动、历史表格设置 280px 内部滚动，未减少真实字段或用演示数据替换。
+- 首次独立 Frontend Design 监工没有放行操作页，指出编辑器实际高度未生效、轻量文字动作出现按钮边框、控制结果栏比例不符和历史空态首列折行四项问题。已定位现有全局 / 宿主样式的覆盖关系，仅修复三个组件的局部 scoped 规则，没有扩展全局覆盖层。
+- 修正后批量 JSON 编辑区实际为 185px、命令编辑区 244px，均不可拖拽；desired 编辑区 1600 / 1440 / 1280 宽度为 230px，1024 宽度为 190px。面包屑、分区标签、操作模式、格式化、字段名、原始内容和清理期望状态等轻量动作实际无边框 / 透明背景；真正操作按钮和键盘焦点保留。
+- 控制结果栏宽度实际为 330px、列间距 16px；影子历史空态仍为 `colspan="4"`，修复全局 flex 覆盖后实际 `display: table-cell`、1600 宽度横跨 1312px。真实空历史仍显示“暂无影子历史”，没有补造示例记录。
+- 最后源码修正后已重新执行完整允许门禁，明确 reload 到新入口 `index-vUGtNvUj.js`，等待实际 CNC 内容加载后重拍 1600 / 1440 / 1280 / 1024 图片。二次独立监工已返回：当前 CSS 与真实 DOM 记录支持四项修正，但未能读取 PNG 像素，结论为 `NOT READY — 独立像素复核尚未完成`；这不是新增页面缺陷，也不能写成无视觉问题。
+
+### 保留的业务与异步边界
+
+- 控制继续调用 `writeDevicePoint` / `writeDevicePoints` / `executeDeviceCommand`，保持原参数、确认框、captured target 与 `ONLINE && ready && connected` 禁用条件；右侧最近完成结果以 `actionResult.target` 归属，不伪装成当前选中设备结果。
+- 写入成功与读回成功分别解释；批量部分成功按实际汇总 / 逐字段返回展示；协议命令没有统一执行成功字段时只显示请求完成与原始结果。
+- 影子继续复用三个独立读 owner、版本注入、409 草稿保留和设备切换 reset。新增卸载失效与写目标 generation 校验；成功写返回会废弃较早的 current-shadow 读取，防止旧快照覆盖新版本。
+- 字段对照仅来自当前影子的同一 `state` 快照，不混合独立 delta 查询版本；独立 delta 另显示版本和原始 JSON，不同版本明确提示不合并。
+- 已保存 desired 的摘要不统计 JSON 草稿；缺失 / 0 / null / false 分别显示。保存期望状态不等于设备已执行，也不等于云端已确认。
+
+### 最后源码修改后已执行验证（无测试）
+
+| 命令 | 结果 |
+|---|---|
+| `npm run lint` | 退出 0 |
+| `npm run stylelint` | 退出 0 |
+| `npm run typecheck` | 退出 0 |
+| `npm run build` | 退出 0，renderer / Electron 构建通过 |
+| `npm run build:web` | 退出 0，58 个静态文件同步到后端源码目录 |
+| `git diff --check` | 退出 0 |
+
+未新增、修改或运行测试；未执行包含测试的 quality / verify。保留既有 PURE annotation 和 Element Plus 大 chunk warning，不扩大依赖或性能治理范围。
+
+### 真实后端只读与新构建截图
+
+- 临时 Electron 使用刚构建的 `dist/renderer/index.html`，通过现有授权桥接查询，不提取、输出或保存凭据。
+- 实际设备 `pf_modbus_tcp_fanuc-cnc`：runtime / current shadow / delta / history 均 HTTP 200、业务码 200；运行快照为 ONLINE、ready=true、connected=true；影子 reported 16、desired 0、delta 0、历史 0。版本随真实采集推进，不将截图版本当作固定业务值。
+- 已操作：三种控制模式切换、草稿保留、批量 JSON 格式化保持值一致、影子读取全部、字段完整值、原始 JSON、独立 delta 展开；从 CNC 切到 `pf_ab_pf_proto_ethernet_ip` 后单点草稿清空。
+- 1600 / 1440 / 1280 / 1024 宽度的新构建页面均无文档 / Shell 横向溢出；窄窗口左右面板自然堆叠，表格内部滚动保留列宽与完整值；配置相邻路由仍能加载并显示字段校验通过。
+- 最后修正后的影子状态面板高度约 571px、内部表格高度 320px；16 个真实字段全部保留。当前 16 个字段和空历史未触发字段 / 历史分页，不把静态分页检查宣称为真实多页联调。
+- 两轮真实只读观察均无 pageerror；未提交控制写入、命令、desired 保存 / 清理、缓存清理、设备启停或导出。
+- 新截图与只读记录位于 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/device-operations-frontend-design/`。以最新 `actual-*-final-repair-*.png`、`control-repair-render.json`、`shadow-repair-render.json` 为本轮修正的证据，旧 `actual-*-final-*.png` 保留为首次监工前的历史，不用旧图证明修正完成。
+- 最新截图无文档 / Shell 横向溢出、无 pageerror；另补 1600×1400 影子完整内容图与 1024×768 实际滚到底部图，核对历史及下方操作可达。修正后再次只读访问相邻配置工作台，确认字段校验通过、无文档横向溢出及 pageerror。
+
+### 协议连接配置：当轮仅设计、等待确认（历史，已被下述授权实施更新）
+
+- 主稿 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/protocol-connection-unified-design/protocol-layout.html`，自包含可切换 HTML；真实 Provider 字段来源记录于相邻 `design-notes.md` / `schema-snapshot.json`。
+- 代表协议为 Modbus TCP（12 字段）、EtherNet/IP（13）、OPC UA（35）、MQTT（35）、Modbus RTU（15）。它们是布局代表性覆盖，不是全部协议支持或连接联调声明。
+- 统一外壳、纵向 Schema 分组与自适应字段网格；完整标签上置，端点 / 路由 / 对象等长字段占整行，高级参数逐步展开，条件要求保留，安全字段统一脱敏。
+- 已用真实 Chrome 从现有独立 HTTP 服务加载，HTTP 200；5 协议 × 1600 / 1280 / 1024 宽度共 15 组合，文档 / 面板 / 分组网格无横向溢出，完整标签未裁切，无 pageerror、无业务接口请求。
+- 已演示高级分组展开 / 收起、字段标识显示及保存确认 / 取消；确认只给演示反馈，不写后端、设备或浏览器持久化存储。所有输入为演示占位，安全信息为 `[REDACTED]`。
+- `DeviceConfigPanel.vue`、`ProtocolDynamicForm.vue`、`protocol-form-utils.ts` 的生产协议布局本轮不改；未来仍必须消费协议 Schema，而不是把原型五协议集合做成业务白名单。
+- 协议提案独立监工确认代表 Schema 与 HTML 内嵌字段一致，没有必须修正的视觉阻断项，状态为 `READY FOR USER DESIGN CONFIRMATION`。这是等待用户确认的设计稿，不代表生产保存、连接、全部协议或用户验收已完成。
+
+### 当前待复核与发布边界
+
+- 操作页二次监工只完成代码 / DOM 复核，独立像素复核受工具能力阻塞。已尝试隔离的只读截图对照窗口，桌面捕获未成功，不将失败的尝试伪称通过。最新真实截图和只读对照入口交用户查看，最终视觉确认仍未完成。
+- 只读对照入口为 `http://127.0.0.1:4311/device-operations-frontend-design/visual-review.html`，只展示已有 PNG，不连接业务 API；协议设计入口为 `http://127.0.0.1:4311/protocol-connection-unified-design/protocol-layout.html#ETHERNET_IP`。
+- Web 构建同步源码资源不等于运行中后端 JAR 已部署新版，未重启原后端。
+- 不提交 / 推送，保留任务开始前的仿真器及其他无关修改。已关闭本轮临时 Electron，隔离截图窗口也已退出；9341 / 9342 均关闭，9090 原后端和 4311 只读设计预览仍可访问。没有重启后端或清理用户其他进程。
+
+## 2026-10-09 独立优化：已确认协议连接目标图生产实施
+
+### 授权、实施与影响面
+
+- 用户确认 `ethernet-ip-final-target-1600.png` 并明确授权开始修改，要求 Frontend Design 全程监工和最终通过；此前“生产协议表单不变、等待确认”仅描述历史设计轮，不再代表当前状态。
+- 实施计划：`.hermes/plans/protocol-workbench-approved-design.md`。仅替换设备配置工作台中央协议连接展开区；未修改后端、业务 API / DTO / Schema / storage、Main / Preload、依赖或测试，未新增 Phase 18。
+- 新增 `src/features/protocol/components/WorkbenchProtocolForm.vue`：真实 Schema 分组默认纵向全展开，内容定宽、左对齐自然换行；数字 / 布尔 / 多行文本沿原 model 和验证契约，密码遮罩，未知枚举保留。对象和遗嘱文本保持既有 string 边界，不声称新增 JSON / requiredWhen 校验。
+- 新增 `src/features/protocol/utils/connection-field-presentation.ts`：五种代表协议110字段展示尺寸和标签；未知协议、新增字段按真实类型 / 选项 / 输入语义回退，不设协议白名单，不把像素宽度转成 maxlength / 范围。
+- `DeviceConfigPanel.vue` 接入专用表单，device+protocol key 隔离设备切换；完整说明、条件及能力通过协议徽章详情可达。保留 owner / configSession / baseVersion / CAS、读取 / 差异 / 保存处理。旧 `ProtocolDynamicForm.vue` 和本地设备编辑消费者不变。
+
+### Frontend Design 实施中监工与修正
+
+- 前期监工已实际读取已确认目标PNG像素，给出控件尺寸、纵向分组、宿主CSS赢者和同协议设备生命周期约束。
+- 实施中独立像素监工指出运行卡过高、协议徽章被宿主原生按钮覆盖、字段计数位置和底部截图证据不完整；未把该轮结果伪称 PASS。
+- 已修正运行卡为72px及紧凑状态项 / 标题分隔线、徽章23px / 11px / 常规字重、计数右对齐，底部非主操作透明背景和13px字体；保存是否启用仍由真实业务条件决定。
+- 最终独立 Frontend Design 监工 `deleg_a6db8f58` 已实际读取目标图和所附末次生产截图像素，结论 `PASS`，未发现新的必须修正项。运行卡、徽章、计数、分组密度、窄宽、底部操作和点位可达的必修项均通过。
+- 通过范围：所附 EtherNet/IP 完整图 / 1600底图 / 1024上下图及 MQTT1280 / OPC UA1280 / HTTP1024上图的独立像素复核，另核验五协议三宽度权威运行记录。Modbus及未附图组合仅为记录核验，未冒称逐张像素审查；不是整页逐像素完全一致、业务测试或用户最终验收。
+- 允许差异：真实设备名、地址、路由、运行状态、宿主导航与真实五点位，敏感字段遮罩，协议卡相对目标下移11.625px及完整图更高。监工确认不应为了空态示例隐藏真实数据。
+
+### 末次允许门禁与真实只读核查
+
+| 项目 | 结果 |
+|---|---|
+| `npm run lint` / `npm run stylelint` | 均退出0 |
+| `npm run typecheck` | 退出0 |
+| `npm run build` / `npm run build:web` | 均退出0，Web源码同步57文件 |
+| `git diff --check` | 退出0 |
+
+- 未创建、修改或运行测试，未调用包含测试的 quality / verify。既有 PURE annotation / vendor chunk warning 保留。
+- 临时 Electron 加载新构建 `index-BfV_1SPx.js`、`DeviceWorkbenchView-C9C5tX2r.js`，每条目标路由显式 reload 后截图，通过既有授权桥接只读真实后端，不提取凭据。
+- 真实 EtherNet/IP13 / Modbus TCP12 / MQTT36 / OPC UA36 / HTTP34 字段；MQTT与OPC UA的新增 `subscriptionFallbackStrategy` 来自当前真实 Schema，走展示回退，不隐藏。HTTP证明五协议清单不是支持白名单。当前无真实 Modbus RTU 设备，未宣称其运行联调。
+- 5协议×1600 / 1280 / 1024宽度共15组合，文档 / 表单 / 分组无横向溢出，无 pageerror；真实textarea为85px、resize=vertical，端口112px、槽位104px、输入35px、开关32×18px。全部组合滚动到底可见点位区。
+- 共31张末次截图：每组合上下各一张，另补EtherNet/IP1600×1800完整工作台。目标PNG为1600×1284，生产更高图保留真实5点位，不拼接或伪造目标空态；匹配原1600×1100的上下截图补齐内部滚动证据。
+- 同协议EtherNet/IP设备A→B实际只读切换重置组折叠状态；协议详情13项和整体折叠后字段不可见已核查。未实际保存、启停、清理、写点位、执行协议命令或提交desired。
+- 最终权威证据：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/protocol-connection-unified-design/production-final-runtime-settled.json` 和 `production-final-*.png`。在真实ready和CSS转场结束后捕获，15组合保存按钮均启用且computed为蓝色；不使用转场初瞬间的灰色作为最终颜色。
+- 截图中凭据 / 连接串 / 敏感对象使用深蓝遮罩，未将 `[REDACTED]` 写入生产model。
+- 运行中9090仍服务 `index-D3SQcMKX.js`，与新构建不同；本轮源码Web同步不等于旧JAR已部署，不重启用户后端。未提交 / 推送，保留原工作树无关修改。
+- 交付前已关闭本轮自有临时Electron，实际复查9341无监听；9090原后端与4311设计预览保留。最终文档更新后 `git diff --check` 退出0。签核与交付摘要为相邻scratch `production-frontend-design-signoff.md`；最终视觉确认留给用户。

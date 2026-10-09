@@ -20,19 +20,23 @@
         <span v-if="runtimeView.reason">最近消息：{{ runtimeView.reason }}</span>
       </div>
       <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
-      <details class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
+      <details :key="`${device.normalizedId}:${protocolKey}`" class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse" open>
         <summary>
           <span>协议连接配置</span>
-          <el-tag v-if="protocolSchema" size="small" effect="plain">{{ protocolSchema.title || protocolSchema.protocol }}</el-tag>
+          <button v-if="protocolSchema" type="button" class="protocol-name-badge" title="查看协议说明与能力" @click.stop.prevent="protocolDetailsVisible = true">{{ protocolSchema.title || protocolSchema.protocol }}</button>
+          <span v-if="protocolSchema" class="protocol-field-count">{{ protocolFields.length }} 个连接字段</span>
           <small :class="protocolValidationTone">{{ protocolValidationText }}</small>
         </summary>
         <el-alert v-if="protocolError" :title="protocolError" type="warning" :closable="false" />
-        <div v-if="protocolSchema" class="protocol-capability-strip">
-          <el-tag :type="capabilityTag(protocolSchema.implementationState)" effect="light">实现：{{ protocolSchema.implementationState || '-' }}</el-tag>
-          <el-tag :type="capabilityTag(protocolSchema.writeCapability)" effect="light">写入：{{ protocolSchema.writeCapability || '-' }}</el-tag>
-          <el-tag :type="capabilityTag(protocolSchema.subscriptionCapability)" effect="light">订阅：{{ protocolSchema.subscriptionCapability || '-' }}</el-tag>
-        </div>
-        <ProtocolDynamicForm v-if="protocolSchema" v-model="protocolModel" :fields="protocolFields" full-field-labels @validate="protocolErrors = $event" />
+        <WorkbenchProtocolForm
+          v-if="protocolSchema"
+          :key="`${device.normalizedId}:${protocolKey}`"
+          v-model="protocolModel"
+          :fields="protocolFields"
+          :protocol="protocolSchema.protocol"
+          :disabled="protocolLoading || savingConnection"
+          @validate="protocolErrors = $event"
+        />
         <div class="schema-actions">
           <div class="schema-message"><span>保存更新协议连接配置；点位修改请在点位编辑中保存。</span><span v-if="connectionMessage" role="status">{{ connectionMessage }}</span></div>
           <div class="schema-toolbar">
@@ -142,6 +146,22 @@
       <el-dialog v-model="diffVisible" title="配置差异" width="720px" class="device-operation-dialog">
         <pre class="json-view">{{ diffText }}</pre>
       </el-dialog>
+      <el-dialog v-model="protocolDetailsVisible" title="协议说明与能力" width="720px" class="device-operation-dialog">
+        <template v-if="protocolSchema">
+          <p class="protocol-description">{{ protocolSchema.description || '当前协议未提供额外说明。' }}</p>
+          <div class="protocol-capability-strip">
+            <el-tag :type="capabilityTag(protocolSchema.implementationState)" effect="light">实现：{{ protocolSchema.implementationState || '-' }}</el-tag>
+            <el-tag :type="capabilityTag(protocolSchema.writeCapability)" effect="light">写入：{{ protocolSchema.writeCapability || '-' }}</el-tag>
+            <el-tag :type="capabilityTag(protocolSchema.subscriptionCapability)" effect="light">订阅：{{ protocolSchema.subscriptionCapability || '-' }}</el-tag>
+          </div>
+          <dl class="protocol-field-descriptions">
+            <template v-for="field in protocolFields" :key="field.name">
+              <dt>{{ field.label || field.name }}</dt>
+              <dd>{{ field.description || '未提供额外字段说明。' }}<span v-if="field.requiredWhen">条件：{{ field.requiredWhen }}</span></dd>
+            </template>
+          </dl>
+        </template>
+      </el-dialog>
     </template>
     <div v-else class="empty-config">
       <el-empty description="请从左侧设备树或设备列表选择设备" />
@@ -162,7 +182,7 @@ import { normalizeRealtimeRows } from "@/features/realtime/utils/realtime-utils"
 import AlarmTablePanel from "@/components/alarm/AlarmTablePanel.vue";
 import LogPanel from "@/components/log/LogPanel.vue";
 import PointEditor from "@/features/point/components/PointEditor.vue";
-import ProtocolDynamicForm from "@/components/protocol/ProtocolDynamicForm.vue";
+import WorkbenchProtocolForm from "@/features/protocol/components/WorkbenchProtocolForm.vue";
 import RealtimeDataPanel from "@/components/realtime/RealtimeDataPanel.vue";
 import { useDeviceStore } from "@/stores/device.store";
 import { normalizeDeviceStatusDetail, runtimePresentation, type DeviceStatusDetail } from "@/features/diagnostic/utils/device-runtime-utils";
@@ -212,6 +232,7 @@ const protocolError = ref("");
 const connectionMessage = ref("");
 const configBundle = ref<DeviceConfigBundleResponse | null>(null);
 const diffVisible = ref(false);
+const protocolDetailsVisible = ref(false);
 const diffText = ref("{}");
 const statusDetail = ref<DeviceStatusDetail | null>(null);
 const statusLoading = ref(false);
@@ -619,6 +640,7 @@ watch(() => props.device?.normalizedId, () => {
 }, { immediate: true });
 
 watch(() => [props.device?.normalizedId, protocolKey.value], () => {
+  protocolDetailsVisible.value = false;
   protocolConfigOwner.invalidate();
   protocolLoading.value = false;
   resetProtocolReadState();
@@ -658,20 +680,22 @@ onBeforeUnmount(() => {
 
 .run-control-card {
   display: flex;
-  min-height: 90px;
-  padding: 16px 18px;
+  min-height: 72px;
+  padding: 14px 18px;
   align-items: center;
-  gap: 18px;
+  gap: 28px;
   flex-wrap: wrap;
 }
 
 .runtime-heading {
+  padding-right: 25px;
   flex: 0 0 auto;
+  border-right: 1px solid var(--console-border-soft);
 }
 
 .runtime-heading h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 0 0 3px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -685,17 +709,17 @@ onBeforeUnmount(() => {
   display: flex;
   min-width: 0;
   margin: 0;
-  flex: 1 1 480px;
+  flex: 0 1 auto;
   align-items: center;
-  gap: 14px 24px;
+  gap: 16px 32px;
   flex-wrap: wrap;
 }
 
 .state-pill {
   display: grid;
   min-width: 0;
-  gap: 8px;
-  flex: 1 1 auto;
+  gap: 3px;
+  flex: 0 1 auto;
 }
 
 .state-pill dd {
@@ -751,12 +775,14 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  border-color: rgba(82, 121, 166, 0.28);
+  border-radius: 6px;
 }
 
 .protocol-config-collapse > summary {
   display: flex;
-  min-height: 52px;
-  padding: 12px 18px;
+  min-height: 51px;
+  padding: 13px 18px;
   align-items: center;
   gap: 12px;
   cursor: pointer;
@@ -774,7 +800,7 @@ onBeforeUnmount(() => {
 }
 
 .protocol-config-collapse[open] > summary {
-  border-bottom: 1px solid var(--console-border-soft);
+  border-bottom: 1px solid rgba(82, 121, 166, 0.28);
 }
 
 .protocol-config-collapse[open] > summary::after {
@@ -788,16 +814,35 @@ onBeforeUnmount(() => {
 }
 
 .protocol-config-collapse > summary small {
-  margin-left: auto;
   font-size: 11px;
   text-align: right;
 }
 
-.protocol-config-collapse[open] > .protocol-capability-strip,
-.protocol-config-collapse[open] > .dynamic-form,
-.protocol-config-collapse[open] > .schema-actions,
 .protocol-config-collapse[open] > .el-alert {
   margin: 14px 18px;
+}
+
+.device-config-workbench-pane .protocol-config-collapse button.protocol-name-badge {
+  height: 23px;
+  min-height: 23px;
+  padding: 1px 8px;
+  color: #a8b6c8;
+  border: 1px solid #415064;
+  border-radius: 4px;
+  background: #1f2a3b;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.device-config-workbench-pane .protocol-config-collapse button.protocol-name-badge:hover {
+  color: #e2e8f0;
+  background: #24384f;
+}
+
+.protocol-field-count {
+  margin-left: auto;
+  color: var(--console-text-muted);
+  font-size: 11px;
 }
 
 .protocol-capability-strip {
@@ -806,71 +851,48 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
-.protocol-config-collapse :deep(.dynamic-form) {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 28px;
-  align-items: start;
-}
-
-.protocol-config-collapse :deep(.protocol-field-group) {
-  min-width: 0;
-}
-
-.protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd)) {
-  grid-column: 1 / -1;
-}
-
-.protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd) .protocol-form-grid) {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.protocol-config-collapse :deep(.dynamic-form > .el-alert) {
-  grid-column: 1 / -1;
-}
-
-.protocol-config-collapse :deep(.protocol-form-grid) {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.protocol-config-collapse :deep(.protocol-field-group h4) {
-  margin-bottom: 12px;
-  color: var(--console-text-muted);
+.protocol-description {
+  margin: 0 0 12px;
+  color: var(--console-text-secondary);
   font-size: 12px;
-  font-weight: 500;
-}
-
-.protocol-config-collapse :deep(.protocol-field-group h4::before) {
-  display: none;
-}
-
-.protocol-config-collapse :deep(.protocol-field-row) {
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
-  gap: 6px;
-}
-
-.protocol-config-collapse :deep(.protocol-field-label) {
-  overflow: visible;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.5;
-  white-space: normal;
+  line-height: 1.7;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
-.protocol-config-collapse :deep(.protocol-field-row.is-wide) {
-  grid-column: 1 / -1;
+.protocol-field-descriptions {
+  max-height: 50vh;
+  margin: 16px 0 0;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.protocol-field-descriptions dt {
+  margin-top: 12px;
+  color: var(--console-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.protocol-field-descriptions dd {
+  margin: 3px 0 0;
+  color: var(--console-text-muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.protocol-field-descriptions dd span {
+  display: block;
 }
 
 .schema-actions {
   display: flex;
-  padding-top: 12px;
+  padding: 12px 18px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--console-border-soft);
+  gap: 18px;
+  border-top: 1px solid rgba(82, 121, 166, 0.28);
+  background: #172536;
   flex-wrap: wrap;
 }
 
@@ -880,6 +902,15 @@ onBeforeUnmount(() => {
   color: var(--console-text-muted);
   font-size: 11px;
   line-height: 1.6;
+}
+
+.device-config-workbench-pane .protocol-config-collapse .schema-toolbar :deep(.el-button) {
+  padding: 5px 12px;
+  font-size: 13px;
+}
+
+.device-config-workbench-pane .protocol-config-collapse .schema-toolbar :deep(.el-button:not(.el-button--primary, :disabled)) {
+  background: transparent;
 }
 
 .device-data-panel {
@@ -1165,13 +1196,7 @@ onBeforeUnmount(() => {
     border-left: 0;
   }
 
-  .protocol-config-collapse :deep(.dynamic-form) {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
-  .protocol-config-collapse :deep(.protocol-field-group:last-of-type:nth-of-type(odd) .protocol-form-grid) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 760px) {
