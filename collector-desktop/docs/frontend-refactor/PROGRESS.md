@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-10-09（已确认协议连接目标图生产实施与 Frontend Design 监工）
+更新时间：2026-10-10（新建本地临时设备弹窗生产实施与 Frontend Design 附图范围签收完成）
 
 ## 当前状态
 
@@ -15,6 +15,7 @@
 - 2026-10-09 独立优化：设备配置页 Frontend Design 实现、静态检查、构建、真实后端只读交互及最终截图复核已完成，状态为 `READY FOR USER VISUAL REVIEW`；最终效果待用户确认。范围与验证边界见文末。
 - 2026-10-09 新增独立优化：按已展示 Frontend Design 方案实现批量和协议命令、设备影子；首次监工指出的四项样式问题已修正并通过真实渲染尺寸检查，五项门禁重新通过。二次监工已确认代码 / DOM 修正，但当时截图读取能力受限，独立像素复核尚未完成，不能标记操作页视觉通过；本轮不重新验收操作页。
 - 2026-10-09 协议连接独立实施：已按用户确认的 EtherNet/IP 完整目标图完成生产修改，新增工作台专用 Schema 表单和110字段展示尺寸，旧本地设备编辑表单不变。前期、实施中和最终 Frontend Design 均实际读取截图像素；必须修正项已闭环，最终独立监工为 `PASS`（所附截图像素复核 + 五协议三宽度运行记录核验），六项静态/构建门禁通过。不是整页逐像素完全相同、业务写入验证或用户最终验收；未部署运行中旧JAR，不新增 Phase 18。
+- 2026-10-10 本地临时设备弹窗独立实施：已按批准方案落实五个 Tab，业务脚本与 Git 基线一致，62处模板业务绑定保留，六项允许门禁通过。Frontend Design 全程监工发现的问题已闭环，最终18张主/滚动图及4张局部图获得附图范围 `PASS`；“双套箭头”疑点经高清像素核实是计数单位“个”，原缺陷已撤回。最新62张有效截图/65条记录来自 `index-DBqXg9DV.js`，不是62张全部逐图签收或业务验收；当前 `READY FOR USER VISUAL REVIEW`。不新增 Phase 18，不重启或部署旧JAR。
 
 ## Baseline 验证结果
 
@@ -1552,3 +1553,65 @@ Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架�
 - 截图中凭据 / 连接串 / 敏感对象使用深蓝遮罩，未将 `[REDACTED]` 写入生产model。
 - 运行中9090仍服务 `index-D3SQcMKX.js`，与新构建不同；本轮源码Web同步不等于旧JAR已部署，不重启用户后端。未提交 / 推送，保留原工作树无关修改。
 - 交付前已关闭本轮自有临时Electron，实际复查9341无监听；9090原后端与4311设计预览保留。最终文档更新后 `git diff --check` 退出0。签核与交付摘要为相邻scratch `production-frontend-design-signoff.md`；最终视觉确认留给用户。
+
+## 2026-10-10 独立优化：新建本地临时设备弹窗已批准方案生产实施
+
+### 授权与生产范围
+
+- 用户认可完整视觉方案并要求开始生产实施，Frontend Design 前期、实施中和修正后持续监督；实施计划为 `.hermes/plans/local-device-editor-approved-design.md`。
+- 仅修改 `src/features/device/components/LocalDeviceEditor.vue` 模板及局部展示，引入新增 `LocalDeviceEditorIcon.vue`、`LocalDeviceCloudTargetForm.vue`、`LocalDevicePointFieldGrid.vue`、`LocalDeviceProtocolForm.vue`、`local-device-editor.css`；样式通过本弹窗 scoped 入口隔离。
+- 基础连接、点位建模、告警规则、云平台上报、JSON 高级五 Tab 全部沿批准层次组织；固定标题、导航和底栏，主体滚动，Schema 表与 JSON 文本保留必要的独立滚动。短数字和长文本按内容定宽，不为显示增加业务 maxlength 或范围。
+- 旧协议工作台、共享 `ProtocolDynamicForm.vue`、全局主题、导航、后端、依赖与 Electron Main/Preload 不改；不新增 Phase 18。
+
+### 业务和接口保留核对
+
+- 从 Git 基线保存源码至 scratch 后比较，`const props` 至 `</script>` 的业务状态、handlers、watchers、默认值和载荷构建在 CRLF/LF 归一后完全一致；该区 SHA256 为 `cf21d112287a3471952c8d1e541c97a88674a7886c687f75d8935bf615cfcda0`。
+- 原模板 `v-model` 和事件处理绑定共62处，当前仍为62处，各表达式及次数无减少；点位和共享云身份仍编辑原状态对象。
+- 专用动态协议表单沿既有 Schema 分组、options/default/storage/extJson 与 update/validate/watch 契约；真实协议和字段不是原型白名单。
+- 保留 create/update、`overwrite`、`startAfterSave`、会话 generation 和迟到 Schema 隔离；“保存并测试”仍执行原处理，常驻说明明确保存与条件启动，不执行独立连接测试。JSON 草稿与已应用结构、保存边界不变。
+- 真实新建默认一个点位、设备名称空、云关闭；不将参考示例设备、地址或身份写入生产默认值。
+
+### Frontend Design 实施中发现与修正
+
+- 前期实际看批准五图，并形成尺寸、字体、内容定宽、Schema完整性、共享字段及宿主样式约束。
+- 实施中独立监工 `deleg_a8c395b9` 实际查看附件，发现旧 `implementation/` 图片全为 `#09121e`：遮罩 `#app` 的全视口矩形同时盖住 Teleport 弹窗。该批不具备像素验收条件；旧图和其 DOM 记录不能宣称生产视觉通过，也不据此判定生产页面自身空白。
+- 当前捕获改为截图时隐藏背景子树、仅遮罩密码控件；另定位自有 Electron 最小化导致截图等待，在不抢输入焦点的情况下恢复该捕获窗口。没有改生产渲染器/业务状态以制造截图。
+- 修正基础身份网格，使长字段不再受两个145px短控件槽限制；点位概览补真实完整度进度线；告警补副标题和开关/触发预览语义说明；云映射状态加 badge，云关闭仍显示真实状态。
+- 修正 Schema 末行记录为实际 `tbody` 最后一行，并核对整行矩形可见；高视口图重命名 `tall-top`，不冒充完整内部展开长图。
+- 第一轮修正的38张有效截图提交 `deleg_82a04dcb` 六份 Frontend Design 只读像素复核；该轮没有给整窗无条件PASS，后续问题和最终签收见下文。
+
+### 修正后的允许门禁与真实截图
+
+| 项目 | 结果 |
+|---|---|
+| `npm run lint` / `npm run stylelint` | 均退出0 |
+| `npm run typecheck` | 退出0 |
+| `npm run build` / `npm run build:web` | 均退出0；Web源码同步57个文件 |
+| `git diff --check` | 退出0 |
+
+- 未新增、修改或运行测试；未运行包含测试的 quality/verify。保留既有 PURE annotation 和 vendor 大 chunk warning，不扩大依赖/性能治理。
+- 第一轮修正图为 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/local-device-editor-production/repair-visible/`，报告 `render-report.json`；当轮真实 Electron 加载 `index-CjCD_DAg.js`，既有 preload 桥接可用。最终权威图使用下文 `final-visible/`，不沿用此轮入口冒充末次构建。
+- 38张图、41条记录，PNG抽样均有多种颜色；五 Tab 正常高度底部、点位高级末端与告警规则底部可达，footer可见，记录无文档/弹窗/主体/字段网格横向溢出，无 pageerror/console error。
+- 五张 Schema 参考表均 `atEnd=true`、实际末行整行可见：协议 `addressMode`、点位 `remark`、上报 `additionalConfig.eventMinIntervalMs`、告警 `description`、元数据 `cloudTarget`。JSON文本自身滚到底；像素可读性由本轮独立监工另判，不用 DOM 代替像素。
+- 五种代表协议 MODBUS_TCP/ETHERNET_IP/MQTT/OPC_UA/HTTP，以及1280/1024/640宽度下五 Tab记录均来自真实新建未保存草稿，不是业务连接测试。
+- 未保存、启动、停止、清理或写设备，未提交协议命令/desired；未提交/推送。`build:web` 仅同步后端源码静态资源，不等于运行中9090旧JAR已部署；原后端与既有4311设计服务保留。
+
+### 第二轮实际像素问题闭环与最新构建
+
+- `deleg_82a04dcb` 六份监工均实际查看所附图片；云上报、JSON内部末端及相应窄屏/主体底部获得范围PASS，但基础/点位/告警与协议组仍指出四项必须修正，故当轮没有整窗无条件PASS。
+- 已修正点位编辑卡启用标签为原状态对应的绿色；告警触发预览最后的等级标签复用现有 `alarmLevelClass` 配色；专用协议表单的布尔控件给文字独立自然宽度、禁止折行与收缩；弹窗内 Element 数字输入去除原生 spin 外观，只保留原组件的步进按钮。均不改值、handlers、校验或业务状态。
+- 末次生产修改后再次执行 lint、Stylelint、typecheck、Electron build、Web build，均通过；在仓库原 Git 换行配置下 `git diff --check` 退出0。临时关闭 autocrlf 的检查曾将CRLF误判为尾部空格，已撤回该命令参数，未为此重写或格式化生产文件。
+- 最新权威图片/报告在 scratch `local-device-editor-production/final-visible/`：62图、65记录，新入口 `index-DBqXg9DV.js` 与末次构建一致；PNG抽样空白图为0，无记录横溢、pageerror或console error。另有 `final-source-evidence.json` 保存业务区一致、SHA256和62/62绑定核对结果。
+- 点位/告警启用标签computed为 `rgb(129,213,181)` / `rgb(24,61,54)`，警告预览为 `rgb(244,191,123)` / `rgb(66,55,40)`；协议启用/禁用文字均20px高、nowrap；数字输入appearance为textfield。以上仅为DOM证据，最终仍由实际像素签收。
+- 已补1280/1024/640宽度五Tab底部图，15组均主体到底且footer可见；五协议另按主体高度重叠滚动补9段图片，保留动态Schema全部内容，不拿顶部图代替完整下方覆盖。
+- `deleg_60f7ce4e` 使用末次新图进行最终复核时五个代理全部遭HTTP 429配额限制；该批没有PASS，不要求用户重新提交开发请求。后续恢复小批实际像素复核，最终结论见下文。
+
+### 最终 Frontend Design 附图范围签收
+
+- `deleg_02484114` 实际看最终构建图片，确认编辑卡绿色启用标签、琥珀警告预览与 EtherNet/IP 开关单行通过，640协议末端/footer可见；另一份监工对JSON顶部/文档末端、云顶部、点位高级末端、640 JSON底部与HTTP末端给予范围PASS。
+- 数字控件仍被首份监工怀疑有额外箭头，未据DOM强行放行。父代理读取真实单位和控件结构，并采集125/2000/64三个控件原始局部图及nearest-neighbor三倍像素图；未重画控件或删除单位。
+- `deleg_944209bd` 实际查看高清局部及对应整图，确认数字旁符号是中文计数单位“个”，最右侧只有一套上下步进按钮，明确撤回“双套箭头”must-fix；EtherNet/IP真实字段为“单次最大字段数”而非字节数。另一份监工实际逐图确认MQTT和OPC UA上下分组、HTTP顶部的控件定宽、开关单行、安全/条件说明与可见末端通过。
+- 最终签收范围：`final-visual-review-manifest.json` 列出的18张末次主/滚动截图和4张实际局部图；五Tab、代表五协议、重点640底部及必须修正项已纳入实际像素复核。其余生成图片和65条DOM记录是辅助证据，不冒称62张全都逐图像素签收。
+- 状态为 `READY FOR USER VISUAL REVIEW`：所有已识别的must-fix已闭环或凭高清证据撤回，没有遗留未修must-fix；不是整窗每一像素完全一致、业务保存/启动/连接测试、运行中JAR部署或用户最终验收。
+- 最终截图/签收资料及ZIP位于 scratch `local-device-editor-production/`，仅交付末次有效图片，旧纯色 `implementation/` 不打入交付包。不提交或推送，原无关未追踪文件保留。
+- 已关闭本轮自有Electron `proc_6e027fde0432`；2026-10-10 10:07:44 +0800实际复查9342无监听，9090原后端与4311既有设计服务仍监听。未清理用户其他进程，未重启后端；记录为scratch `cleanup-evidence.json`。
