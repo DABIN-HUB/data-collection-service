@@ -1,88 +1,152 @@
 <template>
   <section class="exact-page device-list-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>设备管理</h1>
-        <span class="heading-online"><i></i>{{ filteredDevices.length }} 台设备</span>
+    <header class="device-page-heading">
+      <div class="device-title-block">
+        <div class="device-title-line">
+          <h1>设备管理</h1>
+          <span class="device-count" aria-live="polite">{{ deviceInventoryLabel }}</span>
+        </div>
+        <p class="device-heading-sub">管理本地临时设备与远端同步配置</p>
       </div>
-      <div class="heading-actions">
-        <button type="button" @click="refreshDeviceListContext">刷新列表</button>
-        <button type="button" :disabled="configFileExporting" @click="exportDeviceConfigData">导出配置数据</button>
-        <button type="button" :disabled="configFileImporting" @click="openConfigImportFile">导入配置数据</button>
-        <button type="button" class="primary" @click="openLocalEditor">新增本地设备</button>
+      <div class="device-heading-actions">
+        <button type="button" class="device-button" @click="refreshDeviceListContext"><DeviceListIcon name="refresh" />刷新列表</button>
+        <button type="button" class="device-button" :disabled="configFileExporting" @click="exportDeviceConfigData"><DeviceListIcon name="download" />导出配置数据</button>
+        <button type="button" class="device-button" :disabled="configFileImporting" @click="openConfigImportFile"><DeviceListIcon name="upload" />导入配置数据</button>
+        <button type="button" class="device-button primary" @click="openLocalEditor"><DeviceListIcon name="plus" />新增本地设备</button>
       </div>
+    </header>
+
+    <div class="device-toolbar">
+      <div class="device-filters">
+        <label class="device-search">
+          <DeviceListIcon name="search" />
+          <input v-model="deviceKeyword" type="search" aria-label="搜索设备名称、标识或地址" placeholder="搜索设备名称、标识或地址" />
+        </label>
+        <select v-model="protocolFilter" class="device-protocol-filter" aria-label="协议筛选">
+          <option value="">全部协议</option>
+          <option v-for="protocolItem in protocolStore.protocols" :key="protocolItem.protocol" :value="protocolItem.protocol">
+            {{ protocolItem.title || protocolItem.protocol }}
+          </option>
+        </select>
+        <select v-model="statusFilter" class="device-status-filter" aria-label="状态筛选">
+          <option value="">全部状态</option>
+          <option value="ONLINE">在线</option>
+          <option value="OFFLINE">离线</option>
+          <option value="ERROR">异常</option>
+          <option value="UNKNOWN">未知</option>
+          <option value="STALE">过期</option>
+          <option value="CONNECTING">连接中/等待首采</option>
+        </select>
+      </div>
+      <button type="button" class="device-button" :disabled="deviceStore.syncOperating" @click="syncDevices"><DeviceListIcon name="refresh" />同步远端配置</button>
     </div>
 
-    <div class="exact-page-body">
-      <div class="exact-toolbar">
-        <div class="exact-toolbar-group exact-toolbar-filters">
-          <input v-model="deviceKeyword" type="search" placeholder="搜索设备名称、标识或地址" />
-          <select v-model="protocolFilter">
-            <option value="">全部协议</option>
-            <option v-for="protocolItem in protocolStore.protocols" :key="protocolItem.protocol" :value="protocolItem.protocol">
-              {{ protocolItem.title || protocolItem.protocol }}
-            </option>
-          </select>
-          <select v-model="statusFilter">
-            <option value="">全部状态</option>
-            <option value="ONLINE">在线</option>
-            <option value="OFFLINE">离线</option>
-            <option value="ERROR">异常</option>
-            <option value="UNKNOWN">未知</option>
-            <option value="STALE">过期</option>
-            <option value="CONNECTING">连接中/等待首采</option>
-          </select>
-        </div>
-        <div class="exact-toolbar-group">
-          <button type="button" :disabled="deviceStore.syncOperating" @click="syncDevices">同步远端配置</button>
-        </div>
+    <div v-if="detailError || deviceStore.error || deviceStore.syncError" class="device-error-banner" role="alert">
+      <DeviceListIcon name="alert" /><span>{{ detailError || deviceStore.error || deviceStore.syncError }}</span>
+    </div>
+    <div class="device-register">
+      <div class="device-register-head" aria-hidden="true">
+        <span>设备身份 / 来源</span><span>连接与采集</span><span>运行阶段 / 通信状态</span><span>采集健康 / 有效样本</span><span>操作</span>
       </div>
-
-      <p v-if="detailError || deviceStore.error || deviceStore.syncError" role="alert">{{ detailError || deviceStore.error || deviceStore.syncError }}</p>
-      <div class="exact-device-list">
-        <div v-if="filteredDevices.length === 0" class="exact-empty">{{ deviceListEmptyText }}</div>
+      <div class="device-register-body" @scroll="closeDeviceMenu">
+        <template v-if="filteredDevices.length === 0 && deviceStore.loading && !deviceStore.error">
+          <div class="device-loading-caption" role="status">{{ deviceListEmptyText }}</div>
+          <div v-for="row in 4" :key="row" class="device-skeleton-row" aria-hidden="true">
+            <div v-for="column in 5" :key="column"><i class="device-loading-line"></i><i class="device-loading-line"></i><i class="device-loading-line"></i></div>
+          </div>
+        </template>
+        <div v-else-if="filteredDevices.length === 0" class="device-empty">
+          <div class="device-empty-illustration"><DeviceListIcon :name="deviceStore.error ? 'alert' : hasDeviceFilters ? 'search' : 'box'" /></div>
+          <h2>{{ deviceEmptyTitle }}</h2>
+          <p v-if="deviceListEmptyText !== deviceEmptyTitle">{{ deviceListEmptyText }}</p>
+          <p v-if="!deviceStore.error && hasDeviceFilters">请调整上方关键词、协议或状态筛选。</p>
+        </div>
         <article
           v-for="device in filteredDevices"
           :key="device.normalizedId"
-          class="exact-device-card"
+          class="device-row"
           :class="{ 'is-selected': deviceStore.selectedDeviceId === device.normalizedId }"
+          :data-device-id="device.normalizedId"
+          :aria-label="`选择设备 ${device.displayName || device.normalizedId}`"
+          :aria-current="deviceStore.selectedDeviceId === device.normalizedId ? 'true' : undefined"
+          tabindex="0"
           @click="selectDevice(device.normalizedId)"
+          @keydown.enter.self.prevent="selectDevice(device.normalizedId)"
+          @keydown.space.self.prevent="selectDevice(device.normalizedId)"
         >
-          <div class="exact-device-main">
-            <h3>{{ device.displayName || device.normalizedId }}</h3>
-            <p>{{ device.normalizedId }} · {{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</p>
+          <div class="device-cell device-identity">
+            <span class="device-cell-label">设备身份 / 来源</span>
+            <h2>{{ device.displayName || device.normalizedId }}</h2>
+            <span class="device-id device-mono">{{ device.normalizedId }}</span>
+            <span class="device-source" :class="{ 'is-local': isLocalDevice(device) }"><DeviceListIcon :name="isLocalDevice(device) ? 'local' : 'cloud'" />{{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</span>
           </div>
-          <div class="exact-device-meta">
-            <strong>{{ device.displayProtocol || '-' }}</strong>
-            <span>连接地址 {{ deviceAddress(device) }}</span>
+          <div class="device-cell device-connection">
+            <span class="device-cell-label">连接与采集</span>
+            <strong class="device-protocol-name">{{ device.displayProtocol || '-' }}</strong>
+            <span class="device-address device-mono" :title="deviceAddress(device)">{{ deviceAddress(device) }}</span>
+            <div class="device-interval">采集周期 <span class="device-mono">{{ device.collectionInterval ?? '-' }}</span> ms</div>
           </div>
-          <div class="exact-device-meta">
-            <span class="status-badge" :class="statusBadgeClass(device)">{{ runtimePresentation(device.runtime, device.runtimeStale).lifecycle }}</span>
-            <span>{{ runtimePresentation(device.runtime, device.runtimeStale).transportProtocol }}</span>
-            <span>采集健康 {{ runtimePresentation(device.runtime, device.runtimeStale).health }}</span>
-            <span>{{ runtimePresentation(device.runtime, device.runtimeStale).points }}</span>
-            <span>最近有效 {{ runtimePresentation(device.runtime, device.runtimeStale).lastValid }}</span>
-            <span v-if="device.runtimeError || runtimePresentation(device.runtime).reason">{{ device.runtimeError || runtimePresentation(device.runtime).reason }}</span>
-            <span v-if="deviceStore.deviceErrors[device.normalizedId]" role="alert">{{ deviceStore.deviceErrors[device.normalizedId] }}</span>
-            <span>采集周期 {{ device.collectionInterval ?? '-' }} ms</span>
+          <div class="device-cell device-lifecycle">
+            <span class="device-cell-label">运行阶段 / 通信状态</span>
+            <span class="device-phase" :class="[statusBadgeClass(device), devicePresentation(device).phaseTone]"><i class="device-dot"></i>{{ devicePresentation(device).lifecycle }}</span>
+            <div class="device-transport"><span>{{ devicePresentation(device).transportText }}</span><span>{{ devicePresentation(device).protocolText }}</span></div>
           </div>
-          <div class="exact-device-actions">
-            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="startSelectedDevice(device.normalizedId)">启动</button>
-            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="stopSelectedDevice(device.normalizedId)">停止</button>
-            <button type="button" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'refresh')">刷新配置</button>
-            <button type="button" class="danger" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'clear')">清理缓存</button>
-            <button type="button" @click.stop="openDeviceOperation(device, 'config')">配置</button>
-            <button type="button" @click.stop="editDevice(device)">编辑</button>
-            <button type="button" @click.stop="openDeviceDiff(device)">差异</button>
-            <button type="button" @click.stop="openDeviceRuntimeStatus(device)">运行状态</button>
-            <button type="button" @click.stop="openDeviceAlarmHistory(device)">告警历史</button>
-            <button type="button" @click.stop="openDeviceOperation(device, 'control')">控制</button>
-            <button type="button" @click.stop="openDeviceOperation(device, 'shadow')">影子</button>
-            <button v-if="isLocalDevice(device)" type="button" class="danger" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="deleteLocal(device.normalizedId)">删除本地</button>
+          <div class="device-cell device-quality">
+            <span class="device-cell-label">采集健康 / 有效样本</span>
+            <span class="device-health" :class="devicePresentation(device).healthTone"><i class="device-dot"></i>{{ devicePresentation(device).health }}</span>
+            <div class="device-counts">
+              <span>有效 <b class="device-mono">{{ devicePresentation(device).good }}/{{ devicePresentation(device).total }}</b></span>
+              <span>失败 <b class="device-mono">{{ devicePresentation(device).failed }}</b></span>
+              <span>过期 <b class="device-mono">{{ devicePresentation(device).stale }}</b></span>
+              <span>等待 <b class="device-mono">{{ devicePresentation(device).waiting }}</b></span>
+            </div>
+            <div class="device-last-valid">最近有效 <span class="device-mono">{{ devicePresentation(device).lastValid }}</span></div>
           </div>
+          <div class="device-cell device-actions">
+            <button type="button" class="device-button subtle-primary" @click.stop="openDeviceOperation(device, 'config')">配置</button>
+            <button type="button" class="device-button" @click.stop="editDevice(device)">编辑</button>
+            <ElPopover :visible="activeMenuDeviceId === device.normalizedId" placement="bottom-end" :width="262" :offset="7" :show-arrow="false" :popper-style="deviceMenuPopoverStyle" :persistent="false" :hide-after="0">
+              <template #reference>
+                <button type="button" class="device-button device-more" :aria-label="`${device.displayName || device.normalizedId}更多操作`" aria-haspopup="menu" :aria-expanded="activeMenuDeviceId === device.normalizedId" @click.stop="toggleDeviceMenu(device.normalizedId)"><DeviceListIcon name="more" /></button>
+              </template>
+              <div class="device-action-menu" role="menu" :aria-label="`${device.displayName || device.normalizedId}操作`" @click.capture="closeDeviceMenu">
+                <div class="device-menu-title">{{ device.displayName || device.normalizedId }}</div>
+                <div class="device-menu-group">
+                  <span class="device-menu-group-label">监测与配置</span>
+                  <button type="button" class="device-menu-item" role="menuitem" @click.stop="openDeviceRuntimeStatus(device)"><DeviceListIcon name="chart" />运行状态</button>
+                  <button type="button" class="device-menu-item" role="menuitem" @click.stop="openDeviceAlarmHistory(device)"><DeviceListIcon name="alert" />告警历史</button>
+                  <button type="button" class="device-menu-item" role="menuitem" @click.stop="openDeviceDiff(device)"><DeviceListIcon name="diff" />差异<span class="device-menu-hint">前往采集配置</span></button>
+                </div>
+                <div class="device-menu-group">
+                  <span class="device-menu-group-label">设备工作台</span>
+                  <div class="device-menu-grid">
+                    <button type="button" class="device-menu-item" role="menuitem" @click.stop="openDeviceOperation(device, 'control')"><DeviceListIcon name="control" />控制</button>
+                    <button type="button" class="device-menu-item" role="menuitem" @click.stop="openDeviceOperation(device, 'shadow')"><DeviceListIcon name="shadow" />影子</button>
+                  </div>
+                </div>
+                <div class="device-menu-group">
+                  <span class="device-menu-group-label">运行与维护</span>
+                  <div class="device-menu-grid">
+                    <button type="button" class="device-menu-item" role="menuitem" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="startSelectedDevice(device.normalizedId)"><DeviceListIcon name="play" />启动</button>
+                    <button type="button" class="device-menu-item" role="menuitem" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="stopSelectedDevice(device.normalizedId)"><DeviceListIcon name="stop" />停止</button>
+                  </div>
+                  <button type="button" class="device-menu-item" role="menuitem" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'refresh')"><DeviceListIcon name="refresh" />刷新配置<span class="device-menu-hint">确认后执行</span></button>
+                  <button type="button" class="device-menu-item is-danger" role="menuitem" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="operateDeviceConfig(device.normalizedId, 'clear')"><DeviceListIcon name="trash" />清理缓存<span class="device-menu-hint">仅配置缓存</span></button>
+                  <button v-if="isLocalDevice(device)" type="button" class="device-menu-item is-danger" role="menuitem" :disabled="deviceStore.isDeviceOperating(device.normalizedId)" @click.stop="deleteLocal(device.normalizedId)"><DeviceListIcon name="trash" />删除本地<span class="device-menu-hint">仅本地配置</span></button>
+                </div>
+              </div>
+            </ElPopover>
+          </div>
+          <div v-if="device.runtimeError || devicePresentation(device).reason || (device.runtimeStale && device.runtime)" class="device-row-notice" :class="device.runtimeStale ? 'is-stale' : statusBadgeClass(device)">
+            <DeviceListIcon name="alert" /><span>{{ device.runtimeError || devicePresentation(device).reason }}<template v-if="device.runtimeStale && device.runtime"> 点位计数与最近有效时间来自旧快照，不表示当前健康。</template></span>
+          </div>
+          <div v-if="deviceStore.deviceErrors[device.normalizedId]" class="device-row-notice is-error" role="alert"><DeviceListIcon name="alert" /><span>{{ deviceStore.deviceErrors[device.normalizedId] }}</span></div>
+          <div v-if="deviceStore.isDeviceOperating(device.normalizedId)" class="device-row-notice is-busy" role="status"><DeviceListIcon name="info" /><span>设备操作进行中；启动、停止及配置缓存操作暂不可重复提交。</span></div>
         </article>
       </div>
+      <footer class="device-register-footer"><span>{{ deviceResultLabel }}</span><span>点击设备行选择设备；更多菜单包含监测与维护操作</span></footer>
     </div>
+    <div class="device-semantic-note"><DeviceListIcon name="info" /><span>运行阶段、通信就绪与采集健康是独立状态。设备已连接或启动请求已受理，不代表当前点位有效。</span></div>
 
     <input ref="configImportInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="handleConfigImportFile" />
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />
@@ -91,17 +155,19 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, ElPopover } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 
 import { clearDeviceConfig, exportConfigs, getLocalDevice, importConfigs, refreshDeviceConfig } from "@/api/config.api";
 import LocalDeviceEditor from "@/features/device/components/LocalDeviceEditor.vue";
+import DeviceListIcon from "@/features/device/components/DeviceListIcon.vue";
+import { deviceListPresentation } from "@/features/device/utils/device-list-presentation";
 import { extractLocalDeviceBundle, type LocalDeviceBundle } from "@/features/device/utils/local-device-utils";
 import { buildConfigExportFilename, buildConfigImportRequest, countConfigImportBundles, normalizeConfigExportText, parseConfigImportText } from "@/features/config/utils/config-transfer-utils";
 import { DEVICE_CONFIG_ACTIONS, buildDeviceConfigActionMessage, normalizeDeviceConfigActionResult, type DeviceConfigActionType } from "@/features/device/utils/device-config-actions-utils";
 import { buildDeviceListEmptyText } from "@/features/device/utils/device-list-utils";
 import { useAppStore } from "@/stores/app.store";
-import { runtimeOperationMessage, runtimePresentation } from "@/features/diagnostic/utils/device-runtime-utils";
+import { runtimeOperationMessage } from "@/features/diagnostic/utils/device-runtime-utils";
 import { isLocalDevice, useDeviceStore } from "@/stores/device.store";
 import { useProtocolStore } from "@/stores/protocol.store";
 import type { DeviceViewModel } from "@/types/device";
@@ -222,6 +288,9 @@ async function deleteLocal(deviceId: string) {
     await ElMessageBox.confirm(`确认删除本地临时设备 ${deviceId}？该操作不会删除远端配置。`, "删除本地设备", {
       confirmButtonText: "删除",
       cancelButtonText: "取消",
+      customClass: "device-list-confirmation",
+      customStyle: deviceConfirmationStyle,
+      confirmButtonType: "danger",
       type: "warning"
     });
   } catch {
@@ -248,6 +317,8 @@ async function operateDeviceConfig(deviceId: string, type: DeviceConfigActionTyp
     await ElMessageBox.confirm(`确认对设备 ${deviceId} 执行${label}？${confirmText}`, "确认配置操作", {
       confirmButtonText: "确认执行",
       cancelButtonText: "取消",
+      customClass: "device-list-confirmation",
+      customStyle: deviceConfirmationStyle,
       type: "warning"
     });
   } catch {
@@ -325,6 +396,8 @@ async function handleConfigImportFile(event: Event) {
       await ElMessageBox.confirm(`将导入 ${bundleCount} 个设备配置包并刷新设备，请确认当前本地测试配置可被覆盖。`, "导入设备配置数据", {
         confirmButtonText: "确认导入",
         cancelButtonText: "取消",
+        customClass: "device-list-confirmation",
+        customStyle: deviceConfirmationStyle,
         type: "warning"
       });
     } catch {
@@ -406,87 +479,68 @@ function routeDeviceId(): string {
   }
   return String(value || "");
 }
+
+// 仅新增呈现与菜单状态；以上业务逻辑不变，确认窗只增加局部样式选项。
+const deviceConfirmationStyle = {
+  width: "500px",
+  maxWidth: "calc(100vw - 40px)",
+  padding: "0",
+  "--app-overlay-bg": "#1a273a",
+  "--app-overlay-border": "#506786",
+  "--app-overlay-shadow": "0 20px 70px #02091699",
+  fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+};
+const activeMenuDeviceId = ref("");
+const hasDeviceFilters = computed(() => Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value));
+const hasLoadedDeviceList = computed(() => deviceStore.lastUpdatedAt > 0 || deviceStore.devices.length > 0);
+const deviceInventoryLabel = computed(() => {
+  if (!hasLoadedDeviceList.value) return deviceStore.error ? "数量未知" : deviceStore.loading ? "加载中" : "数量未知";
+  return `${filteredDevices.value.length} 台设备`;
+});
+const deviceResultLabel = computed(() => {
+  if (!hasLoadedDeviceList.value) return deviceStore.error ? "设备列表暂不可用" : deviceStore.loading ? "正在获取设备列表" : "设备列表尚未加载";
+  const retained = deviceStore.loading || deviceStore.error ? "（上次加载结果）" : "";
+  return `显示 ${filteredDevices.value.length} 台设备${retained}`;
+});
+const deviceEmptyTitle = computed(() => deviceStore.error ? "设备配置加载失败" : hasDeviceFilters.value ? "没有符合筛选条件的设备" : "当前没有设备配置");
+const devicePresentations = computed(() => new Map(filteredDevices.value.map((device) => [device.normalizedId, deviceListPresentation(device)])));
+const deviceMenuPopoverStyle = {
+  "--app-overlay-bg": "#1d2a3d",
+  "--app-overlay-border": "#526d8f",
+  "--app-overlay-shadow": "0 18px 48px #050e1d99",
+  padding: "5px",
+  borderRadius: "8px",
+  fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+};
+
+function devicePresentation(device: DeviceViewModel) {
+  return devicePresentations.value.get(device.normalizedId) || deviceListPresentation(device);
+}
+
+function closeDeviceMenu() { activeMenuDeviceId.value = ""; }
+function toggleDeviceMenu(deviceId: string) { activeMenuDeviceId.value = activeMenuDeviceId.value === deviceId ? "" : deviceId; }
+function dismissDeviceMenuOutside(event: PointerEvent) {
+  if (!(event.target instanceof Element) || !event.target.closest(".device-action-menu, .device-more")) closeDeviceMenu();
+}
+function dismissDeviceMenuKey(event: KeyboardEvent) {
+  if (event.key !== "Escape" || !activeMenuDeviceId.value) return;
+  const trigger = document.querySelector<HTMLButtonElement>('.device-more[aria-expanded="true"]');
+  closeDeviceMenu();
+  trigger?.focus();
+}
+
+watch([deviceKeyword, protocolFilter, statusFilter], closeDeviceMenu);
+watch(() => route.fullPath, closeDeviceMenu);
+onMounted(() => {
+  document.addEventListener("pointerdown", dismissDeviceMenuOutside);
+  document.addEventListener("keydown", dismissDeviceMenuKey);
+  window.addEventListener("resize", closeDeviceMenu);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", dismissDeviceMenuOutside);
+  document.removeEventListener("keydown", dismissDeviceMenuKey);
+  window.removeEventListener("resize", closeDeviceMenu);
+});
 </script>
 
-<style scoped>
-.exact-device-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.exact-device-card {
-  display: grid;
-  min-height: 110px;
-  padding: 17px 18px;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(230px, 1fr) minmax(220px, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  color: #e2e8f0;
-  border: 1px solid var(--exact-border);
-  border-radius: 12px;
-  background: var(--exact-panel);
-  cursor: pointer;
-}
-
-.exact-device-card:hover,
-.exact-device-card.is-selected {
-  border-color: var(--exact-blue);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
-}
-
-.exact-device-main h3,
-.exact-device-main p {
-  margin: 0;
-}
-
-.exact-device-main h3 {
-  color: #fff;
-  font-size: 15px;
-}
-
-.exact-device-main p,
-.exact-device-meta span {
-  margin-top: 7px;
-  color: var(--exact-dim);
-  font-size: 11px;
-}
-
-.exact-device-meta {
-  display: flex;
-  flex-direction: column;
-}
-
-.exact-device-meta strong {
-  display: block;
-  margin: 0;
-  color: #fff;
-  font-size: 15px;
-}
-
-.exact-device-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
-.exact-device-actions button {
-  min-height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--exact-border);
-  border-radius: 5px;
-  background: var(--exact-panel-soft);
-  font-size: 11px;
-}
-
-.exact-device-actions button:hover {
-  border-color: var(--exact-blue);
-}
-
-@media (max-width: 1100px) {
-  .exact-device-card {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-</style>
+<style scoped src="@/features/device/components/device-list.css"></style>

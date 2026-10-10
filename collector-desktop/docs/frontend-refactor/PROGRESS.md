@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-10-10（新建本地临时设备弹窗生产实施与 Frontend Design 附图范围签收完成）
+更新时间：2026-10-10（设备管理批准方案生产实施与 Frontend Design 最终14图范围签收完成）
 
 ## 当前状态
 
@@ -16,6 +16,8 @@
 - 2026-10-09 新增独立优化：按已展示 Frontend Design 方案实现批量和协议命令、设备影子；首次监工指出的四项样式问题已修正并通过真实渲染尺寸检查，五项门禁重新通过。二次监工已确认代码 / DOM 修正，但当时截图读取能力受限，独立像素复核尚未完成，不能标记操作页视觉通过；本轮不重新验收操作页。
 - 2026-10-09 协议连接独立实施：已按用户确认的 EtherNet/IP 完整目标图完成生产修改，新增工作台专用 Schema 表单和110字段展示尺寸，旧本地设备编辑表单不变。前期、实施中和最终 Frontend Design 均实际读取截图像素；必须修正项已闭环，最终独立监工为 `PASS`（所附截图像素复核 + 五协议三宽度运行记录核验），六项静态/构建门禁通过。不是整页逐像素完全相同、业务写入验证或用户最终验收；未部署运行中旧JAR，不新增 Phase 18。
 - 2026-10-10 本地临时设备弹窗独立实施：已按批准方案落实五个 Tab，业务脚本与 Git 基线一致，62处模板业务绑定保留，六项允许门禁通过。Frontend Design 全程监工发现的问题已闭环，最终18张主/滚动图及4张局部图获得附图范围 `PASS`；“双套箭头”疑点经高清像素核实是计数单位“个”，原缺陷已撤回。最新62张有效截图/65条记录来自 `index-DBqXg9DV.js`，不是62张全部逐图签收或业务验收；当前 `READY FOR USER VISUAL REVIEW`。不新增 Phase 18，不重启或部署旧JAR。
+
+- 设备管理独立优化最新状态：2026-10-10按批准稿完成生产实施；Frontend Design 前期、实施中和末次构建持续实际像素监工，空态重复标题及确认窗比例/危险按钮/遮罩问题已闭环。末次14图全部获得所附范围PASS，当前为 `READY FOR USER VISUAL REVIEW`，不是全状态业务验收或用户最终确认。未提交/推送/部署，不新增Phase18；详细记录见文末。
 
 ## Baseline 验证结果
 
@@ -1615,3 +1617,43 @@ Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架�
 - 状态为 `READY FOR USER VISUAL REVIEW`：所有已识别的must-fix已闭环或凭高清证据撤回，没有遗留未修must-fix；不是整窗每一像素完全一致、业务保存/启动/连接测试、运行中JAR部署或用户最终验收。
 - 最终截图/签收资料及ZIP位于 scratch `local-device-editor-production/`，仅交付末次有效图片，旧纯色 `implementation/` 不打入交付包。不提交或推送，原无关未追踪文件保留。
 - 已关闭本轮自有Electron `proc_6e027fde0432`；2026-10-10 10:07:44 +0800实际复查9342无监听，9090原后端与4311既有设计服务仍监听。未清理用户其他进程，未重启后端；记录为scratch `cleanup-evidence.json`。
+
+## 2026-10-10 独立优化：设备管理批准方案生产实施
+
+### 范围与业务保留
+
+- 用户批准设备管理设计并要求Frontend Design全程监工后实施；基线 `e94e68fb`，计划 `.hermes/plans/device-management-approved-design.md`。
+- 修改 `src/views/device/DeviceListView.vue`，新增 `DeviceListIcon.vue`、`device-list.css`、`device-list-presentation.ts`。标题/筛选、五列登记册、独立滚动、固定计数栏、状态分层及分组更多菜单均按批准稿落实；1600/1280五列，1024双列，640单列。
+- 共享220px导航/40px顶栏、全局主题、API/DTO/Store/路由、依赖及Electron Main/Preload不改；已交付五Tab本地设备弹窗直接复用，不重新设计，不新增Phase18。
+- 原24处模板业务绑定完整保留，17个原操作按钮的disabled表达式逐项一致；只有启动、停止、刷新配置、清理缓存、删除本地保留逐设备写锁，配置/编辑/导航及更多入口不额外锁定。
+- 最初原业务区与Git来源baseline一致。最终三处命令式确认窗仅增加7行呈现选项：customClass三行、customStyle三行、delete confirmButtonType danger一行；去除这7行后原业务区仍完全一致。不宣称最终逐字节相同，但handler、确认文字/取消分支、watcher、defaults、载荷和生命周期保持不变。
+- 未注入设计示例；运行阶段、通信就绪和采集健康独立显示，缺值未知，旧快照计数/有效时间提示来源。数量首次加载/失败未知与成功0结果分开，旧列表保留上次加载提示。
+
+### 全程 Frontend Design 监督与闭环
+
+- `deleg_992911c7` 实际看批准图，形成实施前尺寸和逐按钮禁用清单。
+- `deleg_a61b5d2c` 实施中实际看生产图：宽屏/窄屏方向通过，筛选无结果主标题重复必须修正；已条件隐藏重复辅助文字，不改空态业务helper。
+- `deleg_17a9c4a8` 首次最终实际看14图：台账/窄屏/空态通过，但两个确认窗横贯窗口、删除按钮蓝色、背景mask盖住部分后果提示不通过；不把该轮标为整体PASS。
+- 确认窗增加本页unique class/style，500px限宽与紧凑边距，删除为红色danger，其余确认蓝色。截图改为只隐藏背景敏感文字，避免mask矩形穿过overlay盖住确认正文；生产数据未改。
+- 最后源码修改后再次六门禁通过，显式reload最新renderer并采图；`deleg_189e6e61` 三组实际逐张审阅4/6/4张末次生产图，对台账、四宽度、菜单、空态及两个确认窗全部给予所附范围PASS，无遗留must-fix。
+
+### 末次门禁、真实截图与边界
+
+| 命令 | 结果 |
+|---|---|
+| npm run lint / npm run stylelint | 均exit0 |
+| npm run typecheck | exit0 |
+| npm run build / npm run build:web | 均exit0；同步57文件 |
+| git diff --check | exit0 |
+
+- 未新增、修改或运行项目测试，不调用含测试的quality/verify；既有PURE annotation/vendor chunk warning保留。
+- 权威证据在 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/device-management-production/final-confirmation-repaired/`：14张PNG、12条布局记录、2条确认窗记录；入口 `index-eRHN2GYP.js` 与末次构建一致、原preload桥接可用，真实列表31台本地设备。
+- 四宽度没有文档/页面/列表横溢或菜单越界，pageerror/console error为0；1280/1024/640底部实际scroll-at-end且最后一行完整可见。两个确认窗500×215.59375居中，危险删除与普通确认区分，后果文字完整可读。
+- 实际只做行选择/Enter选择、菜单外点击/Escape/resize关闭、删除/清理确认后取消、本地新建弹窗打开/取消；未提交设备写入、启停、同步、导入导出、缓存清理、协议命令或desired。
+- 当前没有远端设备，远端菜单未实际观察；首次loading、成功空列表、请求错误、写锁及导入覆盖确认也未在真实环境观察，不注入状态制造截图。旧五Tab组件源码未改，新弹窗截图超时仅记录DOM打开/取消，不重签弹窗像素。
+- 14图全部实际像素复核，但遮罩内容不评价，640空态没有同宽批准图，仅通过可见布局/层级。真实数据差异、设计免责声明不进入生产导致台账上移、ID换行和确认窗不显示设计预览说明属于允许差异。
+- 当前 `READY FOR USER VISUAL REVIEW`：所附范围PASS不等于全状态逐像素一致、业务写入/采集验证或用户最终视觉接受。
+- dist/renderer与后端源码static/desktop集合/字节一致57文件，仅资源同步不是部署；运行中9090 HTTP200仍为 `index-D3SQcMKX.js`，未替换/重启旧JAR。
+- 2026-10-10 11:26:13 +0800关闭本轮自有 `proc_5c1ca414f31b`，实查9343无监听，9090原后端和4311既有设计服务保持监听。没有清理用户其他实例。
+- 报告 `PRODUCTION-VISUAL-REVIEW.md`、逐图 `final-visual-review-manifest.json`、源码 `final-confirmation-source-evidence.json`、门禁/清理及ZIP位于上述scratch根目录。交付只打包末次14张有效图，不纳入中间失败/待修图或凭据。
+- 未提交/推送本轮代码，无关后端修改与原未追踪文件保留；上一弹窗提交为 `e94e68fb`，不混同本轮设备管理完成。

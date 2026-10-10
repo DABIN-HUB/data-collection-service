@@ -1,0 +1,1032 @@
+/* 批准设备管理稿的页面局部样式，通过 DeviceListView 的 scoped style 接入。 */
+.exact-page.device-list-view {
+  --device-bg: var(--console-bg, #0d1b2a);
+  --device-surface: var(--console-panel, #1a2332);
+  --device-input: var(--console-input-bg, #12263b);
+  --device-line: #33485e;
+  --device-text: #e5edf7;
+  --device-muted: #a0b1c7;
+  --device-blue: var(--console-primary, #2563eb);
+  --device-green: #81d5b5;
+  --device-amber: #f4bf7b;
+  --device-red: #f2a7aa;
+  --device-columns: minmax(180px, 1.05fr) minmax(166px, 1fr) minmax(158px, 0.94fr) minmax(236px, 1.3fr) 150px;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 22px 26px 18px;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+  color: var(--device-text);
+  background: var(--device-bg);
+  font: 13px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  color-scheme: dark;
+}
+
+.device-page-heading {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.device-title-block {
+  min-width: 0;
+}
+
+.device-title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.device-title-line h1 {
+  margin: 0;
+  color: var(--device-text);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.45;
+  letter-spacing: 0.1px;
+}
+
+.device-count {
+  padding: 2px 8px;
+  flex: none;
+  color: #c8d6e9;
+  border: 1px solid #374b64;
+  border-radius: 5px;
+  background: #202d41;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.device-heading-sub {
+  margin: 6px 0 0;
+  color: var(--device-muted);
+  font-size: 12px;
+}
+
+.device-heading-actions {
+  display: flex;
+  min-width: 0;
+  padding-top: 2px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 浅层页面根 + 原生按钮类负责覆盖 AppShell 的 scoped deep 默认按钮。 */
+.exact-page.device-list-view button.device-button {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--device-text);
+  border: 1px solid var(--device-line);
+  border-radius: 6px;
+  background: #202d3f;
+  font: inherit;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.exact-page.device-list-view button.device-button:not(:disabled):hover {
+  color: var(--device-text);
+  border-color: #6387b4;
+  background: #27374e;
+}
+
+.exact-page.device-list-view button.device-button.primary {
+  color: #fff;
+  border-color: var(--device-blue);
+  background: var(--device-blue);
+}
+
+.exact-page.device-list-view button.device-button.primary:not(:disabled):hover {
+  color: #fff;
+  border-color: var(--device-blue);
+  background: #3273f2;
+}
+
+.exact-page.device-list-view button.device-button.subtle-primary {
+  color: #aecdff;
+  border-color: #3d5f89;
+  background: #1b3453;
+}
+
+.exact-page.device-list-view button.device-button.subtle-primary:not(:disabled):hover {
+  color: #aecdff;
+  border-color: #6387b4;
+  background: #27374e;
+}
+
+.exact-page.device-list-view button.device-button:disabled {
+  color: #8fa1b7;
+  border-color: #2b405c;
+  background: #101c2c;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.device-list-view button.device-button:focus-visible,
+.device-list-view .device-search input:focus-visible,
+.device-list-view select.device-protocol-filter:focus-visible,
+.device-list-view select.device-status-filter:focus-visible,
+.device-action-menu button.device-menu-item:focus-visible {
+  outline: 2px solid #79b0ff;
+  outline-offset: 3px;
+}
+
+.device-list-view .device-row:focus-visible {
+  outline: 2px solid #79b0ff;
+  outline-offset: -3px;
+}
+
+.device-list-view button.device-button > svg,
+.device-action-menu button.device-menu-item > svg {
+  flex: none;
+}
+
+.device-toolbar {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.device-filters {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.device-search {
+  position: relative;
+  display: block;
+  width: 310px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.device-search > svg {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  color: #92a6bf;
+  pointer-events: none;
+}
+
+.device-list-view .device-search input,
+.device-list-view select.device-protocol-filter,
+.device-list-view select.device-status-filter {
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--device-text);
+  border: 1px solid #3b5574;
+  border-radius: 6px;
+  background: var(--device-input);
+  font: inherit;
+}
+
+.device-list-view .device-search input {
+  width: 100%;
+  min-width: 0;
+  padding-left: 37px;
+}
+
+.device-list-view .device-search input::placeholder {
+  color: #91a4bf;
+  opacity: 1;
+}
+
+.device-list-view select.device-protocol-filter {
+  width: 160px;
+}
+
+.device-list-view select.device-status-filter {
+  width: 182px;
+}
+
+.device-list-view .device-search input:focus,
+.device-list-view select.device-protocol-filter:focus,
+.device-list-view select.device-status-filter:focus {
+  border-color: #79b0ff;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
+.exact-page.device-list-view .device-toolbar button.device-button {
+  min-height: 36px;
+}
+
+.device-error-banner {
+  display: flex;
+  min-width: 0;
+  padding: 10px 12px;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  color: #efb0b5;
+  border: 1px solid #684550;
+  border-radius: 6px;
+  background: #332731;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.device-error-banner > svg {
+  margin-top: 1px;
+  flex: none;
+}
+
+.device-register {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--device-line);
+  border-radius: 10px;
+  background: var(--device-surface);
+}
+
+.device-register-head {
+  display: grid;
+  min-width: 0;
+  padding: 12px 18px;
+  flex: none;
+  grid-template-columns: var(--device-columns);
+  gap: 14px;
+  color: #9eb1cb;
+  border-bottom: 1px solid #3a4c62;
+  background: #172435;
+  font-size: 12px;
+}
+
+.device-register-head > :last-child {
+  text-align: right;
+}
+
+/* 只让登记册主体滚动；固定头尾不占用行内容，最后一行可完整滚入视口。 */
+.device-register-body {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-color: #3d536f #122034;
+}
+
+.device-register-body::-webkit-scrollbar,
+.device-action-menu::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.device-register-body::-webkit-scrollbar-track,
+.device-action-menu::-webkit-scrollbar-track {
+  background: #122034;
+}
+
+.device-register-body::-webkit-scrollbar-thumb,
+.device-action-menu::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 5px;
+  background: #3d536f;
+}
+
+.device-row {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 99px;
+  padding: 14px 18px;
+  grid-template-columns: var(--device-columns);
+  align-items: start;
+  gap: 14px;
+  border-bottom: 1px solid #2e4057;
+  background: var(--device-surface);
+  cursor: pointer;
+}
+
+.device-row:last-child {
+  border-bottom: 0;
+}
+
+.device-row:hover {
+  background: #1d2b3d;
+}
+
+.device-row.is-selected {
+  background: #1c2d45;
+  box-shadow: inset 3px 0 #4c8dff;
+}
+
+.device-cell {
+  min-width: 0;
+}
+
+.device-cell-label {
+  display: none;
+}
+
+.device-identity h2 {
+  margin: 0 0 4px;
+  color: #eff4fc;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.device-mono {
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-id {
+  display: block;
+  color: #a7bbd5;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-source {
+  display: inline-flex;
+  margin-top: 8px;
+  align-items: center;
+  gap: 5px;
+  color: #a1b3cd;
+  font-size: 11px;
+}
+
+.device-source.is-local {
+  color: #b8ceee;
+}
+
+.device-source > svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.device-protocol-name {
+  display: block;
+  margin-bottom: 6px;
+  color: #d5e2f6;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.device-address {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: #a9bedb;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-interval {
+  margin-top: 9px;
+  color: var(--device-muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-phase {
+  display: inline-flex;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 2px 8px;
+  align-items: center;
+  gap: 7px;
+  color: #c4d4e8;
+  border: 1px solid #415570;
+  border-radius: 5px;
+  background: #25364c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.device-phase.is-error {
+  color: #edb3b5;
+  border-color: #6a4b57;
+  background: #3a2b36;
+}
+
+.device-phase.is-wait {
+  color: #dfc79a;
+  border-color: #665b48;
+  background: #353329;
+}
+
+.device-phase.is-stale {
+  color: #bcc1ce;
+  border-color: #4e5767;
+  background: #2d3341;
+}
+
+.device-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.device-transport {
+  display: grid;
+  margin-top: 7px;
+  gap: 1px;
+  color: #a7b8cf;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-transport strong {
+  color: #c5d4e7;
+  font-weight: 400;
+}
+
+.device-health {
+  display: inline-flex;
+  min-height: 23px;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  color: #becbdb;
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.device-health .device-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.device-health.is-good {
+  color: var(--device-green);
+}
+
+.device-health.is-warning {
+  color: var(--device-amber);
+}
+
+.device-health.is-error {
+  color: var(--device-red);
+}
+
+.device-health.is-stale {
+  color: #bbc3d0;
+}
+
+.device-counts {
+  display: flex;
+  margin: 4px 0 5px;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  color: #a6b8cf;
+  font-size: 11.5px;
+}
+
+.device-counts > span {
+  overflow-wrap: anywhere;
+}
+
+.device-counts b {
+  color: #d4e1f1;
+  font-weight: 500;
+}
+
+.device-last-valid {
+  color: #9cb0c9;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.device-last-valid .device-mono {
+  color: #b6c7dc;
+}
+
+.device-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.exact-page.device-list-view .device-actions button.device-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.exact-page.device-list-view .device-actions button.device-button.device-more {
+  padding: 0 8px;
+}
+
+.device-row-notice {
+  display: flex;
+  min-width: 0;
+  margin-top: -2px;
+  padding: 7px 9px;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 7px;
+  color: #d0c19e;
+  border-radius: 5px;
+  background: #343329;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-row-notice > svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  flex: none;
+}
+
+.device-row-notice > span {
+  min-width: 0;
+}
+
+.device-row-notice.is-stale {
+  color: #b6c2d4;
+  background: #273448;
+}
+
+.device-row-notice.is-error {
+  color: #dba5b0;
+  background: #352a36;
+}
+
+.device-row-notice.is-busy {
+  color: #acc9f0;
+  background: #213854;
+}
+
+.device-register-footer {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 18px;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #9bb0c8;
+  border-top: 1px solid var(--device-line);
+  background: #172435;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-register-footer strong {
+  color: #c8d8eb;
+  font-weight: 400;
+}
+
+.device-semantic-note {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  color: #90a7c2;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-semantic-note > svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  flex: none;
+  color: #84a3cb;
+}
+
+.device-empty {
+  display: flex;
+  min-width: 0;
+  min-height: 380px;
+  height: 100%;
+  padding: 50px 24px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.device-empty-illustration {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 20px;
+  flex: none;
+  place-items: center;
+  color: #7899c4;
+  border: 1px solid #3a536e;
+  border-radius: 12px;
+  background: #1e3048;
+}
+
+.device-empty-illustration > svg {
+  width: 30px;
+  height: 30px;
+}
+
+.device-empty h2 {
+  margin: 0 0 9px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.device-empty p {
+  max-width: 500px;
+  margin: 0;
+  color: var(--device-muted);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.device-loading-caption {
+  padding: 15px 18px;
+  color: #b0c4df;
+  font-size: 12px;
+}
+
+.device-skeleton-row {
+  display: grid;
+  min-width: 0;
+  padding: 24px 18px;
+  grid-template-columns: var(--device-columns);
+  gap: 14px;
+  border-bottom: 1px solid #2c3d53;
+  opacity: 0.55;
+}
+
+.device-skeleton-row > div {
+  min-width: 0;
+}
+
+.device-loading-line {
+  display: block;
+  width: 100%;
+  height: 11px;
+  margin: 7px 0;
+  border-radius: 4px;
+  background: #2d4059;
+}
+
+.device-loading-line:nth-child(1) {
+  width: 55%;
+}
+
+.device-skeleton-row > div:first-child .device-loading-line:first-child {
+  width: 75%;
+}
+
+.device-loading-line:nth-child(2) {
+  width: 85%;
+}
+
+.device-loading-line:nth-child(3) {
+  width: 45%;
+}
+
+.device-list-view input.hidden-file-input {
+  display: none;
+}
+
+/* Teleport 只改变 DOM 位置；内容仍带本页 scope，不能依赖页面根祖先。外壳由 popper-style 管理。 */
+.device-action-menu {
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  color: #e5edf7;
+  font: 13px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  color-scheme: dark;
+  scrollbar-color: #3d536f #122034;
+}
+
+.device-menu-title {
+  padding: 7px 8px 8px;
+  color: #d6e3f4;
+  border-bottom: 1px solid #394f69;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.device-menu-group {
+  padding: 6px 0 5px;
+}
+
+.device-menu-group + .device-menu-group {
+  border-top: 1px solid #39495f;
+}
+
+.device-menu-group-label {
+  display: block;
+  padding: 0 8px 4px;
+  color: #98adc9;
+  font-size: 11px;
+}
+
+.device-action-menu button.device-menu-item {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 31px;
+  padding: 0 9px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  color: #e5edf7;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.device-action-menu button.device-menu-item:not(:disabled):hover {
+  background: #30425b;
+}
+
+.device-action-menu button.device-menu-item.is-danger {
+  color: #f0adb7;
+}
+
+.device-action-menu button.device-menu-item:disabled {
+  color: #788ba5;
+  border: none;
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.device-menu-hint {
+  margin-left: auto;
+  color: #9aacbf;
+  font-size: 10.5px;
+}
+
+.device-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.device-menu-grid .device-menu-hint {
+  display: none;
+}
+
+@media (max-width: 1440px) {
+  .exact-page.device-list-view {
+    --device-columns: minmax(178px, 1.05fr) minmax(158px, 1fr) minmax(152px, 0.94fr) minmax(217px, 1.3fr) 140px;
+    padding: 20px 22px 16px;
+    gap: 16px;
+  }
+
+  .device-register-head,
+  .device-row {
+    padding-right: 15px;
+    padding-left: 15px;
+    gap: 10px;
+  }
+
+  .device-heading-actions {
+    gap: 6px;
+  }
+
+  .exact-page.device-list-view .device-heading-actions button.device-button {
+    padding: 0 10px;
+  }
+
+  .device-search {
+    width: 272px;
+  }
+
+  .device-list-view select.device-protocol-filter {
+    width: 154px;
+  }
+
+  .device-list-view select.device-status-filter {
+    width: 174px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .exact-page.device-list-view {
+    padding: 18px 20px;
+  }
+
+  .device-page-heading {
+    flex-direction: column;
+    gap: 13px;
+  }
+
+  .device-heading-actions {
+    padding: 0;
+  }
+
+  .device-register-head {
+    display: none;
+  }
+
+  .device-row {
+    padding: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px 24px;
+  }
+
+  .device-cell-label {
+    display: block;
+    margin-bottom: 5px;
+    color: #91a7c2;
+    font-size: 11px;
+  }
+
+  .device-actions {
+    padding-top: 10px;
+    grid-column: 1 / -1;
+    border-top: 1px solid #32445e;
+  }
+
+  .exact-page.device-list-view .device-actions button.device-button.device-more {
+    padding: 0 10px;
+  }
+
+  .device-skeleton-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-identity h2 {
+    font-size: 15px;
+  }
+
+  .device-counts {
+    max-width: 280px;
+  }
+
+  .device-toolbar {
+    align-items: flex-start;
+  }
+
+  .device-filters {
+    gap: 8px;
+  }
+
+  .device-search {
+    width: 260px;
+  }
+
+  .exact-page.device-list-view .device-toolbar > button.device-button {
+    margin-left: auto;
+  }
+}
+
+/* 命令式确认窗在 Teleport 中生成，仅本页显式 customClass 命中这些规则。 */
+:global(.el-message-box.device-list-confirmation) {
+  border-radius: 10px;
+}
+
+:global(.device-list-confirmation .el-message-box__header) {
+  padding: 19px 20px 15px;
+  border-bottom-color: #33485e;
+}
+
+:global(.device-list-confirmation .el-message-box__title) {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+:global(.device-list-confirmation .el-message-box__headerbtn) {
+  top: 20px;
+  right: 20px;
+}
+
+:global(.device-list-confirmation .el-message-box__content) {
+  padding: 22px 20px;
+  font-size: 13px;
+}
+
+:global(.device-list-confirmation .el-message-box__message p) {
+  margin: 0;
+  line-height: 1.85;
+}
+
+:global(.device-list-confirmation .el-message-box__btns) {
+  padding: 14px 20px;
+  border-top-color: #33485e;
+}
+
+:global(.device-list-confirmation .el-button) {
+  min-height: 34px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+@media (max-width: 760px) {
+  .exact-page.device-list-view {
+    padding: 18px 14px 14px;
+    gap: 14px;
+  }
+
+  .device-title-line {
+    gap: 8px;
+  }
+
+  .device-title-line h1 {
+    font-size: 20px;
+  }
+
+  .device-heading-actions {
+    gap: 7px;
+  }
+
+  .exact-page.device-list-view .device-heading-actions button.device-button {
+    font-size: 11px;
+  }
+
+  .device-filters,
+  .device-search {
+    width: 100%;
+  }
+
+  .device-list-view select.device-protocol-filter,
+  .device-list-view select.device-status-filter {
+    width: calc(50% - 4px);
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  .exact-page.device-list-view .device-toolbar > button.device-button {
+    margin-left: 0;
+  }
+
+  .device-row {
+    padding: 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .device-identity {
+    padding-bottom: 13px;
+    border-bottom: 1px solid #32445a;
+  }
+
+  .device-actions {
+    justify-content: flex-start;
+  }
+
+  .device-register-footer {
+    padding: 10px 14px;
+  }
+
+  .device-semantic-note {
+    font-size: 11px;
+  }
+
+  .device-empty {
+    min-height: 300px;
+    padding: 38px 18px;
+  }
+
+  .device-skeleton-row {
+    padding: 18px 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+}
