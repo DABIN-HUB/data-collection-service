@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-10-11（五运维页按Frontend Design建议实施后完成真实renderer补拍；48张附图范围已获独立像素PASS，9090未替换为本轮候选renderer）
+更新时间：2026-10-11（最新提交已打包部署至9090；真实9090 renderer完成Frontend Design复扫，当前记录为建议阶段，不等于新一轮实施或用户最终验收）
 
 ## 当前状态
 
@@ -23,6 +23,8 @@
 
 - 本轮独立运维交付（前序）：五页综合源码分析及优化建议已保存；前端允许门禁、隔离后端无测试打包、9090新包部署及完整57资源HTTP字节核对完成，入口 `index-BM7lzMzh.js`。该前序候选不作为本轮视觉签收。
 - 2026-10-11 五页建议实施已完成：真实renderer入口 `index-DsbgyuIk.js`，五View与五份scoped CSS已按建议调整；末次 `git diff --check`、lint、Stylelint、typecheck、Electron build、Web build均exit0。Frontend Design独立复核 `deleg_2b4ea181` 首轮40张 + `deleg_d06f90d1` 补审8张，48/48在声明视口/滚动/状态范围内PASS，无当前图片支持的must-fix。当前状态为 `SCOPED VISUAL PASS / READY FOR USER ACCEPTANCE`，不等于106张全部逐图、敏感正文/未执行业务态或用户最终验收。
+
+- 2026-10-11 最新提交 `1984343221bf8373d026219c9e0992583f304c45` 已使用最新无测试打包产物部署并重启9090，运行入口为 `index-DsbgyuIk.js`，页面/health HTTP均为200；真实运行状态仍如实为 `application=UP`、`cache=UP`、`collectionService=DOWN`、`health=DOWN`、`connections=UNKNOWN`。随后对9090真实renderer采集40张五页候选图，Frontend Design独立实际查看5张1600宽主图及3张640宽窄图，形成扫描报告。新一轮只记录建议，未修改生产代码、未执行业务写操作、未写测试；首要建议为<=900px收起侧栏/单列化，其次为统一未知/未执行/不可用/零值/失败语义、拉开读写操作权重、增强异常恢复与数据新鲜度表达。报告见发布产物 `POST-RELEASE-FRONTEND-DESIGN-SCAN.md`，不将401、未知数据、health DOWN误判为视觉缺陷。
 
 ## Baseline 验证结果
 
