@@ -1,9 +1,12 @@
 <template>
-  <section class="exact-page cloud-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>云链路监控</h1>
-        <span class="heading-online"><i></i>{{ cloudOperationalState.text }}</span>
+  <section class="exact-page cloud-view" :data-state="cloudOperationalState.status">
+    <div class="section-heading cloud-heading">
+      <div>
+        <div class="heading-title-line">
+          <h1>云链路监控</h1>
+          <span class="heading-online cloud-state"><i aria-hidden="true"></i>{{ cloudOperationalState.text }}</span>
+        </div>
+        <p class="cloud-heading-description">查看上报策略、ACK 提交与可靠发件箱；发送成功不等于云端确认。</p>
       </div>
       <div class="heading-actions">
         <button type="button" class="primary" :disabled="loading" @click="refreshCloud">{{ loading ? '刷新中…' : '刷新链路' }}</button>
@@ -11,62 +14,82 @@
       </div>
     </div>
 
-    <div class="exact-page-body">
+    <div class="exact-page-body cloud-body">
       <div v-if="error" class="cloud-error">{{ cloudUnavailableText }}</div>
 
       <div class="exact-cloud-grid">
         <section class="exact-surface exact-cloud-status">
-          <div class="exact-cloud-icon">云</div>
-          <strong>{{ cloudOperationalState.text }}</strong>
-          <small>{{ cloudEnabledText }}</small>
-          <small>{{ cloudOperationalState.description }}</small>
-          <small v-if="cloudOperationalState.disabledEvidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
+          <div class="exact-surface-head"><h2>上报链路</h2><span>{{ cloudMetricsRefreshText }}</span></div>
+          <div class="cloud-status-content">
+            <strong class="cloud-status-title"><i aria-hidden="true"></i>{{ cloudOperationalState.text }}</strong>
+            <small class="cloud-enabled-text">{{ cloudEnabledText }}</small>
+            <small class="cloud-status-description">{{ cloudOperationalState.description }}</small>
+            <small v-if="cloudOperationalState.disabledEvidence" class="cloud-disabled-evidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
+          </div>
           <div class="cloud-stat-row">
             <span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span>
           </div>
         </section>
 
-        <section class="exact-surface">
+        <section class="exact-surface cloud-strategy">
           <div class="exact-surface-head">
             <h2>上报策略</h2>
             <span>{{ cloudOperationalState.status }}</span>
           </div>
-          <div class="modao-property-grid">
+          <div class="modao-property-grid cloud-strategy-grid">
             <div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
           </div>
         </section>
       </div>
 
-      <section class="exact-surface">
+      <section class="exact-surface cloud-metrics">
         <div class="exact-surface-head">
           <h2>Outbox / ACK 指标</h2>
-          <span>{{ cloudOperationalRows.length }} 项</span>
+          <span>{{ cloudMetricsRefreshText }}</span>
         </div>
-        <div class="modao-property-grid">
+        <div class="modao-property-grid cloud-metric-rail">
           <div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
         </div>
       </section>
 
-      <section class="exact-surface">
-        <div class="exact-surface-head"><h2>Outbox 消息</h2><span>{{ outboxRows.length }} 项</span></div>
-        <div class="heading-actions">
-          <select v-model="outboxStatus" aria-label="Outbox 状态" @change="loadCloud">
-            <option value="">全部状态</option>
-            <option v-for="status in outboxStatuses" :key="status" :value="status">{{ status }}</option>
-          </select>
-          <input v-model="outboxDeviceId" aria-label="本地设备 ID" placeholder="本地设备 ID" @keyup.enter="loadCloud" />
+      <section class="exact-surface cloud-outbox">
+        <div class="exact-surface-head"><h2>Outbox 消息</h2><span>{{ outboxLastSuccess ? `${outboxRows.length} 项` : '数量未知' }} · {{ outboxRefreshText }}</span></div>
+        <div class="heading-actions cloud-filters">
+          <label class="cloud-filter-field">
+            <span>Outbox 状态</span>
+            <select v-model="outboxStatus" aria-label="Outbox 状态" @change="loadCloud">
+              <option value="">全部状态</option>
+              <option v-for="status in outboxStatuses" :key="status" :value="status">{{ status }}</option>
+            </select>
+          </label>
+          <label class="cloud-filter-field cloud-device-filter">
+            <span>本地设备 ID</span>
+            <input v-model="outboxDeviceId" aria-label="本地设备 ID" placeholder="本地设备 ID" @keyup.enter="loadCloud" />
+          </label>
           <button type="button" :disabled="loading" @click="loadCloud">筛选</button>
         </div>
         <div v-if="!appStore.capabilities?.cloud.monitoringAvailable" class="cloud-error">当前云链路监控不可用</div>
-        <table v-else class="runtime-table"><thead><tr><th>消息</th><th>设备</th><th>状态</th><th>重试</th><th>创建时间</th><th>下次尝试</th><th>错误</th><th>操作</th></tr></thead>
-          <tbody><tr v-for="row in outboxRows" :key="row.messageId"><td>{{ row.messageId }}</td><td>{{ row.localDeviceId || "-" }}</td><td>{{ row.status }}</td><td>{{ row.retryCount ?? 0 }}</td><td>{{ formatTimestamp(row.createdAt) }}</td><td>{{ formatTimestamp(row.nextAttemptAt) }}</td><td>{{ row.lastError || "-" }}</td><td><button type="button" @click="openDetail(row.messageId)">查看详情</button><button v-if="appStore.capabilities?.cloud.managementAvailable && row.status === 'ISOLATED'" type="button" @click="replay(row.messageId)">Replay</button></td></tr></tbody>
-        </table>
-        <div v-if="appStore.capabilities?.cloud.monitoringAvailable && !loading && !outboxRows.length" class="cloud-empty">暂无 Outbox 消息</div>
+        <div v-else class="cloud-table-scroll" tabindex="0" role="region" aria-label="Outbox 消息队列，可横向和纵向滚动">
+          <table class="runtime-table cloud-table" aria-label="Outbox 消息">
+            <colgroup><col class="cloud-col-message" /><col class="cloud-col-device" /><col class="cloud-col-status" /><col class="cloud-col-retry" /><col class="cloud-col-time" /><col class="cloud-col-time" /><col class="cloud-col-error" /><col class="cloud-col-actions" /></colgroup>
+            <thead><tr><th scope="col">消息</th><th scope="col">设备</th><th scope="col">状态</th><th scope="col">重试</th><th scope="col">创建时间</th><th scope="col">下次尝试</th><th scope="col">错误</th><th scope="col">操作</th></tr></thead>
+            <tbody>
+              <tr v-for="row in outboxRows" :key="row.messageId">
+                <td>{{ row.messageId }}</td><td>{{ row.localDeviceId || "-" }}</td><td><span class="cloud-row-state">{{ row.status }}</span></td><td>{{ row.retryCount ?? 0 }}</td><td>{{ formatTimestamp(row.createdAt) }}</td><td>{{ formatTimestamp(row.nextAttemptAt) }}</td><td class="cloud-message-error">{{ row.lastError || "-" }}</td>
+                <td><div class="cloud-row-actions"><button type="button" @click="openDetail(row.messageId)">查看详情</button><button v-if="appStore.capabilities?.cloud.managementAvailable && row.status === 'ISOLATED'" type="button" class="cloud-risk-action" @click="replay(row.messageId)">重新发送</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="appStore.capabilities?.cloud.monitoringAvailable && !loading && !outboxRows.length" class="cloud-empty">{{ outboxLastSuccess ? '暂无 Outbox 消息' : '队列尚未成功加载，请刷新重试' }}</div>
         <div v-if="actionError" class="cloud-error" role="alert">{{ actionError }}</div>
-        <div class="heading-actions"><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="flush">Flush 到期消息</button><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="testLink">测试云链路</button><span v-if="testResult">{{ testResult.message }}</span></div>
+        <div class="cloud-management">
+          <p class="cloud-operation-note">重新发送（Replay）会再次进入发送链路；调度到期消息（Flush）不代表云端已确认。</p>
+          <div class="heading-actions cloud-management-actions"><button v-if="appStore.capabilities?.cloud.managementAvailable" class="cloud-risk-action" @click="flush">调度到期消息</button><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="testLink">测试云链路</button><span v-if="testResult" class="cloud-test-result">{{ testResult.message }}</span></div>
+        </div>
       </section>
 
-      <el-drawer v-model="detailVisible" :title="`Outbox 消息 ${selectedMessageId}`" size="min(720px, 90vw)">
+      <el-drawer v-model="detailVisible" class="cloud-detail-drawer" :title="`Outbox 消息 ${selectedMessageId}`" size="min(720px, 90vw)">
         <div v-if="detailLoading">详情加载中…</div>
         <div v-else-if="detailError" class="cloud-error" role="alert">{{ detailError }}</div>
         <div v-else-if="!detail" class="cloud-empty">消息详情为空</div>
@@ -79,11 +102,12 @@
         </template>
       </el-drawer>
 
-      <section class="exact-surface">
+      <section class="exact-surface cloud-risks">
         <div class="exact-surface-head">
           <h2>链路风险</h2>
           <span>{{ cloudRisks.length }} 项</span>
         </div>
+        <p class="cloud-risk-note">风险项沿用上报指标；状态未知或接口不可用时，不作为链路健康证明。</p>
         <div class="modao-risk-list">
           <div v-for="risk in cloudRisks" :key="risk" class="modao-risk-item"><strong>{{ cloudRisks.length ? '风险' : '检查结果' }}</strong><small>{{ risk }}</small></div>
         </div>
@@ -131,6 +155,8 @@ const selectedMessageId = ref("");
 const detailLoading = ref(false);
 const detailError = ref("");
 const detail = ref<CloudOutboxDetail | null>(null);
+const metricsLastSuccess = ref<Date | null>(null);
+const outboxLastSuccess = ref<Date | null>(null);
 let detailGeneration = 0;
 onUnmounted(() => { detailGeneration++; });
 
@@ -155,9 +181,11 @@ const cloudSummaryCards = computed(() => buildCloudSummaryCards(reportMetrics.va
 const cloudStrategyRows = computed(() => buildCloudStrategyRows(reportMetrics.value));
 const cloudOperationalRows = computed(() => buildCloudOperationalRows(reportMetrics.value));
 const cloudRisks = computed(() => buildCloudRisks(reportMetrics.value));
-const lastRefreshText = computed(() => lastRefresh.value ? `最后成功 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const lastRefreshText = computed(() => lastRefresh.value ? `刷新结束 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const cloudMetricsRefreshText = computed(() => metricsLastSuccess.value ? `指标最近读取 ${formatRefreshTime(metricsLastSuccess.value)}` : "指标未成功读取");
+const outboxRefreshText = computed(() => outboxLastSuccess.value ? `队列最近读取 ${formatRefreshTime(outboxLastSuccess.value)}` : "队列未成功读取");
 const cloudUnavailableText = computed(() => reportMetrics.value
-  ? `${error.value}；当前保留最后一次成功指标（${lastRefreshText.value}）`
+  ? `${error.value}；当前保留最后一次成功指标（${cloudMetricsRefreshText.value}）`
   : error.value);
 
 onMounted(() => {
@@ -171,11 +199,13 @@ async function loadCloud() {
     await appStore.initialize();
     if (appStore.capabilities?.cloud.monitoringAvailable === true) {
       reportMetrics.value = await getCloudReportMetrics();
+      metricsLastSuccess.value = new Date();
       outboxRows.value = await listCloudOutbox({
         status: outboxStatus.value || undefined,
         deviceId: outboxDeviceId.value.trim() || undefined,
         limit: 50
       });
+      outboxLastSuccess.value = new Date();
     }
     lastRefresh.value = new Date();
   } catch (err) {
@@ -216,6 +246,10 @@ function errorMessage(err: unknown, fallback: string): string {
 
 function formatTimestamp(timestamp?: number): string {
   return timestamp == null ? "-" : new Date(timestamp).toLocaleString();
+}
+
+function formatRefreshTime(value: Date): string {
+  return value.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 async function replay(messageId: string) {
@@ -260,82 +294,4 @@ function prettyJson(value: unknown): string {
 }
 </script>
 
-<style scoped>
-.cloud-view :deep(.heading-actions) {
-  align-items: center;
-}
-
-.cloud-error {
-  margin: 0 24px 16px;
-  padding: 12px 16px;
-  color: #fecaca;
-  border: 1px solid rgba(248, 113, 113, 0.45);
-  border-radius: 8px;
-  background: rgba(127, 29, 29, 0.18);
-}
-
-.exact-cloud-grid {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 16px;
-}
-
-.exact-cloud-status {
-  display: flex;
-  min-height: 100%;
-  padding: 24px 20px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 12px;
-  background: linear-gradient(180deg, rgba(24, 44, 79, 0.95), rgba(15, 23, 42, 0.98));
-}
-
-.exact-cloud-icon {
-  display: grid;
-  width: 54px;
-  height: 54px;
-  place-items: center;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.65));
-  color: #fff;
-  font-size: 17px;
-  font-weight: 700;
-  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
-}
-
-.exact-cloud-status strong {
-  color: #fff;
-  font-size: 17px;
-}
-
-.exact-cloud-status small {
-  margin-top: 2px;
-  color: var(--exact-dim);
-}
-
-.cloud-stat-row {
-  display: grid;
-  width: 100%;
-  margin-top: 8px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.cloud-stat-row span {
-  display: grid;
-  padding: 10px 8px;
-  gap: 5px;
-  border: 1px solid var(--exact-border);
-  border-radius: 7px;
-  background: var(--exact-bg);
-  color: var(--exact-dim);
-  font-size: 10px;
-}
-
-.cloud-stat-row b {
-  color: #e2e8f0;
-  font-size: 15px;
-}
-</style>
+<style scoped src="@/features/cloud/styles/cloud-view.css"></style>

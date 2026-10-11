@@ -1,46 +1,74 @@
 <template>
-  <section class="exact-page network-view">
-    <div class="section-heading">
+  <section class="page-root exact-page network-view">
+    <div class="section-heading network-heading">
       <div class="heading-title-line">
         <h1>网络检测</h1>
-        <span class="heading-online"><i></i>{{ networkResult ? networkResult.conclusionText : '等待检测' }} · {{ networkHistory.length }} 条历史</span>
+        <span class="heading-online" :class="{ 'is-pending': !networkResult }"><i aria-hidden="true"></i>{{ networkResult ? networkResult.conclusionText : '尚未执行' }}</span>
       </div>
+      <p>检测本机、白名单目标或设备配置地址；仅在点击开始检测后执行。</p>
     </div>
 
-    <div class="exact-page-body">
-      <div class="exact-toolbar network-toolbar">
-        <div class="exact-toolbar-group exact-toolbar-filters">
-          <select v-model="networkType" @change="syncNetworkMode">
-            <option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option>
-          </select>
-          <select v-model="networkDeviceId" @change="applyNetworkDevice">
-            <option value="">本机 / 白名单目标</option>
-            <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
-              {{ device.displayName || device.normalizedId }}
-            </option>
-          </select>
-          <input v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" />
-          <input v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" />
-          <input v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" />
-          <button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button>
+    <div class="exact-page-body network-body">
+      <section class="exact-surface network-toolbar" aria-labelledby="network-conditions-title">
+        <div class="exact-surface-head network-panel-head">
+          <h2 id="network-conditions-title">检测参数</h2>
+          <span>端口仅用于 TCP 检测</span>
         </div>
-        <div class="exact-toolbar-group network-toolbar-actions">
-          <button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button>
-          <button type="button" :disabled="networkHistory.length === 0" class="primary" @click="downloadNetworkReport">导出检测结果</button>
+        <div class="network-condition-fields">
+          <label class="network-field network-mode-field" for="network-type">
+            <span>检测方式</span>
+            <select id="network-type" v-model="networkType" @change="syncNetworkMode">
+              <option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option>
+            </select>
+          </label>
+          <label class="network-field network-device-field" for="network-device">
+            <span>目标设备</span>
+            <select id="network-device" v-model="networkDeviceId" @change="applyNetworkDevice">
+              <option value="">本机 / 白名单目标</option>
+              <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
+                {{ device.displayName || device.normalizedId }}
+              </option>
+            </select>
+          </label>
+          <label class="network-field network-target-field" for="network-target">
+            <span>目标地址</span>
+            <input id="network-target" v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" />
+          </label>
+          <label class="network-field network-port-field" for="network-port">
+            <span>TCP 端口</span>
+            <input id="network-port" v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" aria-describedby="network-port-note" />
+          </label>
+          <label class="network-field network-timeout-field" for="network-timeout">
+            <span>检测超时</span>
+            <span class="network-unit-control">
+              <input id="network-timeout" v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" aria-describedby="network-timeout-unit" />
+              <span id="network-timeout-unit" class="network-unit">ms</span>
+            </span>
+          </label>
         </div>
-      </div>
+        <div class="network-toolbar-footer">
+          <div class="network-device-actions">
+            <button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button>
+            <span id="network-port-note">PING / TRACE 不使用端口</span>
+          </div>
+          <div class="network-toolbar-actions">
+            <button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button>
+            <button type="button" :disabled="networkHistory.length === 0" class="network-export" @click="downloadNetworkReport">导出检测结果</button>
+          </div>
+        </div>
+      </section>
 
-      <div class="exact-diagnostic-cards network-summary-cards">
-        <div class="exact-diagnostic-card"><span>检测方式</span><strong>{{ networkType }}</strong></div>
-        <div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '-' }}</strong></div>
-        <div class="exact-diagnostic-card"><span>失败原因中文化</span><strong>{{ networkResult ? networkResult.reasonText : '尚未执行' }}</strong></div>
+      <div class="exact-diagnostic-cards network-summary-cards" :class="{ 'is-pending': !networkResult }" aria-label="检测摘要">
+        <div class="exact-diagnostic-card"><span>{{ networkResult ? '结果方式' : '当前配置方式' }}</span><strong>{{ networkResult ? networkResult.type : networkType }}</strong></div>
+        <div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '尚未执行' }}</strong></div>
+        <div class="exact-diagnostic-card network-reason-summary"><span>原因说明</span><strong>{{ networkResult ? networkResult.reasonText : '检测后显示' }}</strong></div>
         <div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div>
       </div>
 
-      <section class="exact-surface network-result-panel">
-        <div class="exact-surface-head">
+      <section class="exact-surface network-result-panel" :class="{ 'is-pending': !networkResult }">
+        <div class="exact-surface-head network-panel-head">
           <h2>检测结果</h2>
-          <span>{{ networkResult ? `${networkResult.target}${networkResult.port ? `:${networkResult.port}` : ''}` : `${networkTarget}${networkType === 'TCP' ? `:${networkPort || '-'}` : ''}` }}</span>
+          <span class="network-result-target">{{ networkResult ? `${networkResult.target}${networkResult.port ? `:${networkResult.port}` : ''}` : `当前配置：${networkTarget}${networkType === 'TCP' ? `:${networkPort || '-'}` : ''}` }}</span>
         </div>
         <div class="network-result-grid">
           <div v-for="row in networkResultRows" :key="row.label" class="exact-config-item">
@@ -48,7 +76,11 @@
             <strong>{{ row.value }}</strong>
           </div>
         </div>
-        <pre class="json-view">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre>
+        <p v-if="!networkResult" class="network-pending-note" role="status">尚未执行网络检测。确认当前参数后，点击“开始检测”查看真实结果。</p>
+        <div v-else class="network-json-section">
+          <h3 id="network-json-title">结果 JSON</h3>
+          <pre class="json-view" tabindex="0" aria-labelledby="network-json-title">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre>
+        </div>
         <div v-if="networkResult && networkResult.details.length" class="network-trace-lines">
           <strong>路由明细</strong>
           <code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code>
@@ -56,37 +88,48 @@
       </section>
 
       <section class="exact-table-card network-history-table">
-        <div class="exact-table-title">
-          <h2>检测历史记录</h2>
+        <div class="exact-table-title network-panel-head">
+          <h2 id="network-history-title">检测历史记录</h2>
           <span>最多保留 10 条</span>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>方式</th>
-              <th>目标</th>
-              <th>端口</th>
-              <th>结论</th>
-              <th>耗时</th>
-              <th>原因</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="networkHistory.length === 0">
-              <td colspan="7" class="exact-empty">暂无网络检测历史</td>
-            </tr>
-            <tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`">
-              <td>{{ formatTime(item.completedAt) }}</td>
-              <td>{{ item.type }}</td>
-              <td>{{ item.target }}</td>
-              <td>{{ item.port ?? '-' }}</td>
-              <td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td>
-              <td>{{ item.durationMs ?? '-' }} ms</td>
-              <td>{{ item.reasonText }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="network-history-scroll" tabindex="0" role="region" aria-labelledby="network-history-title">
+          <table>
+            <colgroup>
+              <col class="network-history-time" />
+              <col class="network-history-mode" />
+              <col class="network-history-target" />
+              <col class="network-history-port" />
+              <col class="network-history-conclusion" />
+              <col class="network-history-duration" />
+              <col />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">时间</th>
+                <th scope="col">方式</th>
+                <th scope="col">目标</th>
+                <th scope="col">端口</th>
+                <th scope="col">结论</th>
+                <th scope="col">耗时</th>
+                <th scope="col">原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="networkHistory.length === 0">
+                <td colspan="7" class="exact-empty">暂无网络检测历史</td>
+              </tr>
+              <tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`">
+                <td>{{ formatTime(item.completedAt) }}</td>
+                <td>{{ item.type }}</td>
+                <td><span class="network-history-address" :title="item.target">{{ item.target }}</span></td>
+                <td>{{ item.port ?? '-' }}</td>
+                <td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td>
+                <td>{{ item.durationMs ?? '-' }} ms</td>
+                <td>{{ item.reasonText }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <EdgeTelemetryPanel :devices="deviceStore.devices" :selected-device-id="networkDeviceId" @select-device="selectNetworkDevice" />
@@ -285,109 +328,4 @@ watch(() => [route.query.target, route.query.port, route.query.type, route.query
 });
 </script>
 
-<style scoped>
-.network-view .network-result-grid {
-  display: grid;
-  padding: 20px 20px 12px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.network-view .network-toolbar {
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: 8px 10px;
-}
-
-.network-view .network-toolbar .exact-toolbar-filters {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(104px, 0.7fr) minmax(136px, 0.88fr) minmax(142px, 0.96fr) minmax(92px, 0.5fr) minmax(92px, 0.5fr) auto;
-  gap: 6px 8px;
-  align-items: center;
-}
-
-.network-view .network-toolbar .exact-toolbar-filters input,
-.network-view .network-toolbar .exact-toolbar-filters select {
-  min-width: 0;
-  width: 100%;
-}
-
-.network-view .network-toolbar .exact-toolbar-filters button {
-  justify-self: start;
-  width: auto;
-  min-width: 0;
-}
-
-.network-view .network-toolbar-actions {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.network-view .network-toolbar-actions button {
-  min-height: 28px;
-  padding: 0 8px;
-  font-size: 10.5px;
-}
-
-.network-view .network-summary-cards .exact-diagnostic-card:nth-child(3) {
-  grid-column: span 2;
-}
-
-.network-view .network-summary-cards .exact-diagnostic-card:nth-child(3) strong {
-  font-size: 15px;
-  line-height: 1.45;
-  white-space: normal;
-}
-
-.network-view .network-result-panel .json-view {
-  margin: 0 20px 20px;
-}
-
-.network-view .network-trace-lines {
-  display: grid;
-  gap: 8px;
-  margin: 0 20px 20px;
-  padding: 14px;
-  border: 1px solid rgba(45, 74, 122, 0.45);
-  border-radius: 14px;
-  background: rgba(4, 10, 23, 0.42);
-}
-
-.network-view .network-trace-lines strong {
-  color: #f8fafc;
-  font-size: 13px;
-}
-
-.network-view .network-trace-lines code {
-  display: block;
-  padding: 5px 8px;
-  border-radius: 8px;
-  color: #86efac;
-  background: rgba(2, 6, 23, 0.72);
-  white-space: pre-wrap;
-}
-
-.network-view .network-history-table td:nth-child(7) {
-  min-width: 220px;
-  color: var(--exact-muted);
-}
-
-@media (max-width: 980px) {
-  .network-view .network-toolbar {
-    flex-wrap: wrap;
-  }
-
-  .network-view .network-toolbar .exact-toolbar-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .network-view .network-result-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-</style>
+<style scoped src="@/features/network/styles/network-view.css"></style>

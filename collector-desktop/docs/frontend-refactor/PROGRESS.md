@@ -1,6 +1,6 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-10-10（设备管理批准方案生产实施与 Frontend Design 最终14图范围签收完成）
+更新时间：2026-10-11（五运维页按Frontend Design建议实施后完成真实renderer补拍；48张附图范围已获独立像素PASS，9090未替换为本轮候选renderer）
 
 ## 当前状态
 
@@ -18,6 +18,11 @@
 - 2026-10-10 本地临时设备弹窗独立实施：已按批准方案落实五个 Tab，业务脚本与 Git 基线一致，62处模板业务绑定保留，六项允许门禁通过。Frontend Design 全程监工发现的问题已闭环，最终18张主/滚动图及4张局部图获得附图范围 `PASS`；“双套箭头”疑点经高清像素核实是计数单位“个”，原缺陷已撤回。最新62张有效截图/65条记录来自 `index-DBqXg9DV.js`，不是62张全部逐图签收或业务验收；当前 `READY FOR USER VISUAL REVIEW`。不新增 Phase 18，不重启或部署旧JAR。
 
 - 设备管理独立优化最新状态：2026-10-10按批准稿完成生产实施；Frontend Design 前期、实施中和末次构建持续实际像素监工，空态重复标题及确认窗比例/危险按钮/遮罩问题已闭环。末次14图全部获得所附范围PASS，当前为 `READY FOR USER VISUAL REVIEW`，不是全状态业务验收或用户最终确认。未提交/推送/部署，不新增Phase18；详细记录见文末。
+
+- 2026-10-10 概览/实时数据/历史趋势独立优化：六个生产呈现文件及原三个业务区、40处控件绑定和56个保护文件保持；六项允许门禁通过。原离线四附图PASS之后，用户授权启动原9090，补采27张真实原图；Frontend Design独立审查deleg_a1783768实际看4张派生图，当前有后端状态/尺寸PASS，无must-fix。历史存储仍不可用，成功历史曲线/记录及真实采集长精度数值未覆盖；前序三个CSS换行问题未闭环，不等于全状态或用户最终验收。未提交/推送/部署新JAR，不新增Phase18；见文末独立记录及恢复补审。
+
+- 本轮独立运维交付（前序）：五页综合源码分析及优化建议已保存；前端允许门禁、隔离后端无测试打包、9090新包部署及完整57资源HTTP字节核对完成，入口 `index-BM7lzMzh.js`。该前序候选不作为本轮视觉签收。
+- 2026-10-11 五页建议实施已完成：真实renderer入口 `index-DsbgyuIk.js`，五View与五份scoped CSS已按建议调整；末次 `git diff --check`、lint、Stylelint、typecheck、Electron build、Web build均exit0。Frontend Design独立复核 `deleg_2b4ea181` 首轮40张 + `deleg_d06f90d1` 补审8张，48/48在声明视口/滚动/状态范围内PASS，无当前图片支持的must-fix。当前状态为 `SCOPED VISUAL PASS / READY FOR USER ACCEPTANCE`，不等于106张全部逐图、敏感正文/未执行业务态或用户最终验收。
 
 ## Baseline 验证结果
 
@@ -1657,3 +1662,104 @@ Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架�
 - 2026-10-10 11:26:13 +0800关闭本轮自有 `proc_5c1ca414f31b`，实查9343无监听，9090原后端和4311既有设计服务保持监听。没有清理用户其他实例。
 - 报告 `PRODUCTION-VISUAL-REVIEW.md`、逐图 `final-visual-review-manifest.json`、源码 `final-confirmation-source-evidence.json`、门禁/清理及ZIP位于上述scratch根目录。交付只打包末次14张有效图，不纳入中间失败/待修图或凭据。
 - 未提交/推送本轮代码，无关后端修改与原未追踪文件保留；上一弹窗提交为 `e94e68fb`，不混同本轮设备管理完成。
+
+## 2026-10-10 独立优化：概览 / 实时数据 / 历史趋势批准方案生产实施
+
+### 范围与业务保留
+
+- 用户批准三页方案并授权Frontend Design全程监工；基线与当前HEAD为 `c1c57cbfd7dfa03230b9a4dddbf84eca0088d484`，分支 `feature_2.0`。计划 `.hermes/plans/monitoring-three-pages-approved-design.md`，不新增Phase18。
+- 修改三个View，新增分别由scoped入口加载的dashboard/realtime/history-view.css；不改共享220px导航、40px顶栏、主题、API/DTO/Store/Router、Electron Main/Preload、依赖及本地设备弹窗。
+- 原三个业务script按UTF-8/LF一致；历史只追加 `historyPresentation` 与 `historyChartPresentation` 两个只读展示computed，比较去除新增块前的一行空白分隔。40处model/event/disabled表达式完全一致（6/21/13），56个保护文件散列无漂移。
+- 概览保留六摘要、原真实告警/风险列表、资源环与线程条；批准CSS双栏1.45:1，不沿用早期粗估1.25:1。
+- 实时保留原5秒刷新、完整健康快照、增量/分页/单点请求、13列及原精度；主表420px内滚动，不截损完整数据。
+- 历史保留五查询字段、多选、六摘要、曲线/JSON双栏、5列告警与4列记录；原series.points/color、按样本序号与统一原始数值尺度、统计/格式化/失败保持语义不改。
+
+### 三个 Frontend Design 检查点与修正
+
+- 前期批准三张设计实际图像读取成功，记录在交付证据的PREIMPLEMENTATION-DESIGN-REVIEW.md，原型不是生产验收。
+- 实施中 `deleg_141e90c4 / sa-0-237c3fa9` 加载技能并实际查看三张左右比对与640六视图拼图，返回CHANGES_REQUIRED。
+- 页面浅层选择器修复共享壳覆盖按钮；实时表正文11px提高至12px，作为真实长字段可读性小偏离记录，不舍入；两处UNKNOWN只在模板中文化，原状态/helper/script不改。
+- 云状态点改行内均衡换行；窄拓扑用蛇形grid避免孤箭头；历史两个空态移出宽表滚动区，保留原条件/文案及列结构。
+- 最后源码修改后重新六门禁、reload末次构建及新截图。`deleg_1546e7bd / sa-0-a4d631df` 实际查看四张附图，返回“附图范围PASS，无remaining must-fix”，限宽屏与640当前离线/未选择状态；不是25张逐图签收、全状态通过或用户最终验收。
+- CLI辅助调用遇到429/timeout，概览单图成功后默认provider返回401，整次调用失败；没有修改Hermes/provider/model配置或读取凭据，改用原生images委派。失败CLI未计入成功签收。
+
+### 末次门禁、产物及实际运行记录
+
+- `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；不新增、修改或运行测试，不运行含测试quality/verify。既有PURE/vendor chunk警告保留。
+- 末次真实renderer为 `index-Co4ELAHL.js`，入口与dist一致，preload桥接存在；final-offline含25张原图、3张左右标识比对及1张640六视图拼图。
+- 原图记录覆盖1600/1280/1024/640及窄屏顶/底、局部滚动；25条记录pageerror/console.error均0，外层横向溢出记录0。computed主按钮34px、单点36px、分页29px；精确尺寸来自DOM，不伪称像素模型测量。
+- 修正前真实后端可用时已读取200/500真实行，420px表内滚动末行完全可见，单点JSON末端可达；这些为修正前证据，不能替代末次数据态补审。
+- 57个renderer文件与源码static/desktop完整路径及字节一致，只是build:web资源同步，未打包或部署JAR。
+- 仅截图样式隐藏密码控件与潜在敏感错误自由文本并保留布局，没有注入Store/响应或示例状态；隐藏区域不评价。
+
+### 当前阻塞与交付边界
+
+- 2026-10-10 16:05及16:19实查9090均拒绝连接，父代理未停止或擅自重启后端；待用户启动原服务或明确授权启动后，再采末次真实数据态并让Frontend Design补审。
+- 修正后真实表格正文、UNKNOWN中文标签、长云风险文案及真实告警/历史成功曲线仍未实际观察。原环境历史存储不可用，不修数据库、Redis或配置来制造成功画面。
+- `.editorconfig`要求CRLF；最终实查历史Vue已为766处CRLF、无单独LF，三个新CSS仍LF。完整读取后CRLF write_file被账本误判partial拒绝，拒绝调用未修改文件，未shell绕过；三个CSS格式规范尚未闭环，不能以门禁通过掩盖。
+- 当前 `IMPLEMENTED / ATTACHED-STATE VISUAL PASS / POPULATED-STATE REVIEW PENDING`；整体最终验收尚未满足，用户视觉接受由用户决定。
+- 交付 `C:/Users/wangbin/AppData/Local/hermes/artifacts/monitoring-three-pages-production-v1/`：PRODUCTION-VISUAL-REVIEW.md、末次截图与capture-report、final-contract-check、前期/实施中记录及ZIP；旧待修图不冒充末次产物。
+- 交付前六项允许门禁再次exit0，重建57个renderer文件字节与已送审构建完全一致，入口保持index-Co4ELAHL.js。仅关闭本轮自有截图Electron `proc_5710ec7a4eb8`，原生终端实查9344无监听10061；9090与既有4311亦无监听10061，未启动或停止它们。
+- 未提交、推送、部署或重启9090，不执行设备写入、启停、删除、同步、清缓存、导入导出、点位写入、协议命令或desired提交；无关后端改动和原未追踪文件保持。
+
+### 2026-10-10 用户授权后的原服务恢复补审
+
+- 上述离线交付记录保留为当时事实；用户随后授权启动原现有9090服务，本轮已实际启动既有JAR并确认TCP可连接、health HTTP200/body DOWN，不是全依赖健康或新JAR部署。
+- 前序末次index-Co4ELAHL.js通过原认证桥接补采27张真实原图及4张派生图，未注入数据或执行写入。旧截图程序固定serviceNotRestarted字段不能描述本次生命周期，权威操作是获授权启动已停止服务。
+- deleg_a1783768 / sa-0-a40458a8加载frontend-design并实际看4张附图，当前状态/尺寸PASS，无remaining must-fix；真实指标、长名称/线程值/云状态说明、12px正文及640拓扑/两表空态已补审。
+- 成功历史曲线/记录、真实采集长精度数值、640横滚后所有列及历史曲线中段未覆盖；27原图非逐图签收，敏感隐藏正文不评价。前序三个CSS换行问题未修，用户接受待用户确认。
+- 补审记录：scratch/operations-five-pages-production/RESTORED-THREE-PAGES-REVIEW.md；没有替换前序v1交付包或把五页门禁混成三页新构建。
+
+## 2026-10-10 独立优化：采集配置 / 云平台配置 / 系统诊断 / 日志 / 网络检测五页收口
+
+### 实施与契约边界
+
+- 用户授权在既有深色工业工作台内优化五个运维页面；本轮仅调整五个View模板呈现和各自scoped页面CSS，保留220px导航、40px顶栏、共享主题、Router、API、DTO、Store、请求生命周期、控件模型/事件/disabled及共享组件业务源码。
+- 五页原script均按LF基线一致：采集11、云13、诊断13、日志19、网络16，共72处原绑定；158个既有生产保护文件无漂移。五页View与新页面CSS最终均为CRLF。诊断仅将既有warning状态呈现为琥珀色，未改tone/状态计算。
+- 云平台继续作为真实链路监控，不新增凭据表单或保存逻辑；网络检测、导出、设备写入、启停、删除、同步、缓存清理、云Replay/Flush/测试、协议命令均未执行。
+
+### 允许门禁与真实效果图
+
+- 末次 `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；不新增、修改或运行测试，不调用quality/verify。构建保留既有Vite PURE annotation与vendor chunk warning。
+- 末次renderer入口为 `index-BM7lzMzh.js`；Electron/Web构建资源完整57文件，dist/renderer与后端源码static/desktop路径及字节一致。资源同步不等于运行中9090部署。
+- 末次真实capture为90张原图、12张派生/对比图；入口页面无pageerror/console error，外层无横向溢出。覆盖1600/1280/1024/640及页面底部、内部表格/面板滚动末端；真实数据态仅按当前可达依赖采集。
+- `deleg_4af70a33`对采集、云、诊断、日志、网络所附末次图完成实际像素审查；日志补图 `deleg_2c498bc2`确认左端时间/级别/记录器、右端日志消息及两端空态完整可读。五页当前附图范围均PASS，无remaining must-fix；不等于全部原图逐张签收、所有业务成功/失败状态验证或用户最终视觉接受。
+
+### 运行与交付边界
+
+- 按用户授权启动的是原有JAR；9090可达，`/collector/health` HTTP200但health为 `DOWN`，数据库/Redis等依赖未修复。没有部署新JAR、提交、推送或重启替换运行服务。
+- 本轮自有9345截图Electron已关闭（实查无监听）；用户授权启动的原9090服务保持运行。交付目录为 `C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-production-v1/`，包含五页末次PNG、报告、契约检查、构建日志和ZIP；敏感正文只在截图层隐藏，不改生产数据。
+
+## 2026-10-10 独立任务：五页综合设计分析、打包与9090重启
+
+- 最新用户授权为“综合分析优缺点、提出优化建议、给出效果图，最后重新启动打包9090”。本轮未实施新的设计建议，不修改五页生产Vue/CSS、API/DTO/Store/Router/业务处理，不新增Phase18、不提交推送、不编译或运行测试。
+- 已使用frontend-design读取五页模板/CSS及设计基线，独立源码审查后核实：采集/诊断未知与零值区分、云指标/队列新鲜度、诊断JSON默认展开、日志过滤说明层级、网络当前配置/结果边界。日志已有table/row/columnheader/cell语义，已撤回“缺少行列ARIA”推断。视觉建议与源码确认分别表述。
+- 首次五图独立视觉审查上游超时；重派真实联系图后返回HTTP 401 / API_KEY_DISABLED，未获得像素分析。本轮不作新的视觉PASS、不修改provider或读取凭据，不以旧截图签收新运行状态。
+- diff-check、lint、Stylelint、typecheck、Electron build、Web build均exit0。Git Bash Maven Launcher失败后直接用已安装JDK17/ Classworlds运行。当前工作区16模块生产输入隔离快照 `-pl collector-boot -am -Dmaven.test.skip=true clean package` 为BUILD SUCCESS，未复制/编译测试源。该产物不是新提交版本。
+- 新可执行JAR为 `collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar`，SHA-256 `b73e82b1b4f2556535bfcf4be91aa714744a9f230d2c80f7ad3514e564497e1d`。打包前未触碰被旧进程占用的原JAR；已保留本地可执行回滚包 `data-collection-service-pre-frontend-design.jar`。只停止已核实的原9090 PID6540，端口释放后替换并以原JDK/编码/工作目录启动，实际新PID32160。
+- HTTP读回完整57个页面资源均200、路径集合/字节与renderer一致，入口index-BM7lzMzh.js。health HTTP200但DOWN；application/cache为UP，collectionService为DOWN（停止，运行设备0），connections为UNKNOWN。未修依赖、未启动设备、未执行云测试/网络检测等业务写入。
+- 重启后真实Electron renderer补采90张1600/1280/1024/640及内部/底部滚动图，pageerror/console error为0，外层无横向溢出；截图敏感自由文本仅样式隐藏，不改生产数据。新截图不是新建议已实现，也未全部逐像素签收。完整renderer路径/SHA与前次审核构建保持一致。
+- 交付目录 `C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-design-audit-release/` 保存综合报告、真实PNG、安全运行/构建摘要和验证后的ZIP。仅关闭本轮自有9345截图Electron；用户要求的9090新服务保持运行。
+
+## 2026-10-11 独立优化：五页Frontend Design建议实施后的真实像素收口
+
+### 实施、构建与审查身份
+
+- 用户要求按Frontend Design建议实际实施并持续复核，范围仍限定为采集配置、云平台配置、系统诊断、日志、网络检测五页；不改共享组件业务源码、API、Store、Router、请求顺序、参数、权限和业务写入路径。
+- 末次候选真实renderer入口为 `index-DsbgyuIk.js`；审查使用的57个renderer资源在补拍前后按完整相对路径和SHA-256核对一致。9090仍服务前序入口 `index-BM7lzMzh.js`，没有把候选源码冒称为9090已部署。
+- 末次允许门禁 `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；未新增、修改或运行测试，未执行quality/verify聚合命令。
+- 首轮独立Frontend Design像素复核为 `deleg_2b4ea181`，实际查看五页40张附图；采集细节、云动作时间和日志行容器补审为 `deleg_d06f90d1`，实际查看8张原尺寸/原像素派生局部图。两次均不是仅读源码或DOM结论。
+
+### 真实图片范围结论
+
+- 48张图片在各自声明的视口、滚动位置和业务状态范围内获得 `PASS`，没有当前图片支持的遗留pixel-level must-fix：采集配置13张、云平台配置10张、系统诊断8张、日志9张、网络检测8张。
+- 采集配置补审确认概览→导出/导入→同步层级、唯一普通蓝色刷新主操作、导入/同步中性outline、640宽协议表左右横滚端点与Custom UDP末行完整可见。
+- 云平台补审确认两条独立读取时间的对齐可读性及Replay/Flush风险说明层级；系统诊断和网络检测保留真实降级/未知/未执行分层，不用伪造成功态取得视觉PASS。
+- 日志补审仅签可见时间、级别、记录器、线程、消息列和行容器结构；原始自由正文在截图层隐藏，不能据此签正文可读性。云详情/Replay/Flush确认、网络成功/失败、导出/同步/检测等未执行状态同样未签业务结果。
+
+### 交付、运行边界与最终状态
+
+- 冻结交付目录：`C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-recommendation-final/`。其中包含五页主图、48张明确签收图片、Frontend Design最终报告、构建/契约/脚本差异安全证据、相对路径SHA-256清单及重新打开校验过的ZIP；ZIP哈希成员58、连同manifest归档总成员59，归档SHA-256记录在 `artifact-receipt.json`。
+- 交付总览图为 `effects-contact-sheet.png`；具体真实主图位于 `screenshots/candidate/`，补审局部图位于 `screenshots/supplement/`。报告只把48张列入的当前图片称为PASS，不把候选目录其余图片或历史图片追认为逐图签收。
+- 9090运行边界保持独立：既有服务页面HTTP200，入口仍为 `index-BM7lzMzh.js`，health HTTP200但业务状态为 `DOWN`；本轮不重启、不替换、不修依赖。自有截图Electron已关闭，9345实查无监听。
+- 当前状态：`SCOPED VISUAL PASS / READY FOR USER ACCEPTANCE`。该状态表示Frontend Design对交付图片范围已通过，不等于全部106张逐图签收、敏感正文可读性、未执行业务成功/失败态、业务联调、9090部署或用户最终接受。

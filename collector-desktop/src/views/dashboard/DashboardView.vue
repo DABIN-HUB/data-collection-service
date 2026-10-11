@@ -1,136 +1,123 @@
 <template>
   <section class="overview-section dashboard-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>控制台总览</h1>
-        <span class="heading-online"><i></i>设备连接 <b>{{ deviceConnectionText }}</b></span>
+    <div class="dashboard-heading">
+      <div>
+        <div class="dashboard-title-line">
+          <h1>控制台总览</h1>
+          <span class="dashboard-badge">设备连接 <b>{{ deviceState.lastSuccessAt === null ? '-' : deviceConnectionText }}</b></span>
+        </div>
+        <p class="dashboard-heading-note">{{ lastRefreshText }}</p>
       </div>
-      <div class="heading-actions">
-        <button type="button" class="primary" :disabled="dashboardLoading" @click="refreshDashboard">刷新全部</button>
+      <div class="dashboard-heading-actions">
+        <button type="button" :disabled="dashboardLoading" @click="refreshDashboard">刷新全部</button>
         <button type="button" @click="goToDevice">设备管理</button>
         <button type="button" class="primary" @click="openLocalEditor">新增本地设备</button>
-        <span class="heading-note">{{ lastRefreshText }}</span>
       </div>
     </div>
 
-    <div class="dashboard-alerts">
+    <div v-if="dashboardError || dashboardPartialWarning || dashboardLoading" class="dashboard-alerts">
       <el-alert v-if="dashboardError" :title="dashboardError" type="error" :closable="false" />
       <el-alert v-else-if="dashboardPartialWarning" :title="dashboardPartialWarning" type="warning" :closable="false" />
+      <div v-else class="dashboard-loading" role="status">正在刷新总览，各项指标按独立数据源展示。</div>
     </div>
 
-    <div class="overview-cards">
-      <article v-for="card in overviewCards" :key="card.label" class="card metric-card">
-        <small>{{ card.label }}</small>
-        <div v-if="card.ring" class="cache-ring" aria-hidden="true"></div>
-        <strong>{{ card.value }}</strong>
-        <div v-if="card.meta" class="card-meta">
-          <span v-for="item in card.meta" :key="String(item[0])">{{ item[0] }} {{ item[1] }}</span>
-        </div>
-        <div v-else class="card-subtext">{{ card.subtext }}</div>
+    <div class="dashboard-metric-rail">
+      <article v-for="card in overviewCards" :key="card.label" class="dashboard-metric" :class="{ 'dashboard-link-metric': card.label === '云上报链路' }">
+        <span>{{ card.label }}</span>
+        <template v-if="(['采集器总数', '点位总数', '运行设备'].includes(card.label) && deviceState.lastSuccessAt === null) || (card.label === '全局告警' && alarmState.lastSuccessAt === null)">
+          <strong>—</strong>
+          <p>{{ card.label === '全局告警' ? (alarmsUnavailable ? '告警数据暂不可用' : '告警数据待确认') : (devicesUnavailable ? '设备数据暂不可用' : '设备数据待确认') }}</p>
+        </template>
+        <template v-else>
+          <strong :class="{ 'dashboard-warning': card.label === '全局告警' && Number(card.value) > 0 }" :title="String(card.value)">
+            <i v-if="card.label === '云上报链路'" class="dashboard-dot" :class="cloudToneClass" aria-hidden="true"></i>
+            {{ card.value }}
+            <small v-if="['采集器总数', '运行设备'].includes(card.label)">台</small>
+            <small v-else-if="card.label === '点位总数'">个</small>
+            <small v-else-if="card.label === '全局告警' && !alarmsUnavailable">条</small>
+          </strong>
+          <p v-if="card.meta" class="dashboard-metric-meta">
+            <span v-for="item in card.meta" :key="String(item[0])">{{ item[0] }} <b>{{ item[1] }}</b></span>
+          </p>
+          <p v-else>{{ card.subtext }}</p>
+        </template>
       </article>
     </div>
 
-    <div class="home-dashboard">
-      <div class="home-dashboard-row home-dashboard-primary">
-        <section class="home-panel home-panel-large">
-          <div class="home-panel-head">
-            <div><h2>全局告警最近记录</h2></div>
-            <span class="home-panel-badge">{{ recentAlarmBadge }}</span>
-          </div>
-          <div class="home-event-list">
-            <div v-if="recentAlarms.length === 0" class="empty-state compact">{{ recentAlarmEmptyText }}</div>
-            <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
-              <div class="home-event-main">
-                <strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong>
-                <span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span>
-              </div>
-              <div class="home-event-meta">
-                <b>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
-                <span>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</span>
-              </div>
+    <div class="home-dashboard-row home-dashboard-primary">
+      <section class="home-panel">
+        <div class="home-panel-head">
+          <h2>全局告警最近记录</h2>
+          <span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span>
+        </div>
+        <div class="home-event-list" tabindex="0" role="region" aria-label="最近告警，可独立滚动">
+          <div v-if="recentAlarms.length === 0" class="dashboard-empty">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '正在读取最近告警' : recentAlarmEmptyText }}</div>
+          <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
+            <b class="home-event-level">{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
+            <div class="home-event-main">
+              <strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong>
+              <span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span>
             </div>
+            <time>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</time>
           </div>
-        </section>
+        </div>
+      </section>
+      <section class="home-panel">
+        <div class="home-panel-head">
+          <h2>设备异常风险</h2>
+          <span class="dashboard-badge" :class="{ 'dashboard-warning': riskDevices.length > 0 || devicesStale }">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '数据待确认' : riskDeviceBadge }}</span>
+        </div>
+        <div class="home-risk-list" tabindex="0" role="region" aria-label="设备异常风险，可独立滚动">
+          <div v-if="riskDevices.length === 0" class="dashboard-empty">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '正在读取设备状态' : riskDeviceEmptyText }}</div>
+          <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
+            <i class="dashboard-dot" :class="riskToneClass(device)" aria-hidden="true"></i>
+            <div>
+              <strong :title="device.displayName || device.normalizedId">{{ device.displayName || device.normalizedId }}</strong>
+              <p>{{ riskDescription(device) }}</p>
+            </div>
+            <span class="dashboard-badge">{{ riskToneClass(device) === 'is-error' ? '异常' : '离线' }}</span>
+          </div>
+        </div>
+      </section>
+    </div>
 
-        <section class="home-panel">
-          <div class="home-panel-head">
-            <div><h2>设备异常风险</h2></div>
-            <span class="home-panel-badge">{{ riskDeviceBadge }}</span>
+    <div class="home-dashboard-row home-dashboard-observability">
+      <section class="home-panel home-panel-report">
+        <div class="home-panel-head"><h2>数据上报链路拓扑</h2><span>{{ reportState }}</span></div>
+        <div class="topology-flow" aria-label="数据采集与上报拓扑">
+          <div class="topology-node" :class="collectorToneClass" :title="collectorDetail">
+            <span class="topology-icon">采</span><strong>采集器</strong>
+            <span class="topology-status-dots"><i class="dashboard-dot" :class="runningToneClass"></i><i class="dashboard-dot" :class="collectorToneClass"></i>连接与风险</span>
           </div>
-          <div class="home-risk-list">
-            <div v-if="riskDevices.length === 0" class="empty-state compact">{{ riskDeviceEmptyText }}</div>
-            <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
-              <span class="risk-dot"></span>
-              <div>
-                <strong :title="device.displayName || device.normalizedId">{{ device.displayName || device.normalizedId }}</strong>
-                <p>{{ riskDescription(device) }}</p>
-              </div>
-            </div>
+          <span class="topology-connector" aria-hidden="true"></span>
+          <div class="topology-node" :class="gatewayToneClass" :title="gatewayDetail">
+            <span class="topology-icon">网</span><strong>边缘网关</strong><small :title="nodeIdentity">{{ nodeIdentity }}</small>
           </div>
-        </section>
-      </div>
-
-      <div class="home-dashboard-row home-dashboard-observability">
-        <section class="home-panel home-panel-report">
-          <div class="home-panel-head">
-            <div><h2>数据上报链路拓扑</h2></div>
-            <span class="home-panel-badge">{{ reportState }}</span>
+          <span class="topology-connector" aria-hidden="true"></span>
+          <div class="topology-storage-stack">
+            <div class="topology-storage-pill" title="Redis 缓存状态"><span>Redis 缓存</span><i class="dashboard-dot" :class="cacheToneClass"></i></div>
+            <div class="topology-storage-pill" title="TDengine 历史存储状态"><span>TDengine</span><i class="dashboard-dot" :class="storageToneClass"></i></div>
           </div>
-          <div class="pipeline-steps">
-            <div class="topology-flow" aria-label="数据采集与上报拓扑">
-              <div class="topology-node" :class="collectorToneClass" :title="collectorDetail">
-                <span class="topology-icon">采</span>
-                <strong>采集器</strong>
-                <span class="topology-status-dots"><i :class="runningToneClass"></i><i :class="collectorToneClass"></i></span>
-              </div>
-              <span class="topology-connector" aria-hidden="true"></span>
-              <div class="topology-node" :class="gatewayToneClass" :title="gatewayDetail">
-                <span class="topology-icon">网</span>
-                <strong>边缘网关</strong>
-                <small :title="nodeIdentity">{{ nodeIdentity }}</small>
-              </div>
-              <span class="topology-connector" aria-hidden="true"></span>
-              <div class="topology-storage-stack">
-                <div class="topology-storage-pill" title="Redis 缓存状态">
-                  <span>Redis 缓存</span><i class="status-dot" :class="cacheToneClass"></i>
-                </div>
-                <div class="topology-storage-pill" title="TDengine 历史存储状态">
-                  <span>TDengine</span><i class="status-dot" :class="storageToneClass"></i>
-                </div>
-              </div>
-              <span class="topology-connector" aria-hidden="true"></span>
-              <div class="topology-node" :class="cloudToneClass" :title="reportState">
-                <span class="topology-icon">云</span>
-                <strong>云平台</strong>
-                <small :title="reportState">{{ reportState }}</small>
-              </div>
-            </div>
+          <span class="topology-connector" aria-hidden="true"></span>
+          <div class="topology-node" :class="cloudToneClass" :title="reportState">
+            <span class="topology-icon">云</span><strong>云平台</strong><small :title="reportState">{{ reportState }}</small>
           </div>
-        </section>
-
-        <section class="home-panel home-panel-runtime">
-          <div class="home-panel-head">
-            <div><h2>系统资源与线程池</h2></div>
-            <span class="home-panel-badge">{{ runtimeState }}</span>
+        </div>
+        <div class="topology-foot"><span><i class="dashboard-dot is-ok"></i>状态指标已加载</span><span><i class="dashboard-dot is-warn"></i>风险 / 上次数据</span><span><i class="dashboard-dot is-muted"></i>未知</span></div>
+      </section>
+      <section class="home-panel home-panel-runtime">
+        <div class="home-panel-head"><h2>系统资源与线程池</h2><span>{{ runtimeState }}</span></div>
+        <div class="resource-gauges">
+          <div v-for="gauge in resourceGauges" :key="gauge.label" class="resource-gauge">
+            <div class="resource-ring" :class="`is-${gauge.tone}`" :style="{ '--resource-progress': `${gauge.degrees}deg` }"><strong>{{ gauge.value }}</strong></div>
+            <span>{{ gauge.label }}</span>
           </div>
-          <div class="home-resource-list">
-            <div class="resource-dashboard">
-              <div class="resource-gauges">
-                <div v-for="gauge in resourceGauges" :key="gauge.label" class="resource-gauge">
-                  <div class="resource-ring" :class="`is-${gauge.tone}`" :style="{ '--resource-progress': `${gauge.degrees}deg` }"></div>
-                  <span>{{ gauge.label }}</span>
-                  <strong>{{ gauge.value }}</strong>
-                </div>
-              </div>
-              <div class="resource-runtime-summary" :title="resourceSummary.title">
-                <div><span>活跃线程:</span><strong>{{ resourceSummary.activeThreads }} / {{ resourceSummary.maxThreads }}</strong></div>
-                <div><span>队列积压:</span><strong :class="{ 'is-warn': resourceSummary.queuedTasks !== '-' && Number(resourceSummary.queuedTasks) > 0 }">{{ resourceSummary.queuedTasks }}</strong></div>
-                <div class="resource-load-track"><i :style="{ width: resourceSummary.threadUsage }"></i></div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
+        <div class="resource-runtime-summary" :title="resourceSummary.title">
+          <div><span>活跃线程</span><strong>{{ resourceSummary.activeThreads }} / {{ resourceSummary.maxThreads }}</strong><span>队列积压</span><strong :class="{ 'dashboard-warning': resourceSummary.queuedTasks !== '-' && Number(resourceSummary.queuedTasks) > 0 }">{{ resourceSummary.queuedTasks }}</strong></div>
+          <div class="resource-load-track"><i :style="{ width: resourceSummary.threadUsage }"></i></div>
+        </div>
+      </section>
     </div>
 
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />
@@ -588,615 +575,4 @@ function formatTime(value: unknown): string {
 }
 </script>
 
-<style scoped>
-.dashboard-view {
-  width: 100%;
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  flex: 1;
-  overflow-y: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.heading-note {
-  color: var(--exact-muted);
-  font-size: 11px;
-}
-
-.dashboard-alerts {
-  display: grid;
-  padding: 12px 24px 0;
-  gap: 8px;
-}
-
-.overview-cards {
-  display: grid;
-  margin: 0;
-  padding: 24px 24px 0;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 15px;
-}
-
-.overview-cards .card {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  min-height: 146px;
-  padding: 16px;
-  flex-direction: column;
-  justify-content: flex-start;
-  overflow: hidden;
-  border: 1px solid var(--exact-border);
-  border-radius: 12px;
-  background: var(--exact-panel);
-  box-shadow: none;
-}
-
-.overview-cards .card::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  width: auto;
-  height: 4px;
-  border-radius: 0;
-  background: var(--exact-blue);
-  content: "";
-}
-
-.overview-cards .card::after {
-  display: none !important;
-  content: none !important;
-}
-
-.overview-cards .card:nth-child(1)::before { background: var(--exact-cyan); }
-.overview-cards .card:nth-child(2)::before { background: var(--exact-muted); }
-.overview-cards .card:nth-child(3)::before { background: var(--exact-red); }
-.overview-cards .card:nth-child(4)::before { background: #22c55e; }
-.overview-cards .card:nth-child(5)::before { background: var(--exact-blue); }
-.overview-cards .card:nth-child(6)::before { background: #34d399; }
-
-.overview-cards .card span {
-  color: var(--exact-muted);
-  font-size: 12px;
-}
-
-.overview-cards .card strong {
-  display: block;
-  margin: 12px 0 8px;
-  color: #fff;
-  font-size: 25px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.overview-cards .card small {
-  margin-top: auto;
-  color: var(--exact-dim);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.overview-cards .card:nth-child(1) strong { color: var(--exact-cyan); }
-.overview-cards .card:nth-child(3) strong { color: var(--exact-red); }
-.overview-cards .card:nth-child(4) strong { color: #22c55e; }
-.overview-cards .card:nth-child(6) strong { color: #34d399; }
-
-.overview-cards .card > small {
-  margin: 1px 0 12px;
-  color: var(--exact-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.overview-cards .card .card-subtext,
-.overview-cards .card .card-meta {
-  margin-top: auto;
-  color: var(--exact-dim);
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.overview-cards .card .card-meta {
-  display: grid;
-  gap: 3px;
-}
-
-.overview-cards .card .card-meta span {
-  color: var(--exact-dim);
-  font-size: 10px;
-}
-
-.overview-cards .cache-ring {
-  width: 64px;
-  height: 64px;
-  margin: -2px auto 2px;
-  border: 6px solid #263955;
-  border-top-color: var(--exact-blue);
-  border-right-color: var(--exact-blue);
-  border-bottom-color: var(--exact-blue);
-  border-radius: 50%;
-  transform: rotate(34deg);
-}
-
-.overview-cards .card:nth-child(5) > small {
-  margin-bottom: 3px;
-}
-
-.overview-cards .card:nth-child(5) > strong {
-  margin: 0 auto;
-  color: #60a5fa;
-  font-size: 13px;
-}
-
-.overview-cards .card:nth-child(5) .card-subtext {
-  display: block;
-}
-
-.home-dashboard {
-  display: flex;
-  margin-top: 0;
-  padding: 24px;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.home-dashboard-row {
-  display: grid;
-  gap: 24px;
-}
-
-.home-dashboard-primary,
-.home-dashboard-observability {
-  grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
-}
-
-.home-panel {
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  overflow: visible;
-  color: #e2e8f0;
-  border: 1px solid var(--exact-border);
-  border-radius: 12px;
-  background: var(--exact-panel);
-  box-shadow: none;
-}
-
-.home-dashboard-primary .home-panel {
-  min-height: 337px;
-}
-
-.home-dashboard-observability .home-panel {
-  min-height: 220px;
-}
-
-.home-panel-head {
-  display: flex;
-  min-height: 56px;
-  padding: 0 16px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--exact-border);
-  background: transparent;
-}
-
-.home-panel-head h2 {
-  margin: 0;
-  color: #fff;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.home-panel-badge {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #60a5fa;
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.home-event-list,
-.home-risk-list {
-  display: flex;
-  max-height: 277px;
-  padding: 16px;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-}
-
-.home-event-row {
-  position: relative;
-  min-height: 66px;
-  margin-left: 48px;
-  padding: 12px;
-  border: 1px solid rgba(59, 130, 246, 0.28);
-  border-radius: 8px;
-  background: var(--exact-panel-soft);
-}
-
-.home-event-row::before {
-  position: absolute;
-  top: 25px;
-  left: -33px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 0 9px var(--exact-panel);
-  content: "";
-}
-
-.home-event-row::after {
-  position: absolute;
-  top: 29px;
-  bottom: -32px;
-  left: -29px;
-  width: 1px;
-  background: var(--exact-border);
-  content: "";
-}
-
-.home-event-row:last-child::after {
-  display: none;
-}
-
-.home-event-row.is-error {
-  border-color: rgba(239, 68, 68, 0.28);
-}
-
-.home-event-row.is-error::before {
-  background: var(--exact-red);
-}
-
-.home-event-row.is-warn {
-  border-color: rgba(249, 115, 22, 0.3);
-}
-
-.home-event-row.is-warn::before {
-  background: var(--exact-orange);
-}
-
-.home-event-main,
-.home-event-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.home-event-main {
-  flex-direction: column;
-}
-
-.home-event-main strong {
-  color: #93c5fd;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.home-event-main span,
-.home-event-meta span {
-  color: var(--exact-muted);
-  font-size: 11px;
-}
-
-.home-event-meta {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-}
-
-.home-event-meta b {
-  display: none;
-}
-
-.home-risk-row {
-  position: relative;
-  display: block;
-  min-height: 67px;
-  padding: 14px 82px 12px 13px;
-  border: 0;
-  border-left: 4px solid var(--exact-orange);
-  border-radius: 5px;
-  background: var(--exact-panel-soft);
-}
-
-.home-risk-row.is-error {
-  border-left-color: var(--exact-red);
-}
-
-.home-risk-row.is-warn {
-  border-left-color: var(--exact-orange);
-}
-
-.home-risk-row .risk-dot {
-  display: none;
-}
-
-.home-risk-row strong {
-  display: block;
-  overflow: hidden;
-  color: #fff;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-risk-row p {
-  margin: 5px 0 0;
-  color: var(--exact-dim);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.pipeline-steps {
-  display: flex;
-  height: calc(100% - 56px);
-  min-width: 0;
-  padding: 18px clamp(14px, 1.6vw, 24px);
-  align-items: center;
-  overflow: visible;
-}
-
-.topology-flow {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  height: 128px;
-  align-items: center;
-  justify-content: space-between;
-  gap: clamp(6px, 1vw, 18px);
-}
-
-.topology-node {
-  display: flex;
-  width: clamp(70px, 6.6vw, 88px);
-  min-width: 0;
-  min-height: 66px;
-  padding: 7px 8px 6px;
-  align-items: center;
-  flex: 0 1 clamp(70px, 6.6vw, 88px);
-  flex-direction: column;
-  justify-content: center;
-  border: 2px solid #2d4a7a;
-  border-radius: 8px;
-  background: var(--exact-panel);
-  box-shadow: none;
-  text-align: center;
-}
-
-.topology-node.is-ok { border-color: rgba(34, 197, 94, 0.65); }
-.topology-node.is-warn { border-color: var(--exact-orange); }
-.topology-node.is-error { border-color: var(--exact-red); }
-.topology-node.is-gateway { border-color: var(--exact-blue); }
-
-.topology-icon {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  margin-bottom: 3px;
-  place-items: center;
-  color: var(--exact-cyan);
-  border-radius: 4px;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.topology-node strong {
-  display: block;
-  color: #fff;
-  font-size: 11px;
-}
-
-.topology-node small {
-  display: block;
-  max-width: 100%;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--exact-dim);
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.topology-storage-stack {
-  display: grid;
-  min-width: 96px;
-  flex: 0 1 130px;
-  gap: clamp(8px, 1vw, 14px);
-}
-
-.topology-storage-pill {
-  display: flex;
-  min-height: 28px;
-  min-width: 0;
-  padding: 0 clamp(7px, 0.8vw, 10px);
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--exact-border);
-  border-radius: 5px;
-  background: var(--exact-panel-soft);
-  color: #fff;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.topology-storage-pill span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.topology-storage-pill .status-dot {
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--exact-dim);
-}
-
-.topology-storage-pill .status-dot.is-ok,
-.topology-status-dots i.is-ok { background: var(--exact-green); }
-.topology-storage-pill .status-dot.is-warn,
-.topology-status-dots i.is-warn { background: var(--exact-orange); }
-.topology-storage-pill .status-dot.is-error,
-.topology-status-dots i.is-error { background: var(--exact-red); }
-
-.topology-status-dots {
-  display: flex;
-  margin-top: 5px;
-  gap: 4px;
-}
-
-.topology-status-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--exact-dim);
-}
-
-.topology-connector {
-  display: block;
-  min-width: clamp(8px, 1vw, 28px);
-  height: 1px;
-  flex: 1 1 42px;
-  background: var(--exact-border);
-}
-
-.home-resource-list {
-  display: block;
-  max-height: none;
-  padding: 13px 16px 12px;
-  overflow: visible;
-}
-
-.resource-dashboard {
-  display: grid;
-  min-width: 0;
-  min-height: 134px;
-  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.45fr);
-  align-items: center;
-  gap: clamp(8px, 1vw, 16px);
-}
-
-.resource-gauges {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(5px, 0.7vw, 8px);
-}
-
-.resource-gauge {
-  display: grid;
-  place-items: center;
-  gap: 5px;
-}
-
-.resource-ring {
-  --resource-color: #22d3ee;
-  position: relative;
-  display: grid;
-  width: clamp(54px, 5vw, 68px);
-  height: clamp(54px, 5vw, 68px);
-  place-items: center;
-  border-radius: 50%;
-  background: conic-gradient(var(--resource-color) var(--resource-progress), #233a5c var(--resource-progress));
-}
-
-.resource-ring::after {
-  position: absolute;
-  width: calc(100% - 16px);
-  height: calc(100% - 16px);
-  border-radius: 50%;
-  background: var(--exact-panel);
-  content: "";
-}
-
-.resource-ring.is-blue { --resource-color: #3b82f6; }
-.resource-ring.is-orange { --resource-color: #f59e0b; }
-.resource-ring.is-green { --resource-color: #22c55e; }
-.resource-ring.is-muted { --resource-color: #475569; }
-
-.resource-gauge > span {
-  color: var(--exact-muted);
-  font-size: 10px;
-}
-
-.resource-gauge > strong {
-  color: var(--resource-color, #60a5fa);
-  font-size: 13px;
-}
-
-.resource-gauge:nth-child(1) > strong { color: #60a5fa; }
-.resource-gauge:nth-child(2) > strong { color: #fb923c; }
-.resource-gauge:nth-child(3) > strong { color: #4ade80; }
-
-.resource-runtime-summary {
-  display: grid;
-  min-width: 0;
-  min-height: 104px;
-  padding-left: clamp(10px, 1.4vw, 28px);
-  align-content: center;
-  gap: 12px;
-  border-left: 1px solid var(--exact-border);
-}
-
-.resource-runtime-summary > div:not(.resource-load-track) {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-}
-
-.resource-runtime-summary span {
-  color: var(--exact-dim);
-}
-
-.resource-runtime-summary strong {
-  color: #fff;
-  font-size: 10px;
-}
-
-.resource-runtime-summary strong.is-warn {
-  color: #f87171;
-}
-
-.resource-load-track {
-  width: min(80px, 100%);
-  height: 4px;
-  overflow: hidden;
-  border-radius: 99px;
-  background: #334155;
-}
-
-.resource-load-track i {
-  display: block;
-  height: 100%;
-  background: var(--exact-blue);
-}
-
-@media (max-width: 1440px) {
-  .overview-cards {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1100px) {
-  .overview-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .home-dashboard-primary,
-  .home-dashboard-observability {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style scoped src="@/features/dashboard/styles/dashboard-view.css"></style>

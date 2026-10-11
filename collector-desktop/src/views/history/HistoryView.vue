@@ -1,16 +1,19 @@
 <template>
-  <section class="exact-page legacy-history-panel">
-    <div class="section-heading">
-      <div class="heading-title-line">
+  <section class="exact-page history-view">
+    <header class="history-heading">
+      <div class="history-title-line">
         <h1>历史趋势</h1>
-        <span class="heading-online"><i></i>{{ historyRows.length }} 条 · 对比 {{ comparePointRefs.length }} 个点位</span>
+        <span class="history-badge" :class="{ 'is-warning': Boolean(historyError || historyPartialWarning) }">
+          {{ historyPresentation.recordCount }} 条 · 对比 {{ comparePointRefs.length }} 个点位
+        </span>
       </div>
-    </div>
+      <p>围绕同一设备，查询主点位并对比其他点位</p>
+    </header>
 
-    <div class="exact-page-body">
-      <section class="exact-toolbar history-query-bar">
-        <div class="history-filter-main">
-          <label class="history-filter-field">
+    <div class="history-page-body">
+      <section class="history-panel history-query-panel" aria-label="历史查询条件">
+        <div class="history-query-fields">
+          <label class="history-field">
             <span>设备</span>
             <select v-model="deviceId" @change="handleDeviceChange">
               <option value="">选择设备</option>
@@ -19,7 +22,7 @@
               </option>
             </select>
           </label>
-          <label class="history-filter-field">
+          <label class="history-field">
             <span>点位</span>
             <select v-model="pointRef">
               <option value="">选择点位</option>
@@ -28,136 +31,163 @@
               </option>
             </select>
           </label>
-          <label class="history-filter-field">
+          <label class="history-field">
             <span>开始</span>
             <input v-model="startTime" type="datetime-local" title="开始时间" />
           </label>
-          <label class="history-filter-field">
+          <label class="history-field">
             <span>结束</span>
             <input v-model="endTime" type="datetime-local" title="结束时间" />
           </label>
-          <label class="history-filter-field is-short">
+          <label class="history-field history-limit">
             <span>条数</span>
             <input v-model.number="limit" type="number" min="10" max="2000" step="10" title="最大条数" />
           </label>
         </div>
-        <div class="history-filter-bottom">
-          <label class="history-filter-field history-compare-field">
+        <div class="history-compare-row">
+          <label class="history-field history-compare-field">
             <span>对比点位</span>
             <select v-model="comparePointRefs" multiple size="3" class="history-compare-select" title="按住 Ctrl/Command 多选对比点位">
               <option v-for="point in comparePointOptions" :key="`compare-${point.key}`" :value="point.key">
                 {{ point.label }}
               </option>
             </select>
-            <small>可选多个点位做趋势对比</small>
           </label>
+          <p>可选多个点位做趋势对比<br /><small>按住 Ctrl / Command 多选</small></p>
           <div class="history-query-actions">
-            <button type="button" class="primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
-            <button type="button" class="primary" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
+            <button type="button" class="history-button primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
+            <button type="button" class="history-button" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
           </div>
         </div>
       </section>
 
-      <el-alert v-if="historyCapabilityMessage && !appStore.capabilities?.history.available" :title="historyCapabilityMessage" type="warning" :closable="false" />
-      <el-alert v-if="historyReadStatusText" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
-      <el-alert v-if="historyPartialWarning" :title="historyPartialWarning" type="warning" :closable="false" />
+      <el-alert v-if="historyCapabilityMessage && !appStore.capabilities?.history.available" class="history-notice" :title="historyCapabilityMessage" type="warning" :closable="false" />
+      <el-alert v-if="historyReadStatusText" class="history-notice" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
+      <el-alert v-if="historyPartialWarning" class="history-notice" :title="historyPartialWarning" type="warning" :closable="false" />
 
-      <div v-if="historySummaryCards.length" class="exact-diagnostic-cards history-summary-cards">
-        <div v-for="card in historySummaryCards" :key="card.label" class="exact-diagnostic-card">
+      <div v-if="historySummaryCards.length" class="history-summary">
+        <article v-for="card in historySummaryCards" :key="card.label" :class="{ 'history-time-range': card.label === '时间范围', 'history-value-range': card.label === '数值范围' }">
           <span>{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
-          <small>{{ card.detail }}</small>
-        </div>
+          <strong :title="historyPresentation.hasResult || card.label === '时间范围' ? card.value : historyPresentation.stateLabel">
+            {{ historyPresentation.hasResult || card.label === '时间范围' ? card.value : '—' }}
+          </strong>
+          <small>{{ historyPresentation.hasResult || card.label === '时间范围' ? card.detail : historyPresentation.stateLabel }}</small>
+        </article>
       </div>
 
-      <div class="surface-grid two">
-        <section class="surface-card wide-field">
-          <div class="surface-card-head">
-            <h3>点位历史曲线</h3>
+      <div class="history-trend-grid">
+        <section class="history-panel history-curve-panel">
+          <div class="history-panel-head">
+            <h2>点位历史曲线</h2>
             <span>{{ selectedPointLabel }}</span>
           </div>
-          <div class="history-chart history-chart-dark">
-            <svg v-if="historySeries.length" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="历史趋势折线">
-              <polyline
-                v-for="series in historySeries"
-                :key="series.key"
-                :points="series.points"
-                fill="none"
-                :stroke="series.color"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
+          <div v-if="historyChartPresentation" class="history-chart-wrap">
+            <div class="history-chart-caption"><span>数值</span><span>按采样顺序排列</span></div>
+            <svg class="history-chart-svg" viewBox="0 0 780 320" role="img" aria-label="主点位与对比点位历史折线，按各自样本序号排列，使用统一原始数值轴">
+              <g class="history-chart-grid">
+                <path d="M64 56H744M64 107H744M64 158H744M64 209H744M64 260H744" />
+                <line v-for="tick in historyChartPresentation.sampleTicks" :key="tick.index" :x1="tick.x" y1="56" :x2="tick.x" y2="260" class="history-chart-grid-vertical" />
+              </g>
+              <g class="history-chart-value-labels">
+                <text v-for="tick in historyChartPresentation.valueTicks" :key="tick.y" x="50" :y="tick.y + 4" text-anchor="end" :textLength="tick.label.length > 8 ? 48 : undefined" lengthAdjust="spacingAndGlyphs">
+                  <title>{{ tick.value }}</title>{{ tick.label }}
+                </text>
+              </g>
+              <g class="history-chart-sample-labels">
+                <text v-for="tick in historyChartPresentation.sampleTicks" :key="tick.index" :x="tick.x" y="290" text-anchor="middle">样本 {{ tick.index }}</text>
+              </g>
+              <svg x="64" y="30.5" width="680" height="255" viewBox="0 0 100 40" preserveAspectRatio="none" class="history-chart-curves">
+                <polyline
+                  v-for="series in historySeries"
+                  :key="series.key"
+                  :points="series.points"
+                  fill="none"
+                  :stroke="series.color"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
             </svg>
-            <div v-else class="empty-state compact">请选择设备和点位后查询历史数据</div>
           </div>
-          <div class="history-legend">
+          <div v-else class="history-chart-empty">
+            <strong>{{ historyPresentation.chartEmptyTitle }}</strong>
+            <p>{{ historyPresentation.chartEmptyDetail }}</p>
+          </div>
+          <div v-if="historyPresentation.hasResult" class="history-legend">
             <span v-for="series in historySeries" :key="series.key">
               <i :style="{ backgroundColor: series.color }"></i>
-              {{ series.label }} · {{ series.latestText }}
+              {{ series.label }} <b>{{ series.latestText }}</b>
             </span>
           </div>
+          <p v-if="historyChartPresentation" class="history-chart-note">横向距离表示各曲线的样本顺序，不表示等时间间隔；序号参考最长曲线，统一原始数值尺度，不换算单位。</p>
+          <p v-if="failedComparePointRefs.length" class="history-compare-note">摘要统计成功曲线；标题和下方的对比点位数为已选择数量。</p>
           <div class="history-stat-row">
-            <span><b>{{ historyRows.length }}</b>主曲线记录数</span>
-            <span><b>{{ comparePointRefs.length }}</b>对比点位</span>
-            <span><b>{{ historyMin }}</b>最小值</span>
-            <span><b>{{ historyMax }}</b>最大值</span>
-            <span><b>{{ historyLatest }}</b>最新值</span>
+            <span>主曲线记录数 <b>{{ historyPresentation.recordCount }}</b></span>
+            <span>对比点位 <b>{{ comparePointRefs.length }}</b></span>
+            <span>最小值 <b>{{ historyMin }}</b></span>
+            <span>最大值 <b>{{ historyMax }}</b></span>
+            <span>最新值 <b>{{ historyLatest }}</b></span>
           </div>
         </section>
 
-        <section class="surface-card">
-          <div class="surface-card-head">
-            <h3>查询结果 JSON</h3>
-            <button type="button" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">刷新</button>
+        <section class="history-panel history-json-panel">
+          <div class="history-panel-head">
+            <h2>查询结果 JSON</h2>
+            <button type="button" class="history-button history-json-refresh" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">刷新</button>
           </div>
-          <pre class="json-view history-json-view">{{ historyExportText }}</pre>
+          <div class="history-json-body">
+            <pre class="history-json-view" tabindex="0" aria-label="完整历史查询 JSON，可独立横向和纵向滚动">{{ historyExportText }}</pre>
+          </div>
         </section>
       </div>
 
-      <section class="surface-card history-alarm-card">
-        <div class="surface-card-head">
-          <h3>相关告警</h3>
-          <span>{{ relatedAlarmsSummaryText }}</span>
+      <section class="history-panel history-alarm-panel">
+        <div class="history-panel-head">
+          <h2>相关告警</h2>
+          <span>{{ historyPresentation.alarmSummary }}</span>
         </div>
-        <table class="runtime-table history-alarm-table">
-          <thead>
-            <tr><th>时间</th><th>级别</th><th>设备</th><th>点位</th><th>内容</th></tr>
-          </thead>
-          <tbody>
-            <tr v-if="relatedAlarms.length === 0"><td colspan="5">{{ relatedAlarmsEmptyText }}</td></tr>
-            <tr v-for="alarm in relatedAlarms" :key="`${alarm.alarmId || alarm.id || '-'}-${alarm.timestamp || alarm.occurTime || '-'}`">
-              <td>{{ formatHistoryTime({ timestamp: alarm.timestamp || alarm.occurTime }) }}</td>
-              <td>{{ alarm.level || alarm.alarmType || '-' }}</td>
-              <td>{{ alarm.deviceName || alarm.deviceId || '-' }}</td>
-              <td>{{ alarm.pointName || alarm.pointCode || alarm.pointId || '-' }}</td>
-              <td>{{ alarm.content || alarm.message || alarm.alarmContent || '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="history-table-scroll history-alarm-scroll" tabindex="0" role="region" aria-label="完整相关告警表，可独立滚动">
+          <table class="history-alarm-table">
+            <thead>
+              <tr><th>时间</th><th>级别</th><th>设备</th><th>点位</th><th>内容</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="alarm in relatedAlarms" :key="`${alarm.alarmId || alarm.id || '-'}-${alarm.timestamp || alarm.occurTime || '-'}`">
+                <td class="history-mono">{{ formatHistoryTime({ timestamp: alarm.timestamp || alarm.occurTime }) }}</td>
+                <td><span class="history-badge" :class="{ 'is-warning': alarm.level === 'WARN' }">{{ alarm.level || alarm.alarmType || '-' }}</span></td>
+                <td>{{ alarm.deviceName || alarm.deviceId || '-' }}</td>
+                <td>{{ alarm.pointName || alarm.pointCode || alarm.pointId || '-' }}</td>
+                <td>{{ alarm.content || alarm.message || alarm.alarmContent || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="relatedAlarms.length === 0" class="history-table-empty" role="status">{{ historyPresentation.alarmEmpty }}</div>
       </section>
 
-      <section class="exact-table-card">
-        <div class="exact-table-title">
+      <section class="history-panel history-data-panel">
+        <div class="history-panel-head">
           <h2>历史数据表</h2>
-          <span>{{ deviceId || '-' }} / {{ pointRef || '-' }}</span>
+          <span class="history-mono">{{ deviceId || '-' }} / {{ pointRef || '-' }}</span>
         </div>
-        <div class="table-wrap history-data-table-wrap">
-          <table>
+        <div class="history-table-scroll history-data-scroll" tabindex="0" role="region" aria-label="完整历史记录表，可独立横向和纵向滚动">
+          <table class="history-data-table">
             <thead>
               <tr><th>时间</th><th>值</th><th>质量</th><th>原始记录</th></tr>
             </thead>
             <tbody>
-              <tr v-if="historyRows.length === 0"><td colspan="4" class="exact-empty">{{ historyEmptyText }}</td></tr>
               <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
-                <td>{{ formatHistoryTime(row) }}</td>
-                <td>{{ displayValue(row) }}</td>
+                <td class="history-mono">{{ formatHistoryTime(row) }}</td>
+                <td :title="String(displayValue(row))">{{ displayValue(row) }}</td>
                 <td>{{ row.quality || row.qualityCode || '-' }}</td>
                 <td><code>{{ compactJson(row) }}</code></td>
               </tr>
             </tbody>
           </table>
         </div>
+        <div v-if="historyRows.length === 0" class="history-table-empty" role="status">{{ historyPresentation.dataEmpty }}</div>
       </section>
     </div>
   </section>
@@ -682,200 +712,55 @@ function defaultDateTimeLocal(offsetMs: number): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+// 展示派生只读取原状态；首次未成功时不把空数组画成零，保留原有上次成功结果与反馈。
+const historyPresentation = computed(() => {
+  const hasResult = historyLastSuccessAt.value !== null;
+  const capabilityUnavailable = appStore.capabilities?.history.available === false;
+  const stateLabel = loading.value ? "历史数据加载中" : historyError.value ? "历史数据加载失败" : capabilityUnavailable ? "历史存储能力不可用" : appStore.capabilities == null ? "历史存储能力待确认" : "尚未查询";
+  const dataEmpty = hasResult || historyError.value ? historyEmptyText.value : stateLabel;
+  return {
+    hasResult,
+    stateLabel,
+    recordCount: hasResult ? String(historyRows.value.length) : "—",
+    alarmSummary: relatedAlarmsUnavailable.value || hasResult ? relatedAlarmsSummaryText.value : loading.value ? "加载中" : "未知",
+    alarmEmpty: relatedAlarmsUnavailable.value || hasResult ? relatedAlarmsEmptyText.value : loading.value ? "关联告警加载中" : "关联告警尚未加载，数量未知",
+    dataEmpty,
+    chartEmptyTitle: hasResult
+      ? historySeries.value.some((series) => series.rows.length) ? "当前历史记录无可绘制数值" : "当前范围内暂无历史数据"
+      : stateLabel,
+    chartEmptyDetail: hasResult
+      ? "可调整设备、点位或时间范围；完整记录保留在 JSON 和历史数据表中。"
+      : historyError.value ? historyEmptyText.value : capabilityUnavailable
+        ? historyCapabilityMessage.value || "保留查询条件，当前不能判断历史数据是否为零。"
+        : loading.value ? "主点位与对比点位分别查询，等待当前请求完成。" : "请选择设备和点位后查询历史数据。"
+  };
+});
+
+// 轴读取成功 series 的原始数值，取值优先级与原 helper 相同；不改任何 curve 点或 formatter。
+const historyChartPresentation = computed(() => {
+  const valuesBySeries = historySeries.value.map((series) => series.rows
+    .map((row) => Number(row.value ?? row.currentValue ?? row.rawValue ?? row.val))
+    .filter((value) => Number.isFinite(value)));
+  const allValues = valuesBySeries.flat();
+  if (!allValues.length) {
+    return null;
+  }
+  const minimum = allValues.reduce((result, value) => Math.min(result, value), allValues[0]);
+  const maximum = allValues.reduce((result, value) => Math.max(result, value), allValues[0]);
+  const sampleCount = Math.max(...valuesBySeries.map((values) => values.length));
+  const tickCount = Math.min(6, sampleCount);
+  const sampleTicks = Array.from({ length: tickCount }, (_, index) => {
+    const sampleIndex = tickCount === 1 ? 0 : Math.round(index * (sampleCount - 1) / (tickCount - 1));
+    return { index: sampleIndex + 1, x: sampleCount === 1 ? 64 : 64 + sampleIndex / (sampleCount - 1) * 680 };
+  });
+  const valueTicks = Array.from({ length: minimum === maximum ? 1 : 5 }, (_, index) => {
+    const fraction = minimum === maximum ? 1 : index / 4;
+    const value = fraction === 1 ? minimum : fraction === 0 ? maximum : maximum - (maximum - minimum) * fraction;
+    return { value, label: String(value), y: 56 + fraction * 204 };
+  });
+  return { sampleTicks, valueTicks };
+});
 </script>
 
-<style scoped>
-.history-summary-cards {
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  margin-bottom: 14px;
-}
-
-.history-summary-cards .exact-diagnostic-card strong {
-  white-space: normal;
-  line-height: 1.35;
-}
-
-.history-summary-cards .exact-diagnostic-card small {
-  line-height: 1.4;
-}
-
-.history-query-bar {
-  min-height: auto;
-  padding: 14px 16px;
-  align-items: stretch;
-  flex-direction: column;
-  gap: 12px;
-  overflow-x: visible;
-}
-
-.history-filter-main {
-  display: grid;
-  grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1.2fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(90px, 0.48fr);
-  gap: 10px;
-  align-items: end;
-}
-
-.history-data-table-wrap {
-  width: 100%;
-}
-
-.history-data-table-wrap table {
-  width: 100%;
-  min-width: 640px;
-  table-layout: fixed;
-}
-
-.history-data-table-wrap th:nth-child(1) {
-  width: 180px;
-}
-
-.history-data-table-wrap th:nth-child(2),
-.history-data-table-wrap th:nth-child(3) {
-  width: 100px;
-}
-
-.history-data-table-wrap td code {
-  display: block;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.history-filter-bottom {
-  display: grid;
-  padding-top: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
-  border-top: 1px solid rgba(45, 74, 122, 0.42);
-}
-
-.history-filter-field {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
-.history-filter-field > span {
-  color: var(--exact-dim);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.history-filter-field input,
-.history-filter-field select {
-  width: 100%;
-  min-width: 0;
-}
-
-.history-compare-select {
-  min-width: 0;
-  min-height: 74px;
-  height: 74px;
-}
-
-.history-compare-field small {
-  color: var(--exact-dim);
-  font-size: 10px;
-}
-
-.history-query-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  align-items: center;
-  white-space: nowrap;
-}
-
-.history-query-actions button {
-  min-width: 86px;
-}
-
-.history-chart {
-  width: 100%;
-  height: 320px;
-}
-
-.history-chart-dark {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #0f172a;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #0f172a, #111827);
-}
-
-.history-chart-dark svg {
-  width: 100%;
-  height: 240px;
-}
-
-.history-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  color: var(--console-text-muted);
-  font-size: 12px;
-}
-
-.history-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.history-legend i {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-}
-
-.history-stat-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-  padding-top: 2px;
-  color: var(--console-text-muted);
-  font-size: 12px;
-}
-
-.history-stat-row span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: 999px;
-  background: var(--console-panel-soft);
-}
-
-.history-stat-row b {
-  color: var(--console-text-primary);
-}
-
-.history-alarm-card,
-.history-alarm-table {
-  margin-top: 0;
-}
-
-.history-alarm-table th,
-.history-alarm-table td {
-  white-space: nowrap;
-}
-
-.history-alarm-table {
-  table-layout: fixed;
-}
-
-.history-alarm-table td:nth-child(3),
-.history-alarm-table td:nth-child(4) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.history-alarm-table td:nth-child(5) {
-  white-space: normal;
-}
-</style>
+<style scoped src="@/features/history/styles/history-view.css"></style>

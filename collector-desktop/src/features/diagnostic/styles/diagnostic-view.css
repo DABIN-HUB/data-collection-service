@@ -1,0 +1,663 @@
+.exact-page.diagnostic-view {
+  --diagnostic-line: #243650;
+  --diagnostic-muted: #a0b1c7;
+  --diagnostic-text: #e2e8f0;
+
+  min-width: 0;
+  padding: 22px 26px 26px;
+  gap: 16px;
+  color: var(--diagnostic-text);
+  background: var(--app-color-bg);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.exact-page.diagnostic-view .diagnostic-heading {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  border: 0;
+}
+
+.diagnostic-view .diagnostic-heading-copy {
+  min-width: 0;
+  flex: 1 1 350px;
+}
+
+.diagnostic-view .heading-title-line {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.exact-page.diagnostic-view h1 {
+  color: var(--diagnostic-text);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.diagnostic-view .diagnostic-heading p {
+  max-width: 640px;
+  margin-top: 6px;
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-sampling-label {
+  padding: 3px 8px;
+  border: 1px solid #415570;
+  border-radius: 5px;
+  color: #c4d4e8;
+  background: #203048;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.diagnostic-view .heading-actions {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.diagnostic-view .diagnostic-refresh-time {
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+}
+
+/* 页面拥有的控件样式同时适配子组件，不改变其操作、禁用与设备上下文。 */
+.exact-page.diagnostic-view :deep(button) {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 6px 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #3b5574;
+  border-radius: 6px;
+  color: var(--diagnostic-text);
+  background: transparent;
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.exact-page.diagnostic-view :deep(button:not(:disabled):hover) {
+  border-color: #6387b4;
+  background: #203048;
+}
+
+.exact-page.diagnostic-view :deep(button.primary) {
+  border-color: var(--app-color-primary);
+  color: #ffffff;
+  background: var(--app-color-primary);
+}
+
+.exact-page.diagnostic-view :deep(button.primary:not(:disabled):hover) {
+  border-color: var(--app-color-primary-hover);
+  background: var(--app-color-primary-hover);
+}
+
+.exact-page.diagnostic-view :deep(button:disabled) {
+  border-color: var(--app-control-border-disabled);
+  color: var(--app-control-text-disabled);
+  background: var(--app-control-bg-disabled);
+  cursor: not-allowed;
+}
+
+.exact-page.diagnostic-view .diagnostic-body {
+  gap: 16px;
+  scrollbar-gutter: stable;
+}
+
+.diagnostic-view .diagnostic-body > * {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.diagnostic-view .diagnostic-message {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #665b48;
+  border-radius: 6px;
+  color: #ebcf9e;
+  background: #353329;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-message.is-error {
+  border-color: #684550;
+  color: #efb0b5;
+  background: #332731;
+}
+
+.exact-page.diagnostic-view :deep(.exact-surface),
+.exact-page.diagnostic-view :deep(.exact-table-card),
+.exact-page.diagnostic-view :deep(.exact-json-panel) {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--diagnostic-line);
+  border-radius: 8px;
+  color: var(--diagnostic-text);
+  background: var(--app-color-panel);
+  box-shadow: none;
+}
+
+.exact-page.diagnostic-view :deep(.exact-surface-head),
+.exact-page.diagnostic-view :deep(.exact-table-title) {
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 12px 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  border-bottom: 1px solid var(--diagnostic-line);
+}
+
+.exact-page.diagnostic-view :deep(h2) {
+  margin: 0;
+  color: var(--diagnostic-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.exact-page.diagnostic-view :deep(.exact-surface-head > span),
+.exact-page.diagnostic-view :deep(.exact-table-title > span) {
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-summary-rail {
+  padding: 12px 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0;
+}
+
+.diagnostic-view .diagnostic-summary-item {
+  min-width: 0;
+  padding: 0 16px;
+  border-right: 1px solid var(--diagnostic-line);
+}
+
+.diagnostic-view .diagnostic-summary-item:last-child {
+  border-right: 0;
+}
+
+.diagnostic-view .diagnostic-summary-item > span {
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+}
+
+.diagnostic-view .diagnostic-summary-item > strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-summary-note {
+  margin: 0;
+  padding: 7px 16px;
+  border-top: 1px solid var(--diagnostic-line);
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 430px;
+  overflow: auto;
+  border-radius: 0 0 8px 8px;
+}
+
+.diagnostic-view .diagnostic-check-table {
+  width: 100%;
+  min-width: 740px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.diagnostic-view .diagnostic-col-name { width: 180px; }
+.diagnostic-view .diagnostic-col-status { width: 82px; }
+.diagnostic-view .diagnostic-col-current { width: 39%; }
+
+.diagnostic-view .diagnostic-check-table th,
+.diagnostic-view .diagnostic-check-table td,
+.exact-page.diagnostic-view :deep(.exact-table-card th),
+.exact-page.diagnostic-view :deep(.exact-table-card td) {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--diagnostic-line);
+  color: var(--diagnostic-text);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  vertical-align: top;
+}
+
+.diagnostic-view .diagnostic-check-table th,
+.exact-page.diagnostic-view :deep(.exact-table-card th) {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--diagnostic-muted);
+  background: #172435;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.diagnostic-view .diagnostic-check-table td {
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-check-table tbody td {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diagnostic-view .diagnostic-check-table tr:last-child td,
+.exact-page.diagnostic-view :deep(.exact-table-card tr:last-child td) {
+  border-bottom: 0;
+}
+
+.diagnostic-view .diagnostic-check-table tbody tr:hover,
+.exact-page.diagnostic-view :deep(.exact-table-card tbody tr:hover) {
+  background: #1b293c;
+}
+
+/* 保留子组件所有指标与控件，收紧嵌套边距而不重写组件源码。 */
+.exact-page.diagnostic-view :deep(.diagnostic-detail-panel),
+.exact-page.diagnostic-view :deep(.device-runtime-panel) {
+  margin-top: 0;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-cards),
+.exact-page.diagnostic-view :deep(.runtime-summary-cards) {
+  margin: 0;
+  padding: 12px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 20px;
+  border-bottom: 1px solid var(--diagnostic-line);
+}
+
+.exact-page.diagnostic-view :deep(.runtime-summary-cards) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.exact-page.diagnostic-view :deep(.exact-diagnostic-card) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-cards .exact-diagnostic-card > span),
+.exact-page.diagnostic-view :deep(.runtime-summary-cards .exact-diagnostic-card > span) {
+  color: var(--diagnostic-muted);
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-cards .exact-diagnostic-card > strong),
+.exact-page.diagnostic-view :deep(.runtime-summary-cards .exact-diagnostic-card > strong) {
+  display: block;
+  margin-top: 6px;
+  color: var(--diagnostic-text);
+  font-size: 18px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-cards small),
+.exact-page.diagnostic-view :deep(.pipeline-stage-card small) {
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-grid) {
+  min-width: 0;
+  margin: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-grid.compact-grid) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-panel > .exact-table-card),
+.exact-page.diagnostic-view :deep(.runtime-device-table) {
+  width: auto;
+  margin: 12px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-grid > .diagnostic-sub-card) {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid rgba(160, 177, 199, 0.24);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.exact-page.diagnostic-view :deep(.modao-property-grid),
+.exact-page.diagnostic-view :deep(.modao-risk-list) {
+  min-width: 0;
+  padding: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.exact-page.diagnostic-view :deep(.modao-risk-list) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.exact-page.diagnostic-view :deep(.pipeline-risk-list) {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.exact-page.diagnostic-view :deep(.modao-property-item) {
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(160, 177, 199, 0.24);
+  border-radius: 0;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.modao-risk-item) {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--diagnostic-line);
+  border-radius: 5px;
+  background: #142033;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.modao-property-item.wide) {
+  grid-column: 1 / -1;
+}
+
+.exact-page.diagnostic-view :deep(.modao-property-item > strong),
+.exact-page.diagnostic-view :deep(.modao-risk-item > strong) {
+  color: var(--diagnostic-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 宽表仅在自身滚动；空态保持完整表格单元格语义并从左侧可见。 */
+.exact-page.diagnostic-view :deep(.diagnostic-executor-table),
+.exact-page.diagnostic-view :deep(.diagnostic-connection-table),
+.exact-page.diagnostic-view :deep(.diagnostic-exception-table),
+.exact-page.diagnostic-view :deep(.runtime-device-table) {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.exact-page.diagnostic-view :deep(.exact-table-card table) {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-connection-table table),
+.exact-page.diagnostic-view :deep(.runtime-device-table table) {
+  min-width: 1100px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-executor-table table) {
+  min-width: 620px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-exception-table table) {
+  min-width: 960px;
+}
+
+.exact-page.diagnostic-view :deep(.exact-table-card td) {
+  max-width: 320px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.exact-table-card code) {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.exact-page.diagnostic-view :deep(.exact-table-card:has(td.exact-empty) table) {
+  min-width: 100%;
+}
+
+.exact-page.diagnostic-view :deep(.exact-table-title) {
+  position: sticky;
+  left: 0;
+  background: var(--app-color-panel);
+}
+
+.exact-page.diagnostic-view :deep(td.exact-empty) {
+  display: table-cell;
+  height: 72px;
+  min-height: 0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.exact-page.diagnostic-view :deep(.empty-state.compact) {
+  min-height: 54px;
+  text-align: left;
+  place-items: center start;
+}
+
+.exact-page.diagnostic-view :deep(.status-badge) {
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.exact-page.diagnostic-view :deep(.status-badge.is-dim) {
+  color: var(--diagnostic-muted);
+  background: #203048;
+}
+
+/* 主诊断列表的空 tone 原本代表警告；仅区分风险色，不改变状态计算。 */
+.diagnostic-view .diagnostic-check-table .status-badge:not(.is-online, .is-error),
+.exact-page.diagnostic-view :deep(.status-badge.is-warning) {
+  color: #f4bf7b;
+  background: #493821;
+}
+
+.exact-page.diagnostic-view :deep(.runtime-device-toolbar) {
+  margin: 0;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+  overflow: visible;
+  border: 0;
+  border-bottom: 1px solid var(--diagnostic-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.exact-page.diagnostic-view :deep(.runtime-device-toolbar .exact-toolbar-group) {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.exact-page.diagnostic-view :deep(.runtime-device-toolbar select) {
+  width: 230px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  font-size: 12px;
+}
+
+.exact-page.diagnostic-view :deep(.runtime-status-error) {
+  margin: 10px 16px;
+  color: #efb0b5;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(button.link-button) {
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  color: #aecdff;
+  background: transparent;
+  text-align: left;
+}
+
+.exact-page.diagnostic-view :deep(button.link-button:not(:disabled):hover) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.exact-page.diagnostic-view :deep(.device-runtime-panel > .exact-json-panel) {
+  margin: 12px;
+}
+
+.exact-page.diagnostic-view :deep(.exact-json-panel > summary) {
+  padding: 12px 16px;
+  color: var(--diagnostic-text);
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.exact-page.diagnostic-view :deep(.json-view) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 120px;
+  max-height: 320px;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  border: 0;
+  border-top: 1px solid var(--diagnostic-line);
+  border-radius: 0 0 8px 8px;
+  color: #c8dbf7;
+  background: #0f192a;
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(button:focus-visible),
+.exact-page.diagnostic-view :deep(select:focus-visible),
+.exact-page.diagnostic-view :deep(summary:focus-visible),
+.exact-page.diagnostic-view :deep(pre:focus-visible),
+.diagnostic-view .diagnostic-table-scroll:focus-visible {
+  outline: 2px solid #79b0ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 1440px) {
+  .exact-page.diagnostic-view {
+    padding: 20px 22px 24px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .diagnostic-view .diagnostic-summary-rail {
+    padding: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .diagnostic-view .diagnostic-summary-item {
+    padding: 12px 16px;
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(n+4) {
+    border-top: 1px solid var(--diagnostic-line);
+  }
+
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-grid.compact-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1050px) {
+  .exact-page.diagnostic-view {
+    padding: 18px 20px 22px;
+  }
+
+  .diagnostic-view .heading-actions {
+    justify-content: flex-start;
+  }
+
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .exact-page.diagnostic-view {
+    padding: 18px 14px 20px;
+  }
+
+  .diagnostic-view .diagnostic-summary-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(3n) {
+    border-right: 1px solid var(--diagnostic-line);
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(even) {
+    border-right: 0;
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(n+3) {
+    border-top: 1px solid var(--diagnostic-line);
+  }
+
+  .diagnostic-view .diagnostic-refresh-time {
+    flex: 1 0 100%;
+  }
+
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-cards),
+  .exact-page.diagnostic-view :deep(.runtime-summary-cards) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-grid.compact-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .exact-page.diagnostic-view :deep(.runtime-device-toolbar select) {
+    width: min(230px, 100%);
+  }
+}

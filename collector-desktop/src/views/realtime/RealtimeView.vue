@@ -1,88 +1,191 @@
 <template>
   <section class="exact-page realtime-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>实时数据查询</h1>
-        <span class="heading-online"><i></i>实时采集链路</span>
+    <div class="realtime-heading">
+      <div>
+        <div class="realtime-title-line">
+          <h1>实时数据查询</h1>
+          <span class="realtime-heading-badge">实时采集链路</span>
+        </div>
+        <p>设备健康与点位质量分开展示</p>
       </div>
-      <div class="heading-actions">
+      <div class="realtime-heading-actions">
         <button type="button" :disabled="loading" @click="refreshRealtime">立即刷新</button>
       </div>
     </div>
 
-    <div class="exact-page-body">
-      <div class="exact-toolbar">
-        <div class="exact-toolbar-group">
-          <button type="button" class="toggle-button" :class="{ 'is-active': realtimeAuto }" @click="realtimeAuto = !realtimeAuto">
-            <span></span>自动刷新
+    <div class="exact-page-body realtime-body">
+      <div class="realtime-query-toolbar">
+        <div class="realtime-auto-group">
+          <button type="button" class="realtime-auto" :class="{ 'is-active': realtimeAuto }" :aria-pressed="realtimeAuto" @click="realtimeAuto = !realtimeAuto">
+            <span class="realtime-toggle-track" aria-hidden="true"><i></i></span>自动刷新
           </button>
           <small>默认间隔 5 秒</small>
         </div>
-        <div class="exact-toolbar-group exact-toolbar-filters">
-          <select v-model="realtimeDeviceId" @change="handleRealtimeDeviceChange">
+        <div class="realtime-filters">
+          <select v-model="realtimeDeviceId" class="realtime-device-filter" aria-label="实时数据设备" @change="handleRealtimeDeviceChange">
             <option value="">全部设备</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
             </option>
           </select>
-          <input v-model="realtimeKeyword" type="search" placeholder="搜索点位名称、编码或地址" />
+          <input v-model="realtimeKeyword" class="realtime-search" type="search" aria-label="搜索点位" placeholder="搜索点位名称、编码或地址" />
         </div>
       </div>
-      <small v-if="realtimeError">{{ realtimeError }}</small>
+
+      <div v-if="realtimeError" class="realtime-notice realtime-notice-error" role="alert">
+        <strong>实时数据刷新失败</strong>
+        <span>{{ realtimeError }}</span>
+        <span>当前记录与健康快照已清空，请检查服务后立即刷新。</span>
+      </div>
+      <div v-else-if="loading" class="realtime-notice" role="status">
+        <template v-if="realtimeRows.length || deviceHealthSnapshot || allDeviceHealth.length || realtimeDeltaState.cursor">
+          正在刷新实时数据，当前显示已有记录与最近完整健康快照。
+        </template>
+        <template v-else>正在加载实时数据，等待完整快照。</template>
+      </div>
+      <div v-else-if="!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor" class="realtime-notice" role="status">
+        等待实时数据完整快照，记录数暂未知。
+      </div>
+      <div v-else-if="realtimeSummary.bad > 0" class="realtime-notice realtime-notice-warning">
+        部分点位存在异常、未知状态或旧值；下方保留原值、质量与状态说明。此状态不表示查询请求失败。
+      </div>
+
       <div v-if="realtimeDeviceId && deviceHealthSnapshot?.deviceHealth" class="realtime-health-strip">
-        <strong>设备健康（最近完整快照）：{{ realtimeDeviceHealthText(deviceHealthSnapshot.deviceHealth) }}</strong>
-        <span>传输：{{ realtimeLayerStateText(deviceHealthSnapshot.transportState) }}</span>
-        <span>协议：{{ realtimeLayerStateText(deviceHealthSnapshot.protocolState) }}</span>
-        <span>采集：{{ realtimeLayerStateText(deviceHealthSnapshot.acquisitionState) }}</span>
-        <span>最近尝试：{{ formatTime(deviceHealthSnapshot.lastAttemptAt) }}</span>
-        <span>最近有效值：{{ formatTime(deviceHealthSnapshot.lastValueAt) }}</span>
+        <span class="realtime-health-title">设备健康<small>最近完整快照</small></span>
+        <div class="realtime-device-health">
+          <strong :class="{ 'realtime-good': deviceHealthSnapshot.deviceHealth === 'ONLINE_HEALTHY', 'realtime-warning': ['ONLINE_PARTIAL', 'DEGRADED'].includes(deviceHealthSnapshot.deviceHealth) }">
+            {{ deviceHealthSnapshot.deviceHealth === 'UNKNOWN' ? '未知' : realtimeDeviceHealthText(deviceHealthSnapshot.deviceHealth) }}
+          </strong>
+          <span>传输：{{ realtimeLayerStateText(deviceHealthSnapshot.transportState) }}</span>
+          <span>协议：{{ realtimeLayerStateText(deviceHealthSnapshot.protocolState) }}</span>
+          <span>采集：{{ realtimeLayerStateText(deviceHealthSnapshot.acquisitionState) }}</span>
+          <span>最近尝试：{{ formatTime(deviceHealthSnapshot.lastAttemptAt) }}</span>
+          <span>最近有效值：{{ formatTime(deviceHealthSnapshot.lastValueAt) }}</span>
+        </div>
       </div>
       <div v-else-if="!realtimeDeviceId && allDeviceHealth.length" class="realtime-health-strip">
-        <span>设备健康（最近完整快照）：</span>
-        <span v-for="health in deviceHealthLevels" :key="health">{{ realtimeDeviceHealthText(health) }} {{ allDeviceHealth.filter((device) => device.deviceHealth === health).length }}</span>
+        <span class="realtime-health-title">设备健康<small>最近完整快照</small></span>
+        <div class="realtime-health-levels">
+          <span v-for="health in deviceHealthLevels" :key="health" :class="{ 'realtime-good': health === 'ONLINE_HEALTHY', 'realtime-warning': ['ONLINE_PARTIAL', 'DEGRADED'].includes(health) }">
+            {{ health === 'UNKNOWN' ? '未知' : realtimeDeviceHealthText(health) }} <b>{{ allDeviceHealth.filter((device) => device.deviceHealth === health).length }}</b>
+          </span>
+        </div>
+      </div>
+      <div v-else class="realtime-health-strip">
+        <span class="realtime-health-title">设备健康<small>最近完整快照</small></span>
+        <span class="realtime-health-unavailable">{{ realtimeError ? '健康快照不可用' : loading ? '正在读取完整健康快照' : '暂无完整健康快照' }}</span>
       </div>
 
-      <div class="exact-diagnostic-cards realtime-summary-cards">
-        <div class="exact-diagnostic-card"><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div>
-        <div class="exact-diagnostic-card"><span>质量正常</span><strong>{{ realtimeSummary.good }}</strong></div>
-        <div class="exact-diagnostic-card"><span>异常/未知</span><strong>{{ realtimeSummary.bad }}</strong></div>
+      <div class="realtime-summary" aria-label="当前筛选结果的点位质量摘要">
+        <template v-if="realtimeError || (!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor)">
+          <div><span>实时记录</span><strong>—</strong></div>
+          <div><span>质量正常</span><strong>—</strong></div>
+          <div><span>异常/未知</span><strong>—</strong></div>
+        </template>
+        <template v-else>
+          <div><span>实时记录</span><strong>{{ realtimeSummary.total }}</strong></div>
+          <div><span>质量正常</span><strong class="realtime-good">{{ realtimeSummary.good }}</strong></div>
+          <div><span>异常/未知</span><strong :class="{ 'realtime-warning': realtimeSummary.bad > 0 }">{{ realtimeSummary.bad }}</strong></div>
+        </template>
       </div>
 
-      <section class="exact-surface realtime-single-panel">
-        <div class="exact-surface-head">
-          <h2>单点实时查询</h2>
-          <span>按稳定 pointId / 点位编码查询</span>
+      <section class="realtime-panel realtime-table-panel" aria-labelledby="realtime-records-title" :aria-busy="loading">
+        <div class="realtime-panel-head">
+          <h2 id="realtime-records-title">点位实时记录</h2>
+          <span>当前值、质量、状态与处理耗时</span>
         </div>
-        <div class="exact-toolbar">
-          <div class="exact-toolbar-group exact-toolbar-filters">
-            <select v-model="realtimeSingleDeviceId">
-              <option value="">选择设备</option>
-              <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
-                {{ device.displayName || device.normalizedId }}
-              </option>
-            </select>
-            <input v-model="realtimeSinglePointId" type="text" placeholder="pointId 或点位编码" />
-            <button type="button" class="primary" :disabled="singleRealtimeSubmitDisabled" @click="loadSingleRealtime">
-              查询单点
-            </button>
-          </div>
+        <div v-if="filteredRealtimeRows.length > 0" class="realtime-table-scroll" tabindex="0" role="region" aria-label="点位实时记录，可纵向及横向滚动">
+          <table class="realtime-data-table">
+            <colgroup>
+              <col class="realtime-col-point" />
+              <col class="realtime-col-device" />
+              <col class="realtime-col-type" />
+              <col class="realtime-col-address" />
+              <col class="realtime-col-access" />
+              <col class="realtime-col-scale" />
+              <col class="realtime-col-value" />
+              <col class="realtime-col-unit" />
+              <col class="realtime-col-time" />
+              <col class="realtime-col-quality" />
+              <col class="realtime-col-status" />
+              <col class="realtime-col-cost" />
+              <col class="realtime-col-action" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th scope="col">点位名称</th>
+                <th scope="col">设备名称</th>
+                <th scope="col">数据类型</th>
+                <th scope="col">寄存器地址</th>
+                <th scope="col">读写</th>
+                <th scope="col">缩放</th>
+                <th scope="col">当前值</th>
+                <th scope="col">单位</th>
+                <th scope="col">采集时间</th>
+                <th scope="col">质量</th>
+                <th scope="col">状态说明</th>
+                <th scope="col">处理耗时</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in pagedRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}`" :class="{ 'realtime-row-warning': row.stale === true }">
+                <td class="realtime-point-name">
+                  <strong>{{ row.pointName || row.pointCode || '-' }}</strong>
+                  <small v-if="row.pointCode">{{ row.pointCode }}</small>
+                </td>
+                <td>{{ row.deviceName || deviceDisplayName(String(row.deviceId || realtimeDeviceId)) }}</td>
+                <td class="realtime-mono">{{ row.dataType || '-' }}</td>
+                <td><code>{{ realtimeAddress(row) }}</code></td>
+                <td>{{ row.readWrite || '-' }}</td>
+                <td class="realtime-mono">{{ realtimeScale(row) }}</td>
+                <td class="realtime-value realtime-mono" :class="{ 'realtime-warning': row.stale === true }"><strong>{{ realtimeValueText(row) }}</strong></td>
+                <td>{{ row.unit || '-' }}</td>
+                <td class="realtime-time realtime-mono">{{ formatTime(row.timestamp || row.collectTime || row.lastUpdateTime) }}</td>
+                <td><span class="quality-badge" :class="realtimeQualityClass(row)"><i aria-hidden="true"></i>{{ realtimeQualityText(row) }}</span></td>
+                <td class="realtime-point-status" :class="{ 'realtime-warning': row.stale === true }">
+                  <span :title="realtimeErrorText(row)">{{ realtimeStatusText(row) }}</span>
+                  <small v-if="realtimeErrorText(row) !== realtimeStatusText(row)">{{ realtimeErrorText(row) }}</small>
+                </td>
+                <td class="realtime-mono">{{ realtimeProcessingText(row) }}</td>
+                <td><button type="button" class="realtime-point-action" @click="pickRealtimePoint(row)">查单点</button></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <small v-if="singleRealtimeError">{{ singleRealtimeError }}</small>
-        <pre class="json-view compact-result-view">{{ prettyJson(realtimeSingleResult) }}</pre>
-      </section>
-
-      <section class="exact-table-card">
-        <div class="exact-toolbar realtime-pagination">
-          <div class="exact-toolbar-group">
-            <span>共 {{ realtimePageWindow.total }} 条</span>
-            <small v-if="realtimePageWindow.total > 0">显示 {{ realtimePageWindow.startIndex }}–{{ realtimePageWindow.endIndex }} 条</small>
-            <small v-else>当前没有可分页的数据</small>
+        <div v-else class="realtime-empty" role="status">
+          <template v-if="realtimeError">
+            <strong>实时数据暂不可用</strong>
+            <p>请求失败，无法显示当前记录及最近完整健康快照。</p>
+          </template>
+          <template v-else-if="!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor">
+            <strong>{{ loading ? '正在加载点位数据' : '等待点位数据' }}</strong>
+            <p>完整快照尚未加载，记录数暂未知。</p>
+          </template>
+          <template v-else-if="realtimeKeyword.trim()">
+            <strong>没有匹配的点位</strong>
+            <p>可调整名称、编码或地址关键词，查看当前设备的实时记录。</p>
+          </template>
+          <template v-else>
+            <strong>当前没有实时记录</strong>
+            <p>选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤。</p>
+          </template>
+        </div>
+        <div class="realtime-pagination">
+          <div class="realtime-page-count">
+            <template v-if="realtimeError || (!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor)">
+              <span>{{ realtimeError ? '记录数暂不可用' : '记录数暂未知' }}</span>
+            </template>
+            <template v-else>
+              <span>共 {{ realtimePageWindow.total }} 条</span>
+              <small v-if="realtimePageWindow.total > 0">显示 {{ realtimePageWindow.startIndex }}–{{ realtimePageWindow.endIndex }} 条</small>
+              <small v-else>当前没有可分页的数据</small>
+            </template>
           </div>
-          <div class="exact-toolbar-group">
-            <span>第 {{ realtimePageWindow.totalPages === 0 ? 0 : realtimePageWindow.page }} / {{ realtimePageWindow.totalPages }} 页</span>
-          </div>
-          <div class="exact-toolbar-group exact-toolbar-filters">
-            <select v-model.number="realtimePageSize" @change="handleRealtimePageSizeChange">
+          <div class="realtime-page-actions">
+            <span v-if="realtimeError || (!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor)">页数暂未知</span>
+            <span v-else>第 {{ realtimePageWindow.totalPages === 0 ? 0 : realtimePageWindow.page }} / {{ realtimePageWindow.totalPages }} 页</span>
+            <select v-model.number="realtimePageSize" aria-label="每页条数" @change="handleRealtimePageSizeChange">
               <option v-for="pageSize in REALTIME_PAGE_SIZE_OPTIONS" :key="pageSize" :value="pageSize">每页 {{ pageSize }}</option>
             </select>
             <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page <= 1" @click="goToFirstRealtimePage">首页</button>
@@ -91,45 +194,37 @@
             <button type="button" :disabled="realtimePageWindow.totalPages === 0 || realtimePageWindow.page >= realtimePageWindow.totalPages" @click="goToLastRealtimePage">末页</button>
           </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>点位名称</th>
-              <th>设备名称</th>
-              <th>数据类型</th>
-              <th>寄存器地址</th>
-              <th>读写</th>
-              <th>缩放</th>
-              <th>当前值</th>
-              <th>单位</th>
-              <th>采集时间</th>
-              <th>质量</th>
-              <th>状态说明</th>
-              <th>处理耗时</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="filteredRealtimeRows.length === 0">
-              <td colspan="13" class="exact-empty">选择“全部设备”可聚合查看所有设备实时数据，也可选择单设备过滤</td>
-            </tr>
-            <tr v-for="row in pagedRealtimeRows" :key="`${row.deviceId || realtimeDeviceId}-${row.pointId || row.pointCode || row.address}`">
-              <td>{{ row.pointName || row.pointCode || '-' }}</td>
-              <td>{{ row.deviceName || deviceDisplayName(String(row.deviceId || realtimeDeviceId)) }}</td>
-              <td>{{ row.dataType || '-' }}</td>
-              <td><code>{{ realtimeAddress(row) }}</code></td>
-              <td>{{ row.readWrite || '-' }}</td>
-              <td>{{ realtimeScale(row) }}</td>
-              <td><strong>{{ realtimeValueText(row) }}</strong></td>
-              <td>{{ row.unit || '-' }}</td>
-              <td>{{ formatTime(row.timestamp || row.collectTime || row.lastUpdateTime) }}</td>
-              <td><span class="quality-badge" :class="realtimeQualityClass(row)">{{ realtimeQualityText(row) }}</span></td>
-              <td><span :title="realtimeErrorText(row)">{{ realtimeStatusText(row) }}</span></td>
-              <td>{{ realtimeProcessingText(row) }}</td>
-              <td><button type="button" @click="pickRealtimePoint(row)">查单点</button></td>
-            </tr>
-          </tbody>
-        </table>
+      </section>
+
+      <section class="realtime-panel realtime-single-panel" aria-labelledby="realtime-single-title" :aria-busy="singleLoading">
+        <div class="realtime-panel-head">
+          <h2 id="realtime-single-title">单点实时查询</h2>
+          <span>按稳定 pointId / 点位编码查询</span>
+        </div>
+        <div class="realtime-single-body">
+          <div class="realtime-single-form">
+            <label class="realtime-field">
+              <span>设备</span>
+              <select v-model="realtimeSingleDeviceId">
+                <option value="">选择设备</option>
+                <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
+                  {{ device.displayName || device.normalizedId }}
+                </option>
+              </select>
+            </label>
+            <label class="realtime-field">
+              <span>点位引用</span>
+              <input v-model="realtimeSinglePointId" type="text" placeholder="pointId 或点位编码" />
+            </label>
+            <button type="button" class="primary" :disabled="singleRealtimeSubmitDisabled" @click="loadSingleRealtime">
+              查询单点
+            </button>
+            <div v-if="singleRealtimeError" class="realtime-notice realtime-notice-error realtime-single-error" role="alert">
+              {{ singleRealtimeError }}
+            </div>
+          </div>
+          <pre class="realtime-single-result" tabindex="0" aria-label="单点实时查询完整结果">{{ prettyJson(realtimeSingleResult) }}</pre>
+        </div>
       </section>
     </div>
   </section>
@@ -569,21 +664,4 @@ watch(() => [route.query.deviceId, route.query.pointId], () => {
 });
 </script>
 
-<style scoped>
-.realtime-health-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding: 10px 14px;
-  border: 1px solid var(--exact-border);
-  border-radius: 8px;
-  color: var(--exact-dim);
-  background: var(--exact-panel);
-  font-size: 12px;
-}
-
-.realtime-health-strip strong {
-  color: #e2e8f0;
-}
-</style>
+<style scoped src="@/features/realtime/styles/realtime-view.css"></style>

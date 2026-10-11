@@ -1,0 +1,736 @@
+/* 由 HistoryView 的 scoped 入口加载，只负责历史页批准方案的呈现。 */
+.exact-page.history-view {
+  --history-line: #33485e;
+  --history-soft: #172435;
+  --history-text: #e5edf7;
+  --history-muted: #a0b1c7;
+  --history-dim: #8fa6c4;
+
+  display: block;
+  padding: 22px 26px 26px;
+  overflow: auto;
+  color: var(--history-text);
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  scrollbar-gutter: stable;
+}
+
+.history-view .history-heading {
+  margin-bottom: 16px;
+}
+
+.history-view .history-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-view .history-heading h1 {
+  margin: 0;
+  color: var(--history-text);
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.history-view .history-heading p {
+  margin: 6px 0 0;
+  color: var(--history-muted);
+  font-size: 12px;
+}
+
+.history-view .history-page-body {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.history-view .history-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--history-line);
+  border-radius: 10px;
+  background: var(--console-panel);
+}
+
+.history-view .history-panel-head {
+  display: flex;
+  min-height: 46px;
+  padding: 12px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #2e4057;
+}
+
+.history-view .history-panel-head h2 {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--history-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.history-view .history-panel-head > span {
+  min-width: 0;
+  color: var(--history-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.history-view .history-badge {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 3px 8px;
+  align-items: center;
+  border: 1px solid #415570;
+  border-radius: 5px;
+  color: #c4d4e8;
+  background: #25364c;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.history-view .history-badge.is-warning {
+  border-color: #665b48;
+  color: #f4bf7b;
+  background: #353329;
+}
+
+/* 浅层页面根与专属类覆盖 AppShell 的原生按钮默认样式，不影响其他页面。 */
+.exact-page.history-view button.history-button {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #3b5574;
+  border-radius: 6px;
+  color: var(--history-text);
+  background: #202d3f;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.exact-page.history-view button.history-button:not(:disabled):hover {
+  border-color: #6387b4;
+  color: var(--history-text);
+  background: #27374e;
+}
+
+.exact-page.history-view button.history-button.primary {
+  border-color: var(--console-primary);
+  color: #fff;
+  background: var(--console-primary);
+}
+
+.exact-page.history-view button.history-button.primary:not(:disabled):hover {
+  background: #3273f2;
+}
+
+.exact-page.history-view button.history-button:disabled {
+  border-color: var(--console-input-border-disabled);
+  color: var(--console-input-text-disabled);
+  background: var(--console-input-bg-disabled);
+  cursor: not-allowed;
+}
+
+.history-view .history-query-fields {
+  display: grid;
+  padding: 16px 18px;
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(210px, 1.12fr) minmax(210px, 1.12fr) 90px;
+  gap: 12px;
+}
+
+.history-view .history-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-view .history-field > span {
+  color: var(--history-muted);
+  font-size: 12px;
+}
+
+.history-view .history-field input,
+.history-view .history-field select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 11px;
+  border-color: #3b5574;
+  color: var(--history-text);
+  font-size: 13px;
+}
+
+.history-view .history-query-fields input[type="datetime-local"] {
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.history-view .history-compare-row {
+  display: flex;
+  padding: 13px 18px;
+  align-items: center;
+  gap: 18px;
+  border-top: 1px solid #304258;
+  background: var(--history-soft);
+}
+
+.history-view .history-compare-field {
+  width: 230px;
+  flex-shrink: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+}
+
+.history-view .history-compare-field > span {
+  white-space: nowrap;
+}
+
+.history-view .history-compare-field select {
+  width: 157px;
+  height: 71px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.history-view .history-compare-field option {
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+.history-view .history-compare-field option:checked {
+  color: var(--history-text);
+  background: #2b5082;
+}
+
+.history-view .history-compare-row p {
+  margin: 0;
+  color: #a2b7d0;
+  font-size: 11px;
+  line-height: 1.9;
+}
+
+.history-view .history-compare-row small {
+  color: #819ab9;
+  font-size: 10px;
+}
+
+.history-view .history-query-actions {
+  display: flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-view .history-notice {
+  min-width: 0;
+}
+
+.history-view .history-notice :deep(.el-alert__title) {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-summary {
+  display: grid;
+  min-width: 0;
+  padding: 14px 0;
+  grid-template-columns: 1.16fr 0.67fr 0.72fr 0.72fr 1.07fr 1.45fr;
+  border-top: 1px solid #344d6b;
+  border-bottom: 1px solid #344d6b;
+}
+
+.history-view .history-summary article {
+  min-width: 0;
+  padding: 0 16px;
+  border-right: 1px solid #304258;
+}
+
+.history-view .history-summary article:first-child {
+  padding-left: 0;
+}
+
+.history-view .history-summary article:last-child {
+  border-right: 0;
+}
+
+.history-view .history-summary article > span {
+  display: block;
+  color: #9bb0ca;
+  font-size: 11px;
+}
+
+.history-view .history-summary article > strong {
+  display: block;
+  margin: 7px 0;
+  color: var(--history-text);
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-summary article > small {
+  display: block;
+  color: #9bb0ca;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-summary .history-value-range > strong {
+  padding-top: 5px;
+  font-size: 19px;
+}
+
+.history-view .history-summary .history-time-range > strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.history-view .history-trend-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.62fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.history-view .history-chart-wrap {
+  padding: 16px 15px 0;
+}
+
+.history-view .history-chart-caption {
+  display: flex;
+  padding: 0 2px;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--history-dim);
+  font-size: 11px;
+}
+
+.history-view .history-chart-svg {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  max-height: 320px;
+  margin: 4px 0 3px;
+  overflow: visible;
+  aspect-ratio: 780 / 320;
+}
+
+.history-view .history-chart-grid {
+  fill: none;
+  stroke: #304258;
+  stroke-width: 1;
+}
+
+.history-view .history-chart-grid-vertical {
+  stroke-dasharray: 3 5;
+  opacity: 0.5;
+}
+
+.history-view .history-chart-value-labels,
+.history-view .history-chart-sample-labels {
+  fill: var(--history-dim);
+  font-size: 11px;
+}
+
+.history-view .history-chart-value-labels {
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+}
+
+.history-view .history-chart-curves {
+  overflow: visible;
+}
+
+.history-view .history-legend {
+  display: flex;
+  padding: 0 15px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  color: #b4c7df;
+  font-size: 11px;
+}
+
+.history-view .history-legend > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-legend i {
+  width: 15px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+.history-view .history-legend b {
+  color: #dce8f8;
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-view .history-chart-note,
+.history-view .history-compare-note {
+  margin: 12px 0 0;
+  padding: 0 15px 12px;
+  color: var(--history-dim);
+  font-size: 10px;
+  text-align: center;
+}
+
+.history-view .history-compare-note {
+  margin: 0;
+  padding: 0 16px 12px;
+  color: #ebcf9e;
+}
+
+.history-view .history-chart-empty {
+  display: flex;
+  min-height: 320px;
+  padding: 32px 24px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--history-muted);
+  text-align: center;
+}
+
+.history-view .history-chart-empty strong {
+  color: #dce7f7;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.history-view .history-chart-empty p {
+  max-width: 500px;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-chart-empty + .history-legend {
+  padding-bottom: 12px;
+}
+
+.history-view .history-stat-row {
+  display: flex;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  border-top: 1px solid #304258;
+  color: #93aac6;
+  background: var(--history-soft);
+  font-size: 11px;
+}
+
+.history-view .history-stat-row b {
+  margin-left: 6px;
+  color: #d9e6f7;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-json-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.exact-page.history-view button.history-json-refresh {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.history-view .history-json-body {
+  display: flex;
+  min-height: 0;
+  padding: 14px;
+  flex: 1;
+}
+
+.history-view .history-json-view {
+  width: 100%;
+  min-width: 0;
+  min-height: 250px;
+  max-height: 378px;
+  height: 378px;
+  margin: 0;
+  padding: 13px;
+  overflow: auto;
+  border: 1px solid #324c6b;
+  border-radius: 6px;
+  color: #c8dbf7;
+  background: #102033;
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre;
+  scrollbar-gutter: stable;
+}
+
+.history-view .history-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.history-view .history-alarm-scroll {
+  max-height: 232px;
+}
+
+.history-view .history-data-scroll {
+  max-height: 340px;
+}
+
+.history-view .history-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.history-view .history-alarm-table {
+  min-width: 810px;
+}
+
+.history-view .history-data-table {
+  min-width: 1000px;
+}
+
+.history-view .history-table-scroll th,
+.history-view .history-table-scroll td {
+  padding: 11px 16px;
+  border-bottom: 1px solid #2e4057;
+  font-size: 11px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.history-view .history-table-scroll th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: #9eb1cb;
+  background: var(--history-soft);
+  font-weight: 500;
+}
+
+.history-view .history-table-scroll tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.history-view .history-table-scroll tbody tr:hover {
+  background: #1d2b3d;
+}
+
+.history-view .history-data-table th,
+.history-view .history-data-table td {
+  padding: 10px 16px;
+}
+
+.history-view .history-data-table td:nth-child(2) {
+  color: var(--history-text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-view .history-data-table td code {
+  display: block;
+  color: #9fb7d8;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.history-view .history-table-empty {
+  padding: 30px;
+  color: #a4b9d2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.history-view .history-mono,
+.history-view code {
+  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-view button:focus-visible,
+.history-view input:focus-visible,
+.history-view select:focus-visible,
+.history-view [tabindex="0"]:focus-visible {
+  outline: 2px solid #79b0ff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 1440px) {
+  .exact-page.history-view {
+    padding: 20px 22px 24px;
+  }
+}
+
+@media (max-width: 1300px) {
+  .history-view .history-query-fields {
+    grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(210px, 1.16fr);
+  }
+
+  .history-view .history-limit {
+    max-width: 100px;
+  }
+
+  .history-view .history-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 15px;
+  }
+
+  .history-view .history-summary article:nth-child(3) {
+    border-right: 0;
+  }
+
+  .history-view .history-summary article:nth-child(4) {
+    padding-left: 0;
+  }
+
+  .history-view .history-trend-grid {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  .exact-page.history-view {
+    padding: 18px 20px 22px;
+  }
+
+  .history-view .history-query-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-view .history-compare-row {
+    flex-wrap: wrap;
+  }
+
+  .history-view .history-trend-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-view .history-json-view {
+    min-height: 140px;
+    max-height: 220px;
+    height: 220px;
+  }
+}
+
+@media (max-width: 760px) {
+  .exact-page.history-view {
+    padding: 18px 14px 20px;
+  }
+
+  .history-view .history-heading h1 {
+    font-size: 20px;
+  }
+
+  .history-view .history-panel-head {
+    padding: 12px;
+    flex-wrap: wrap;
+  }
+
+  .history-view .history-panel-head > span {
+    text-align: left;
+  }
+
+  .history-view .history-query-fields {
+    padding: 14px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-view .history-query-fields input[type="datetime-local"] {
+    max-width: 248px;
+  }
+
+  .history-view .history-compare-row {
+    padding: 13px 14px;
+    gap: 10px;
+  }
+
+  .history-view .history-compare-field {
+    width: auto;
+    max-width: 100%;
+  }
+
+  .history-view .history-query-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .history-view .history-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-view .history-summary article {
+    padding: 0 10px;
+  }
+
+  .history-view .history-summary article:nth-child(odd) {
+    padding-left: 0;
+    border-right: 1px solid #304258;
+  }
+
+  .history-view .history-summary article:nth-child(even) {
+    padding-left: 10px;
+    border-right: 0;
+  }
+
+  .history-view .history-summary article > strong {
+    font-size: 21px;
+  }
+
+  .history-view .history-summary .history-value-range > strong {
+    font-size: 17px;
+  }
+
+  .history-view .history-summary .history-time-range > strong {
+    font-size: 13px;
+  }
+
+  .history-view .history-chart-wrap {
+    padding: 14px 8px 0;
+  }
+
+  .history-view .history-chart-svg {
+    min-height: 150px;
+  }
+
+  .history-view .history-chart-note {
+    padding: 0 12px 12px;
+    line-height: 1.8;
+    text-align: left;
+  }
+
+  .history-view .history-json-body {
+    padding: 12px;
+  }
+}

@@ -1,9 +1,12 @@
 <template>
   <section class="exact-page diagnostic-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>系统实时状态诊断</h1>
-        <span class="heading-online"><i></i>{{ loading ? '诊断中' : '运行数据' }}</span>
+    <div class="section-heading diagnostic-heading">
+      <div class="diagnostic-heading-copy">
+        <div class="heading-title-line">
+          <h1>系统实时状态诊断</h1>
+          <span class="diagnostic-sampling-label">{{ loading ? '诊断中' : '运行数据' }}</span>
+        </div>
+        <p>核对服务、连接与采集健康；部分数据不可用时，请结合告警与原始记录判断。</p>
       </div>
       <div class="heading-actions">
         <span class="diagnostic-refresh-time">{{ lastRefreshText }}</span>
@@ -12,26 +15,30 @@
       </div>
     </div>
 
-    <div class="exact-page-body">
-      <p v-if="exportMessage" class="diagnostic-message" :class="{ 'is-error': exportMessageType === 'error' }">{{ exportMessage }}</p>
-      <p v-if="error" class="diagnostic-message is-error">{{ error }}</p>
-      <p v-else-if="partialWarning" class="diagnostic-message">{{ partialWarning }}</p>
+    <div class="exact-page-body diagnostic-body">
+      <p v-if="exportMessage" class="diagnostic-message" :class="{ 'is-error': exportMessageType === 'error' }" role="status">{{ exportMessage }}</p>
+      <p v-if="error" class="diagnostic-message is-error" role="alert">{{ error }}</p>
+      <p v-else-if="partialWarning" class="diagnostic-message" role="status">{{ partialWarning }}</p>
 
       <section class="exact-surface diagnostic-summary-surface">
-        <div class="exact-surface-head"><h2>诊断摘要</h2><span>{{ deviceStore.devices.length }} 台设备，{{ deviceStore.totalPointCount }} 个点位</span></div>
-        <div class="exact-diagnostic-cards">
-          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+        <div class="exact-surface-head diagnostic-panel-head"><h2>诊断摘要</h2><span>{{ diagnosticDeviceContextText }}</span></div>
+        <div class="exact-diagnostic-cards diagnostic-summary-rail">
+          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card diagnostic-summary-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
         </div>
+        <p class="diagnostic-summary-note">摘要不代表所有指标均已获取；请求失败时保留已获取的数据，以提示及详情为准。</p>
       </section>
 
       <section class="exact-table-card diagnostic-rows-table">
-        <div class="exact-table-title"><h2>诊断项列表</h2><span>{{ diagnosticRows.length }} 项</span></div>
-        <table>
-          <thead><tr><th>诊断项</th><th>状态</th><th>当前值</th><th>处理建议</th></tr></thead>
-          <tbody>
-            <tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr>
-          </tbody>
-        </table>
+        <div class="exact-table-title diagnostic-panel-head"><h2 id="diagnostic-rows-title">诊断项列表</h2><span>{{ diagnosticRows.length }} 项</span></div>
+        <div class="diagnostic-table-scroll" tabindex="0" role="region" aria-labelledby="diagnostic-rows-title">
+          <table class="diagnostic-check-table">
+            <colgroup><col class="diagnostic-col-name"><col class="diagnostic-col-status"><col class="diagnostic-col-current"><col class="diagnostic-col-advice"></colgroup>
+            <thead><tr><th scope="col">诊断项</th><th scope="col">状态</th><th scope="col">当前值</th><th scope="col">处理建议</th></tr></thead>
+            <tbody>
+              <tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <DiagnosticDetailPanel
@@ -49,9 +56,9 @@
         @select-device="selectDevice"
       />
 
-      <details class="exact-json-panel" open>
+      <details class="exact-json-panel diagnostic-raw-panel">
         <summary>查看原始诊断 JSON</summary>
-        <pre class="json-view">{{ prettyJson(diagnosticRaw) }}</pre>
+        <pre class="json-view" tabindex="0" aria-label="完整原始诊断 JSON">{{ prettyJson(diagnosticRaw) }}</pre>
       </details>
     </div>
   </section>
@@ -126,18 +133,26 @@ const resourceSummary = computed(() => buildResourceSummary({
   reportMetrics: reportMetrics.value,
   performanceDetail: performanceDetail.value
 }));
-const diagnosticCards = computed(() => buildDiagnosticCards({
-  systemResource: systemResource.value,
-  configSummary: configSummary.value,
-  deviceConnectionMetrics: deviceConnectionMetrics.value,
-  cacheMetrics: cacheMetrics.value,
-  runtimeStatus: runtimeStatus.value,
-  exceptionStats: exceptionStats.value,
-  pipelineMetrics: pipelineMetrics.value,
-  devices: deviceStore.devices,
-  onlineCount: deviceStore.onlineCount,
-  totalPointCount: deviceStore.totalPointCount
-}));
+const diagnosticCards = computed(() => {
+  const cards = buildDiagnosticCards({
+    systemResource: systemResource.value,
+    configSummary: configSummary.value,
+    deviceConnectionMetrics: deviceConnectionMetrics.value,
+    cacheMetrics: cacheMetrics.value,
+    runtimeStatus: runtimeStatus.value,
+    exceptionStats: exceptionStats.value,
+    pipelineMetrics: pipelineMetrics.value,
+    devices: deviceStore.devices,
+    onlineCount: deviceStore.onlineCount,
+    totalPointCount: deviceStore.totalPointCount
+  });
+  const unknownText = loading.value ? "加载中" : "未知";
+  return cards.map((card) => {
+    if (card.label === "设备配置总数" && !hasKnownInventoryCount("deviceCount")) return { ...card, value: unknownText };
+    if (card.label === "点位总数" && !hasKnownInventoryCount("pointCount")) return { ...card, value: unknownText };
+    return card;
+  });
+});
 const diagnosticRows = computed(() => buildDiagnosticRows({
   appInitialized: appStore.initialized,
   systemStatusText: systemStatusText.value,
@@ -154,6 +169,23 @@ const diagnosticRows = computed(() => buildDiagnosticRows({
   onlineCount: deviceStore.onlineCount
 }));
 const lastRefreshText = computed(() => lastRefresh.value ? `刷新时间 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const diagnosticDeviceContextText = computed(() => {
+  if (deviceStore.lastUpdatedAt > 0) {
+    const prefix = deviceStore.error ? "上次已加载：" : "设备上下文：";
+    return `${prefix}${deviceStore.devices.length} 台设备，${deviceStore.totalPointCount} 个点位`;
+  }
+  return deviceStore.loading ? "设备上下文加载中" : "设备上下文未知";
+});
+
+function hasKnownInventoryCount(key: "deviceCount" | "pointCount"): boolean {
+  if (deviceStore.lastUpdatedAt > 0) return true;
+  const summary = configSummary.value;
+  if (!summary || typeof summary !== "object" || !("cacheStats" in summary)) return false;
+  const stats = summary.cacheStats;
+  if (!stats || typeof stats !== "object") return false;
+  const value = key === "deviceCount" ? ("deviceCount" in stats ? stats.deviceCount : null) : ("pointCount" in stats ? stats.pointCount : null);
+  return value !== null && value !== undefined;
+}
 
 async function loadDiagnostic() {
   loading.value = true;
@@ -340,36 +372,4 @@ onMounted(() => {
 });
 </script>
 
-<style scoped>
-.diagnostic-view .diagnostic-refresh-time {
-  color: var(--exact-dim);
-  font-size: 12px;
-}
-
-.diagnostic-view .diagnostic-message {
-  padding: 10px 14px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: 12px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
-  font-size: 13px;
-}
-
-.diagnostic-view .diagnostic-message.is-error {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.1);
-  color: #fecaca;
-}
-
-.diagnostic-view .diagnostic-summary-surface .exact-diagnostic-cards {
-  padding: 16px;
-}
-
-.diagnostic-view .diagnostic-rows-table {
-  margin-top: 14px;
-}
-
-.diagnostic-view .exact-json-panel {
-  margin-top: 16px;
-}
-</style>
+<style scoped src="@/features/diagnostic/styles/diagnostic-view.css"></style>

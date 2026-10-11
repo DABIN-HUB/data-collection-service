@@ -3,17 +3,17 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>数据采集配置</h1>
-        <span class="heading-online"><i></i>{{ protocolStore.protocols.length }} 种协议</span>
+        <span class="collection-protocol-count">{{ protocolCountText }}</span>
       </div>
       <div class="heading-actions">
-        <button type="button" :disabled="collectionLoading" @click="refreshCollectionContext">刷新概览</button>
+        <button type="button" class="primary" :disabled="collectionLoading" @click="refreshCollectionContext">刷新概览</button>
       </div>
     </div>
 
     <div class="exact-page-body">
       <el-alert v-if="collectionError" :title="collectionError" type="warning" :closable="false" />
-      <section class="exact-surface exact-global-config">
-        <div class="exact-surface-head"><h2>全局采集配置</h2><span>当前运行配置</span></div>
+      <section class="exact-surface exact-global-config" aria-labelledby="collection-summary-title">
+        <div class="exact-surface-head"><h2 id="collection-summary-title">全局采集配置</h2><span>{{ collectionDataContextText }}</span></div>
         <div class="exact-config-grid collection-summary-grid">
           <div v-for="item in collectionSummaryItems" :key="item.label" class="exact-config-item">
             <span>{{ item.label }}</span>
@@ -29,29 +29,32 @@
         @synced="refreshCollectionContext"
       />
 
-      <section class="exact-table-card collection-protocol-table">
-        <div class="exact-table-title"><h2>协议配置列表</h2><span>{{ protocolStore.protocols.length }} 种协议</span></div>
-        <table>
-          <thead>
-            <tr><th>协议名称</th><th>规范编码</th><th>默认端口</th><th>采集方式</th><th>能力状态</th><th>操作</th></tr>
-          </thead>
-          <tbody>
-            <tr v-if="protocolStore.protocols.length === 0"><td colspan="6" class="exact-empty">当前没有可用的协议定义</td></tr>
-            <tr v-for="item in protocolStore.protocols" :key="item.protocol">
-              <td><strong>{{ item.title || item.protocol || '-' }}</strong></td>
-              <td><code>{{ item.protocol || '-' }}</code></td>
-              <td>{{ protocolDefaultPort(item) }}</td>
-              <td>{{ protocolMode(item) }}</td>
-              <td><span class="capability-badge">{{ protocolCapability(item) }}</span></td>
-              <td><button type="button" @click="openProtocolConfig(item)">配置设备</button></td>
-            </tr>
-          </tbody>
-        </table>
+      <section class="exact-table-card collection-protocol-table" aria-labelledby="collection-protocol-title">
+        <div class="exact-table-title"><h2 id="collection-protocol-title">协议配置列表</h2><span>{{ protocolCountText }}</span></div>
+        <div class="collection-table-scroll" tabindex="0" role="region" aria-label="协议配置列表，可横向及纵向滚动">
+          <table>
+            <colgroup><col class="collection-col-name" /><col class="collection-col-code" /><col class="collection-col-port" /><col class="collection-col-mode" /><col class="collection-col-capability" /><col class="collection-col-action" /></colgroup>
+            <thead>
+              <tr><th scope="col">协议名称</th><th scope="col">规范编码</th><th scope="col">默认端口</th><th scope="col">采集方式</th><th scope="col">能力状态</th><th scope="col">操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in protocolStore.protocols" :key="item.protocol">
+                <td><strong>{{ item.title || item.protocol || '-' }}</strong></td>
+                <td><code>{{ item.protocol || '-' }}</code></td>
+                <td>{{ protocolDefaultPort(item) }}</td>
+                <td>{{ protocolMode(item) }}</td>
+                <td><span class="capability-badge">{{ protocolCapability(item) }}</span></td>
+                <td><button type="button" @click="openProtocolConfig(item)">配置设备</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="protocolStore.protocols.length === 0" class="collection-empty" role="status">{{ protocolStore.loading ? '协议加载中' : protocolStore.error ? '协议数据不可用，请刷新重试' : '当前没有可用的协议定义' }}</div>
       </section>
 
       <details v-if="selectedProtocol" class="exact-json-panel" open>
         <summary>{{ selectedProtocol.title || selectedProtocol.protocol }} Schema</summary>
-        <pre class="json-view">{{ prettyJson(selectedProtocol) }}</pre>
+        <pre class="json-view" tabindex="0" aria-label="完整协议 Schema，可滚动查看">{{ prettyJson(selectedProtocol) }}</pre>
       </details>
     </div>
 
@@ -92,11 +95,22 @@ const collectionSummaryItems = computed(() => {
   const summary = configSummary.value;
   const stats = summary?.cacheStats;
   return [
-    { label: "设备配置", value: `${stats?.deviceCount ?? deviceStore.devices.length} 台` },
-    { label: "点位总数", value: `${stats?.pointCount ?? sumPoints(deviceStore.devices)} 个` },
-    { label: "连接配置", value: `${stats?.connectionCount ?? deviceStore.devices.length} 个` },
+    { label: "设备配置", value: formatSummaryCount(stats?.deviceCount ?? knownDeviceCount(), "台") },
+    { label: "点位总数", value: formatSummaryCount(stats?.pointCount ?? knownPointCount(), "个") },
+    { label: "连接配置", value: formatSummaryCount(stats?.connectionCount ?? knownDeviceCount(), "个") },
     { label: "配置来源", value: summary?.serviceId ? "当前运行配置" : "未知" }
   ];
+});
+const protocolCountText = computed(() => {
+  if (protocolStore.loading) return "协议加载中";
+  if (protocolStore.error && protocolStore.protocols.length === 0) return "协议未知";
+  if (protocolStore.error) return `上次已加载 ${protocolStore.protocols.length} 种协议`;
+  return `${protocolStore.protocols.length} 种协议`;
+});
+const collectionDataContextText = computed(() => {
+  if (configSummary.value?.cacheStats) return "当前运行配置";
+  if (deviceStore.lastUpdatedAt > 0) return deviceStore.error ? "上次已加载的设备配置" : "设备配置列表";
+  return collectionLoading.value ? "配置加载中" : "配置数据未知";
 });
 
 onMounted(async () => {
@@ -197,6 +211,19 @@ function sumPoints(source: DeviceInfo[]): number {
   return source.reduce((sum, device) => sum + Number(device.pointCount || (Array.isArray(device.points) ? device.points.length : 0) || 0), 0);
 }
 
+function knownDeviceCount(): number | null {
+  return deviceStore.lastUpdatedAt > 0 ? deviceStore.devices.length : null;
+}
+
+function knownPointCount(): number | null {
+  return deviceStore.lastUpdatedAt > 0 ? sumPoints(deviceStore.devices) : null;
+}
+
+function formatSummaryCount(value: number | null | undefined, unit: string): string {
+  if (value !== null && value !== undefined) return `${value} ${unit}`;
+  return collectionLoading.value ? "加载中" : "未知";
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -220,33 +247,4 @@ function prettyJson(value: unknown): string {
 }
 </script>
 
-<style scoped>
-.collection-view {
-  min-width: 0;
-}
-
-.collection-summary-grid {
-  display: grid;
-  padding: 20px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.collection-protocol-table .capability-badge {
-  display: inline-flex;
-  width: fit-content;
-  padding: 3px 8px;
-  align-items: center;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-@media (max-width: 1100px) {
-  .collection-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-</style>
+<style scoped src="../../features/collection/styles/collection-view.css"></style>
