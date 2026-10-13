@@ -20,7 +20,7 @@
         <span v-if="runtimeView.reason">最近消息：{{ runtimeView.reason }}</span>
       </div>
       <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
-      <details :key="`${device.normalizedId}:${protocolKey}`" class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse" open>
+      <details :key="`${device.normalizedId}:${protocolKey}`" class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
         <summary>
           <span>协议连接配置</span>
           <button v-if="protocolSchema" type="button" class="protocol-name-badge" title="查看协议说明与能力" @click.stop.prevent="protocolDetailsVisible = true">{{ protocolSchema.title || protocolSchema.protocol }}</button>
