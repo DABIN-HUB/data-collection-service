@@ -2,9 +2,9 @@
 
 ## 最新范围：批准稿精密工业工作台实施与真实 renderer 验收（2026-10-13）
 
-登录/连接页、共享浅色壳、14 个路由呈现、设备五分区编辑器、点位六分区编辑器及相关弹层已完成生产实施。用户已回复“接受，继续”，接受已披露的 8 个 script 差异及既有 `.gitignore` 边界；随后明确要求“执行完成后提交一下代码，然后吧本地运行的服务重新编译启动”。最新范围因此增加本地限定提交、精确提交隔离无测试打包及 9090 服务替换，不包括推送、修改认证/依赖配置或业务写入。当前为 `IMPLEMENTED / USER_ACCEPTED_PROTECTION_SCOPE / RELEASE_REQUESTED`，不是完整业务验收或最终像素签收。
+登录/连接页、共享浅色壳、14 个路由呈现、设备五分区编辑器、点位六分区编辑器及相关弹层已完成生产实施。用户已回复“接受，继续”，接受已披露的 8 个 script 差异及既有 `.gitignore` 边界；随后明确要求“执行完成后提交一下代码，然后吧本地运行的服务重新编译启动”。最新范围增加的本地限定提交、精确提交隔离无测试打包及 9090 服务替换已实际完成，不包括推送、修改认证/依赖配置或业务写入。当前为 `IMPLEMENTED / USER_ACCEPTED_PROTECTION_SCOPE / LOCAL_DEPLOYED_WITH_HEALTH_DOWN`；新服务启动及完整静态资源读回通过，但整体健康仍为 DOWN，不是完整业务验收或最终像素签收。
 
-用户接受后的 lint、Stylelint、typecheck、build、build:web 五项门禁均重新实际 exit 0；renderer 与 Boot 静态目录的完整 60 项路径及 SHA-256 一致，入口 `index-C8DUMKg8.js`。Vite 仍有第三方 PURE 注释与 vendor chunk 体积 warning，未更改依赖或放宽规则。正式构建独立预览入口 `http://127.0.0.1:5175/`，原开发入口 5174 保留；它们不代表运行中 9090 已替换。
+用户接受后的 lint、Stylelint、typecheck、build、build:web 五项门禁均重新实际 exit 0；renderer 与 Boot 静态目录的完整 60 项路径及 SHA-256 一致，入口 `index-C8DUMKg8.js`。Vite 仍有第三方 PURE 注释与 vendor chunk 体积 warning，未更改依赖或放宽规则。正式构建独立预览入口 `http://127.0.0.1:5175/`，原开发入口 5174 保留；9090 另经下述独立部署核证，已运行本次新 JAR，不能以预览服务代替部署证据。
 
 最新真实正式构建观察按清单精确使用 1600×1000、1280×800、390×844，14 路由共 42 个组合，页面级横向溢出 0、Runtime exception 0；原先 1440×900/1024×768 的观察仅保留为历史，不能替代要求尺寸。入口 HTML 与 dist 原字节相同，全部页面实际加载 `index-C8DUMKg8.js`；本轮全部 265 个请求均为 GET，388 条浏览器日志均为 CORS 分类，真实失败/未知不补假数据。三宽度设备卡片/表格切换、五个编辑分区及上下端点、Escape 关闭、日志“更多筛选”有实际观察，共 76 张新 PNG；pre/textarea 正文仅在截图时隐藏，保留几何，不签其内容可读性。
 
@@ -27,7 +27,17 @@
 
 ### 最新提交与重启执行边界
 
-从本次实际提交的精确 HEAD 创建隔离 worktree，以 `-Dmaven.test.skip=true clean package` 编译生产模块，不编译或运行测试；旧 9090 保持运行直到新可执行包及全部嵌入静态资源核验通过。替换前保留旧 JAR，按真实监听 PID/创建时间/可执行文件核对后只终止该服务，沿用原 Java、工作目录和启动参数。新提交、JAR SHA-256、旧/新 PID、完整 HTTP 静态资源读回、健康组件状态及回滚包另存忽略目录 `collector-boot/target/releases/` 下安全回执；回执生成前不预先宣称提交或重启成功。服务启动与依赖健康、视觉验收分别记录，不改历史 PASS/FAIL/BLOCKED。
+从本次生产提交的精确 HEAD 创建隔离 worktree，以 `-Dmaven.test.skip=true clean package` 编译生产模块，不编译或运行测试；旧 9090 保持运行直到新可执行包及全部嵌入静态资源核验通过。替换前保留旧 JAR，按真实监听 PID/创建时间/可执行文件核对后只终止该服务，沿用原 Java、工作目录和启动参数。生产提交、JAR SHA-256、旧/新 PID、完整 HTTP 静态资源读回、健康组件状态及回滚包另存忽略目录 `collector-boot/target/releases/` 下安全回执；部署后的文档收尾不改变生产构建身份。服务启动与依赖健康、视觉验收分别记录，不改历史 PASS/FAIL/BLOCKED。
+
+### 本轮本地提交与部署结果（2026-10-13）
+
+- 生产提交：`d1578fd4`（`feat(desktop): implement precision industrial workbench design`），分支 `feature_2.0`。包含 44 个前端生产源码文件的改动、完整同步静态资源和本进度文档；没有推送，没有提交私有设计/证据、测试或无关工作区文件。
+- 从该精确提交创建全新 detached worktree；实际 cwd 和 Maven 各 `Building jar:` 路径均位于隔离目录。生产 `clean package` 的 17 个 reactor 项目全部 SUCCESS，exit 0；实际日志明确不复制测试资源、不编译测试、跳过测试运行。
+- 新可执行 JAR 为 100178571 bytes，包含 192 个嵌入依赖，应用字节码 major 61（Java 17）。SHA-256：`689cbc72e83edbc0ccea4957eb96931263061a9ecc20d4e29d92ffff8893aa3f`。源码静态目录、正式 renderer 与 JAR 的 60 项完整路径及字节一致，无旧 hash 文件残留。
+- 旧运行包先备份并复核 SHA-256；只终止原 9090 实际监听 PID `25552`，确认进程退出和端口释放后才安装新包。沿用原 Java 17、仓库根工作目录及原启动参数，新实际监听 PID `50456`，进程创建时间 `2026-10-13T22:23:26.221664+08:00`。
+- 页面入口 `http://127.0.0.1:9090/collector/desktop/index.html#/login`；60/60 静态 HTTP GET 均返回 200，响应原始字节 SHA-256 均匹配新 JAR，入口 `index-C8DUMKg8.js`。这是静态部署读回，不升级此前视觉或业务验收结论。
+- 切换前后 `/collector/health` 均 HTTP 200、整体 DOWN；分项同为 `collectionService: DOWN`、`cache: UP`、`connections: UNKNOWN`、`application: UP`。新包已启动不等于采集服务健康；本次未改认证/依赖配置或发起设备启停等业务修复。
+- 发布产物与安全回执目录：`collector-boot/target/releases/20261013-220823-d1578fd4/`，包括 `ARTIFACT-READY.json`、`DEPLOYMENT-RECEIPT.json`、`data-collection-service-d1578fd4.jar` 和 `previous-data-collection-service.jar`。回滚包保留本地；服务继续运行，隔离构建目录在持久化产物后清理。
 
 ### 以下为此前发布与专项验收历史（不是本轮部署结果）
 
