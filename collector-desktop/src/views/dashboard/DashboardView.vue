@@ -45,7 +45,7 @@
     </div>
 
     <div class="home-dashboard-row home-dashboard-primary">
-      <section class="home-panel">
+      <section class="home-panel home-panel-events">
         <div class="home-panel-head">
           <h2>全局告警最近记录</h2>
           <span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span>
@@ -62,9 +62,9 @@
           </div>
         </div>
       </section>
-      <section class="home-panel">
+      <section class="home-panel home-panel-attention">
         <div class="home-panel-head">
-          <h2>设备异常风险</h2>
+          <h2>优先关注设备</h2>
           <span class="dashboard-badge" :class="{ 'dashboard-warning': riskDevices.length > 0 || devicesStale }">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '数据待确认' : riskDeviceBadge }}</span>
         </div>
         <div class="home-risk-list" tabindex="0" role="region" aria-label="设备异常风险，可独立滚动">

@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, toRaw, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, toRaw, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 
@@ -197,6 +197,7 @@ const networkLastAttemptAt = ref<number | null>(null);
 const networkLastSuccessAt = ref<number | null>(null);
 // 仅关联原结果的呈现元数据；不改归一化对象、历史、导出或网络算法。
 const networkReadFailures = new WeakMap<NormalizedNetworkDiagnosticResult, number | null>();
+let isViewMounted = false;
 
 const selectedNetworkDevice = computed(() => deviceStore.devices.find((device) => device.normalizedId === networkDeviceId.value));
 const networkResultRows = computed(() => {
@@ -261,10 +262,12 @@ async function runNetwork() {
   networkLastAttemptAt.value = submission.submittedAt;
   try {
     const result = normalizeNetworkDiagnosticResultForSubmission(await diagnoseNetwork(payload), submission);
+    if (!isViewMounted) return;
     networkLastSuccessAt.value = result.completedAt ?? null;
     networkResult.value = result;
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
   } catch (caught) {
+    if (!isViewMounted) return;
     const message = caught instanceof Error ? caught.message : "网络检测失败";
     const result = normalizeNetworkDiagnosticResultForSubmission({
       type: payload.type,
@@ -281,7 +284,9 @@ async function runNetwork() {
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
     ElMessage.error(message);
   } finally {
-    networkOperating.value = false;
+    if (isViewMounted) {
+      networkOperating.value = false;
+    }
   }
 }
 
@@ -382,13 +387,20 @@ function prettyJson(value: unknown): string {
 
 async function initializeNetworkView() {
   await appStore.initialize();
+  if (!isViewMounted) return;
   applyRouteQuery();
   await deviceStore.refresh();
+  if (!isViewMounted) return;
   applyRouteQuery();
 }
 
 onMounted(() => {
+  isViewMounted = true;
   void initializeNetworkView();
+});
+
+onUnmounted(() => {
+  isViewMounted = false;
 });
 
 watch(() => [route.query.target, route.query.port, route.query.type, route.query.deviceId], () => {

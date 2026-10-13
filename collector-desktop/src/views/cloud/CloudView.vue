@@ -178,7 +178,8 @@ const outboxReadState = ref<ReadState>("unknown");
 const failedSource = ref<"" | "capability" | "metrics" | "outbox">("");
 const outboxLoadedContext = ref<{ status: string; deviceId: string } | null>(null);
 let detailGeneration = 0;
-onUnmounted(() => { detailGeneration++; });
+let cloudLoadGeneration = 0;
+onUnmounted(() => { detailGeneration++; cloudLoadGeneration++; });
 
 const detailFields = computed(() => detail.value ? [
   { label: "消息 ID", value: detail.value.summary.messageId },
@@ -297,6 +298,7 @@ onMounted(() => {
 });
 
 async function loadCloud() {
+  const generation = ++cloudLoadGeneration;
   loading.value = true;
   error.value = "";
   pageLastAttemptAt.value = Date.now();
@@ -304,34 +306,42 @@ async function loadCloud() {
   let readingSource: "capability" | "metrics" | "outbox" = "capability";
   try {
     await appStore.initialize();
+    if (generation !== cloudLoadGeneration) return;
     if (appStore.capabilities?.cloud.monitoringAvailable === true) {
       readingSource = "metrics";
       metricsLastAttemptAt.value = Date.now();
       metricsReadState.value = "loading";
-      reportMetrics.value = await getCloudReportMetrics();
+      const nextMetrics = await getCloudReportMetrics();
+      if (generation !== cloudLoadGeneration) return;
+      reportMetrics.value = nextMetrics;
       metricsLastSuccess.value = new Date();
       metricsReadState.value = "ready";
       readingSource = "outbox";
       outboxLastAttemptAt.value = Date.now();
       outboxReadState.value = "loading";
       const loadedContext = { status: outboxStatus.value, deviceId: outboxDeviceId.value.trim() };
-      outboxRows.value = await listCloudOutbox({
+      const nextOutboxRows = await listCloudOutbox({
         status: outboxStatus.value || undefined,
         deviceId: outboxDeviceId.value.trim() || undefined,
         limit: 50
       });
+      if (generation !== cloudLoadGeneration) return;
+      outboxRows.value = nextOutboxRows;
       outboxLastSuccess.value = new Date();
       outboxReadState.value = "ready";
       outboxLoadedContext.value = loadedContext;
     }
     lastRefresh.value = new Date();
   } catch (err) {
+    if (generation !== cloudLoadGeneration) return;
     failedSource.value = readingSource;
     if (readingSource === "metrics") metricsReadState.value = "error";
     if (readingSource === "outbox") outboxReadState.value = "error";
     error.value = err instanceof Error ? err.message : "云上报链路加载失败";
   } finally {
-    loading.value = false;
+    if (generation === cloudLoadGeneration) {
+      loading.value = false;
+    }
   }
 }
 

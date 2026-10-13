@@ -4,7 +4,7 @@
   min-width: 0;
   min-height: 0;
   margin: 0;
-  padding: 22px 26px 26px;
+  padding: 27px 30px 24px;
   flex: 1 1 auto;
   gap: 18px;
   overflow: auto;
@@ -19,7 +19,7 @@
   flex: 0 0 auto;
 }
 .collection-view > .section-heading {
-  min-height: 34px;
+  min-height: 35px;
   padding: 0;
   align-items: center;
   flex-wrap: wrap;
@@ -34,7 +34,7 @@
 .collection-view .heading-title-line h1 {
   min-width: 0;
   color: var(--console-text-primary);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.45;
 }
@@ -70,7 +70,7 @@
   flex-wrap: wrap;
 }
 .exact-page.collection-view :deep(button:not(.el-button)) {
-  min-height: 34px;
+  min-height: 35px;
   padding: 0 12px;
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border);
@@ -84,7 +84,7 @@
 .exact-page.collection-view :deep(button:not(.el-button, :disabled):hover) {
   color: var(--console-text-primary);
   border-color: var(--console-primary-hover);
-  background: #27374e;
+  background: var(--app-control-bg-hover);
 }
 .exact-page.collection-view :deep(button:not(.el-button).primary) {
   color: #fff;
@@ -103,7 +103,7 @@
 .exact-page.collection-view :deep(.config-ops-panel button:not(.el-button, :disabled).primary:hover) {
   color: var(--console-text-primary);
   border-color: var(--console-primary-hover);
-  background: #27374e;
+  background: var(--app-control-bg-hover);
 }
 .exact-page.collection-view :deep(button:not(.el-button):disabled) {
   color: var(--console-input-text-disabled);
@@ -113,14 +113,14 @@
   opacity: 1;
 }
 .exact-page.collection-view :deep(.config-ops-panel button.config-risk-action:not(.el-button, :disabled)) {
-  color: #fed7aa;
-  border-color: #795c3c;
-  background: #30271f;
+  color: var(--app-color-warning);
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
 }
 .exact-page.collection-view :deep(.config-ops-panel button.config-risk-action:not(.el-button, :disabled):hover) {
-  color: #ffdaad;
-  border-color: #ab8050;
-  background: #3b2f22;
+  color: var(--app-color-warning);
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
 }
 .exact-page.collection-view :deep(button:focus-visible),
 .exact-page.collection-view :deep(input:focus-visible),
@@ -222,7 +222,7 @@
 }
 .collection-view :deep(.config-ops-panel .surface-card-head) {
   min-width: 0;
-  min-height: 34px;
+  min-height: 35px;
   margin-bottom: 12px;
   padding-bottom: 0;
   align-items: center;
@@ -265,7 +265,7 @@
   margin: 0;
   padding: 12px;
   overflow: auto;
-  color: #c8d8ee;
+  color: var(--app-code-text);
   border: 1px solid var(--console-border-soft);
   border-radius: 5px;
   background: var(--console-bg-soft);
@@ -320,8 +320,8 @@
 .exact-page.collection-view :deep(.config-sync-form select) {
   width: 100%;
   min-width: 0;
-  height: 34px;
-  min-height: 34px;
+  height: 35px;
+  min-height: 35px;
   color: var(--console-text-secondary);
   background: var(--console-input-bg);
 }
@@ -415,7 +415,7 @@
   font-weight: 500;
 }
 .collection-view .collection-table-scroll code {
-  color: #c8d8ee;
+  color: var(--app-code-text);
   background: transparent;
   font-family: inherit;
   font-size: 13px;
@@ -460,7 +460,7 @@
   margin: 14px 16px 16px;
   padding: 14px;
   overflow: auto;
-  color: #c8d8ee;
+  color: var(--app-code-text);
   border: 1px solid var(--console-border-soft);
   border-radius: 5px;
   background: var(--console-bg-soft);

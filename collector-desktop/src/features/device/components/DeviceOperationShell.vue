@@ -132,12 +132,16 @@ onMounted(async () => {
   applyRouteDevice();
   await deviceStore.refresh();
   applyRouteDevice();
-  await loadRealtimePreview();
+  if (activeTab.value !== "config") {
+    await loadRealtimePreview();
+  }
 });
 
 watch(() => route.query.deviceId, () => {
   applyRouteDevice();
-  void loadRealtimePreview();
+  if (activeTab.value !== "config") {
+    void loadRealtimePreview();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -293,347 +297,16 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 </script>
 
 <style scoped>
-.device-operation-panel {
-  --panel-line: var(--console-border-soft, #1e3a5f);
-  --panel-muted: var(--console-text-muted, #8aa0b8);
-  --panel-text: var(--console-text-primary, #e5edf8);
-  --console-radius-card: 6px;
-  --console-radius-control: 4px;
-  display: grid;
-  min-height: calc(100vh - 96px);
-  max-height: calc(100vh - 96px);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
-  color: var(--console-text-secondary);
-  border: 1px solid var(--panel-line);
-  border-radius: 18px;
-  background: var(--console-bg, #08131f);
-  box-shadow: none;
-}
-
-.device-operation-panel .local-editor-title {
-  grid-row: 1;
-  display: flex;
-  min-height: 76px;
-  padding: 0 16px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  color: var(--panel-text);
-  border-bottom: 1px solid var(--panel-line);
-  background: linear-gradient(180deg, var(--console-panel) 0%, var(--console-bg-soft) 100%);
-}
-
-.device-operation-panel .local-editor-title > div:first-child {
-  min-width: 0;
-}
-
-.device-operation-panel .local-editor-title h3,
-.device-operation-panel .local-editor-title p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.local-editor-title h3,
-.local-editor-title p {
-  margin: 0;
-}
-
-.local-editor-title h3 {
-  margin-top: 3px;
-  color: var(--console-text-primary);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.18;
-}
-
-.local-editor-title p {
-  margin-top: 3px;
-  color: var(--console-text-muted);
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.label-chip {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 22px;
-  padding: 2px 7px;
-  align-items: center;
-  border: 1px solid rgba(59, 130, 246, 0.34);
-  border-radius: 999px;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.18);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.local-editor-title-actions,
-.local-editor-stats {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: nowrap;
-}
-
-.local-editor-title-actions {
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.local-editor-stat {
-  width: 96px;
-  min-width: 96px;
-  min-height: 46px;
-  padding: 6px 9px;
-  color: var(--console-text-secondary);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-card);
-  background: var(--console-panel-soft);
-  text-align: left;
-}
-
-.local-editor-stat strong,
-.local-editor-stat span {
-  display: block;
-}
-
-.local-editor-stat strong {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--console-text-primary);
-  font-size: 15px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.local-editor-stat span {
-  margin-top: 2px;
-  color: var(--console-text-dim);
-  font-size: 11px;
-}
-
-.device-operation-panel .local-editor-tabs {
-  grid-row: 2;
-  display: flex;
-  min-width: 0;
-  min-height: 58px;
-  padding: 7px 16px;
-  gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--panel-line);
-  background: var(--console-bg-soft, #0d1a2a);
-}
-
-.local-editor-tab {
-  position: relative;
-  flex: 1 0 188px;
-  min-height: 44px;
-  padding: 7px 10px 7px 42px;
-  color: var(--console-text-dim);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-card);
-  background: var(--console-panel);
-  text-align: left;
-}
-
-.local-editor-tab:hover {
-  color: var(--console-text-secondary);
-  border-color: var(--console-border-active);
-  background: var(--console-panel-soft);
-}
-
-.local-editor-tab::after {
-  display: none;
-}
-
-.local-editor-tab > span {
-  position: absolute;
-  top: 9px;
-  left: 10px;
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  color: var(--console-text-muted);
-  border: 1px solid var(--console-border-soft);
-  border-radius: 50%;
-  background: var(--console-bg);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.local-editor-tab strong,
-.local-editor-tab small {
-  display: block;
-}
-
-.local-editor-tab strong {
-  color: var(--console-text-secondary);
-  font-size: 13px;
-  line-height: 1.15;
-}
-
-.local-editor-tab small {
-  margin-top: 2px;
-  color: var(--console-text-dim);
-  font-size: 11px;
-  line-height: 1.1;
-}
-
-.local-editor-tab.is-active {
-  color: var(--console-text-primary);
-  border-color: var(--console-primary-hover);
-  background: rgba(59, 130, 246, 0.16);
-}
-
-.local-editor-tab.is-active > span {
-  color: #fff;
-  border-color: var(--console-primary);
-  background: var(--console-primary);
-}
-
-.device-operation-panel .local-editor-layout {
-  grid-row: 3;
-  display: grid;
-  min-height: 0;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 0;
-  align-items: stretch;
-  overflow: hidden;
-  background: var(--console-bg);
-}
-
-.local-editor-rail {
-  display: flex;
-  min-width: 0;
-  padding: 12px;
-  flex-direction: column;
-  gap: 10px;
-  overflow: auto;
-  border-right: 1px solid var(--panel-line);
-  background: var(--console-panel);
-}
-
-.local-editor-rail strong,
-.local-editor-rail p {
-  display: block;
-}
-
-.local-editor-rail strong {
-  margin-top: 7px;
-  color: var(--console-text-primary);
-  font-size: 14px;
-}
-
-.local-editor-rail p {
-  margin: 5px 0 0;
-  color: var(--console-text-muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.local-checklist {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  gap: 6px;
-  list-style: none;
-}
-
-.device-info-list li {
-  display: grid;
-  min-height: 44px;
-  padding: 7px 9px;
-  gap: 3px;
-  color: var(--console-text-secondary);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
-}
-
-.device-info-list li span {
-  color: var(--console-text-dim);
-  font-size: 11px;
-  line-height: 1.15;
-}
-
-.device-info-list li strong {
-  margin: 0;
-  color: var(--console-text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
-  word-break: break-all;
-}
-
-.device-info-list li.is-ok strong,
-.is-success {
-  color: #34d399;
-}
-
-.device-info-list li.is-warn strong,
-.is-warning {
-  color: #fb923c;
-}
-
-.device-info-list li.is-error strong,
-.is-danger {
-  color: #f87171;
-}
-
-.device-operation-rail-actions {
-  display: grid;
-  gap: 7px;
-}
-
-.device-operation-body {
-  display: block;
-  min-width: 0;
-  min-height: 0;
-  padding: 12px 16px;
-  overflow: auto;
-  background: var(--console-bg);
-}
-
-@media (max-width: 1240px) {
-  .device-operation-panel {
-    max-height: none;
-  }
-
-  .device-operation-panel .local-editor-title {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    padding-top: 10px;
-    padding-bottom: 10px;
-  }
-
-  .local-editor-title-actions,
-  .local-editor-stats {
-    flex-wrap: wrap;
-  }
-
-  .device-operation-panel .local-editor-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* 三个设备分区共用同一工作台层级，协议表单由业务组件保留。 */
 .device-operation-panel.config-workspace {
   display: flex;
   min-width: 0;
   min-height: 0;
-  max-height: none;
   height: 100%;
-  padding: 16px 28px 20px;
+  padding: 23px 30px 24px;
   flex-direction: column;
   overflow: auto;
-  border: 0;
-  border-radius: 0;
+  color: var(--console-text-secondary);
+  background: var(--console-bg);
 }
 
 .config-breadcrumb {
@@ -641,7 +314,7 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   align-items: center;
   gap: 10px;
   color: var(--console-text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .config-workspace .config-breadcrumb button {
@@ -650,86 +323,104 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   color: var(--console-text-muted);
   border: 0;
   background: transparent;
+  font: inherit;
 }
 
 .config-workspace .local-editor-title {
-  min-height: 86px;
-  padding: 12px 0 18px;
+  display: flex;
+  min-width: 0;
+  padding: 12px 0 20px;
   flex-shrink: 0;
-  border: 0;
-  background: transparent;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
-.config-workspace .local-editor-title h3 {
+.local-editor-title > div:first-child {
+  min-width: 0;
+}
+
+.local-editor-title h3 {
   margin: 0;
-  overflow: visible;
-  font-size: 22px;
+  color: var(--console-text-primary);
+  font-size: 26px;
   font-weight: 600;
-  line-height: 1.5;
-  white-space: normal;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-.config-workspace .local-editor-title p {
-  margin-top: 6px;
+.local-editor-title p {
+  margin: 7px 0 0;
+  color: var(--console-text-muted);
+  font-size: 12px;
   line-height: 1.6;
-  white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.local-editor-title-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.config-workspace .local-editor-title-actions button {
+  min-height: 35px;
+  padding: 0 13px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-input-border);
+  border-radius: 6px;
+  background: var(--console-panel);
+  font: inherit;
+  font-size: 12px;
 }
 
 .config-workspace .local-editor-tabs {
-  min-height: 40px;
-  padding: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 43px;
   flex-shrink: 0;
   gap: 28px;
-  background: transparent;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--console-border-soft);
 }
 
 .config-workspace button.local-editor-tab {
-  min-height: 40px;
+  position: relative;
+  min-height: 43px;
   padding: 0 0 12px;
   flex: 0 0 auto;
+  color: var(--console-text-muted);
   border: 0;
   border-radius: 0;
   background: transparent;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.config-workspace button.local-editor-tab:hover,
-.config-workspace .config-breadcrumb button:hover:not(:disabled) {
-  border: 0;
-  background: transparent;
-}
-
-.config-workspace .local-editor-tab strong {
-  color: var(--console-text-muted);
+.local-editor-tab strong {
   font-weight: 400;
 }
 
-.config-workspace .local-editor-tab.is-active strong {
-  color: var(--console-text-secondary);
+.config-workspace button.local-editor-tab.is-active {
+  color: var(--console-primary);
+  border-bottom: 2px solid var(--console-primary);
+}
+
+.local-editor-tab.is-active strong {
   font-weight: 600;
 }
 
-.config-workspace .local-editor-tab.is-active::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: block;
-  height: 2px;
-  background: var(--console-primary-hover);
-  content: "";
+.config-workspace button.local-editor-tab:hover:not(:disabled),
+.config-workspace .config-breadcrumb button:hover:not(:disabled) {
+  color: var(--console-primary);
+  background: transparent;
 }
 
-.config-workspace .local-editor-layout {
-  display: block;
-  flex: 1 0 auto;
-  overflow: visible;
-}
-
-.config-workspace .device-operation-body {
-  padding: 0;
-  overflow: visible;
+.local-editor-layout,
+.device-operation-body {
+  min-width: 0;
+  min-height: 0;
 }
 
 .config-overview,
@@ -744,7 +435,7 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 
 .config-overview {
   min-height: 58px;
-  padding: 10px 0;
+  padding: 12px 0 16px;
   justify-content: space-between;
   gap: 12px;
 }
@@ -752,11 +443,11 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 .config-overview-fields {
   margin: 0;
   gap: 12px 24px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .config-overview-fields > div {
-  gap: 10px;
+  gap: 9px;
 }
 
 .config-overview-fields dt {
@@ -775,22 +466,24 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 .config-workspace .config-overview-actions button {
   min-height: 30px;
   padding: 0 4px;
-  color: var(--console-info-text);
+  color: var(--console-primary);
   border: 0;
   background: transparent;
-  font-size: 12px;
-}
-
-.config-workspace .config-overview-actions button:hover:not(:disabled),
-.config-workspace .config-overview-actions button:disabled {
-  border: 0;
-  background: transparent;
+  font: inherit;
+  font-size: 11px;
 }
 
 .config-workspace .config-overview-actions button.danger {
   color: var(--console-danger-text);
-  border: 0;
-  background: transparent;
+}
+
+.config-workspace .config-overview-actions button:hover:not(:disabled) {
+  background: var(--app-color-info-soft);
+}
+
+.config-workspace button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
 }
 
 .config-workspace button:focus-visible {
@@ -801,8 +494,8 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 .operation-runtime {
   display: flex;
   min-width: 0;
-  margin-bottom: 16px;
-  padding: 14px 18px;
+  margin-bottom: 17px;
+  padding: 18px 19px;
   align-items: center;
   gap: 28px;
   border: 1px solid var(--console-border-soft);
@@ -834,7 +527,7 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 
 .operation-runtime dd {
   max-width: 350px;
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -843,18 +536,32 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   color: var(--console-success-text);
 }
 
-.operation-runtime .is-warn,
-.operation-runtime .is-error {
+.operation-runtime .is-warn {
   color: var(--console-warning-text);
+}
+
+.operation-runtime .is-error {
+  color: var(--console-danger-text);
+}
+
+@media (max-width: 1280px) {
+  .device-operation-panel.config-workspace {
+    padding: 22px 24px;
+  }
 }
 
 @media (max-width: 760px) {
   .device-operation-panel.config-workspace {
-    padding: 14px;
+    padding: 20px 14px;
   }
 
   .config-workspace .local-editor-title {
+    align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .local-editor-title h3 {
+    font-size: 23px;
   }
 
   .config-workspace .local-editor-tabs {
@@ -862,9 +569,15 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
   }
 
   .operation-runtime {
+    padding: 15px;
     align-items: flex-start;
     flex-wrap: wrap;
-    gap: 14px;
+    gap: 15px;
+  }
+
+  .operation-runtime-heading {
+    padding-right: 0;
+    border-right: 0;
   }
 }
 </style>

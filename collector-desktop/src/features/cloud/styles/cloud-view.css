@@ -2,10 +2,10 @@
 .cloud-detail-drawer {
   --cloud-line: var(--console-border);
   --cloud-line-soft: var(--console-border-soft);
-  --cloud-muted: #a0b1c7;
-  --cloud-text: #e2e8f0;
-  --cloud-warning: #f4bf7b;
-  --cloud-danger: #f2a7aa;
+  --cloud-muted: var(--app-color-text-muted);
+  --cloud-text: var(--app-color-text-primary);
+  --cloud-warning: var(--app-color-warning);
+  --cloud-danger: var(--app-color-error);
   color: var(--cloud-text);
   font-size: 13px;
   line-height: 1.55;
@@ -14,7 +14,7 @@
 .exact-page.cloud-view {
   width: 100%;
   min-width: 0;
-  padding: 22px 26px 26px;
+  padding: 27px 30px 24px;
   gap: 16px;
   background: transparent;
   overflow: auto;
@@ -43,7 +43,7 @@
 .cloud-view h1 {
   margin: 0;
   color: var(--app-color-text-primary);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.45;
 }
@@ -76,12 +76,12 @@
 
 .exact-page.cloud-view button:not(.el-button) {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 35px;
   padding: 0 12px;
   align-items: center;
   justify-content: center;
   color: var(--cloud-text);
-  border: 1px solid #3b5574;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
   background: transparent;
   font: inherit;
@@ -91,9 +91,9 @@
 }
 
 .exact-page.cloud-view button:not(.el-button, :disabled):hover {
-  color: #ffffff;
-  border-color: #6387b4;
-  background: #202d3f;
+  color: var(--cloud-text);
+  border-color: var(--app-control-border-hover);
+  background: var(--app-color-bg-soft);
 }
 
 .exact-page.cloud-view button:not(.el-button).primary {
@@ -109,14 +109,14 @@
 
 .exact-page.cloud-view button:not(.el-button).cloud-risk-action {
   color: var(--cloud-warning);
-  border-color: #795c3c;
-  background: #30271f;
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
 }
 
 .exact-page.cloud-view button:not(.el-button, :disabled).cloud-risk-action:hover {
-  color: #ffdaad;
-  border-color: #ab8050;
-  background: #3b2f22;
+  color: var(--app-color-warning);
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
 }
 
 .exact-page.cloud-view button:not(.el-button):disabled {
@@ -131,12 +131,12 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 34px;
+  min-height: 35px;
   padding: 0 10px;
   color: var(--cloud-text);
-  border: 1px solid #3b5574;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
-  background: #122034;
+  background: var(--app-control-bg);
   font: inherit;
 }
 
@@ -177,8 +177,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
-  border-left: 2px solid #71849d;
-  background: #192637;
+  border-left: 2px solid var(--app-color-border-active);
+  background: var(--app-color-bg-soft);
   overflow-wrap: anywhere;
 }
 
@@ -204,7 +204,7 @@
 
 .cloud-view .cloud-risk-overview[data-risk="known"] {
   border-left-color: var(--cloud-warning);
-  background: #29251f;
+  background: var(--app-color-warning-soft);
 }
 
 .cloud-view .cloud-read-links {
@@ -217,10 +217,10 @@
 .cloud-view .cloud-read-links a,
 .cloud-view .modao-risk-item a {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 35px;
   max-width: 100%;
   align-items: center;
-  color: #b6cef0;
+  color: var(--app-color-primary);
   text-decoration: underline;
   text-underline-offset: 4px;
   overflow-wrap: anywhere;
@@ -237,7 +237,7 @@
   color: var(--cloud-text);
   border: 1px solid var(--cloud-line);
   border-radius: 8px;
-  background: #101b2d;
+  background: var(--app-color-panel);
   box-shadow: none;
 }
 
@@ -312,9 +312,9 @@
 .cloud-view .cloud-state {
   padding: 3px 8px;
   color: var(--cloud-muted);
-  border: 1px solid #415570;
+  border: 1px solid var(--app-color-border);
   border-radius: 5px;
-  background: #202d3f;
+  background: var(--app-color-bg-soft);
   font-size: 12px;
   font-weight: 400;
   flex-wrap: wrap;
@@ -340,7 +340,7 @@
 
 .cloud-view[data-state="READY"] .cloud-state,
 .cloud-view[data-state="READY"] .cloud-status-title {
-  color: #81d5b5;
+  color: var(--app-color-success);
 }
 
 .cloud-view[data-state="DEGRADED"] .cloud-state,
@@ -349,7 +349,7 @@
 }
 
 .cloud-view[data-state="DEGRADED"] .exact-cloud-status {
-  border-left: 2px solid #8a6c47;
+  border-left: 2px solid var(--app-color-warning);
 }
 
 .cloud-view[data-read-state="error"] .cloud-state,
@@ -383,8 +383,8 @@
 
 .cloud-view .cloud-disabled-evidence {
   padding: 7px 10px;
-  border-left: 2px solid #71849d;
-  background: #192637;
+  border-left: 2px solid var(--app-color-border-active);
+  background: var(--app-color-bg-soft);
 }
 
 .cloud-view .cloud-stat-row {
@@ -545,7 +545,7 @@
   z-index: 1;
   top: 0;
   color: var(--cloud-muted);
-  background: #192637;
+  background: var(--app-color-bg-soft);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -555,17 +555,17 @@
 }
 
 .cloud-view .cloud-table tbody tr:hover td {
-  background: #192a40;
+  background: var(--app-control-bg-hover);
 }
 
 .cloud-view .cloud-row-state {
   display: inline-block;
   max-width: 100%;
   padding: 2px 5px;
-  color: #c4d4e8;
-  border: 1px solid #415570;
+  color: var(--app-color-text-primary);
+  border: 1px solid var(--app-color-border);
   border-radius: 4px;
-  background: #202d3f;
+  background: var(--app-color-bg-soft);
 }
 
 .cloud-view .cloud-row-actions {
@@ -575,7 +575,7 @@
 }
 
 .exact-page.cloud-view .cloud-row-actions button:not(.el-button) {
-  min-height: 34px;
+  min-height: 35px;
   padding: 0 8px;
 }
 
@@ -598,9 +598,9 @@
   margin: 0;
   padding: 10px 12px;
   color: var(--cloud-danger);
-  border: 1px solid #724450;
+  border: 1px solid var(--app-color-error);
   border-radius: 6px;
-  background: #2b202c;
+  background: var(--app-color-error-soft);
   overflow-wrap: anywhere;
 }
 
@@ -646,9 +646,9 @@
   flex-wrap: wrap;
   gap: 12px;
   border: 0;
-  border-left: 2px solid #71849d;
+  border-left: 2px solid var(--app-color-border-active);
   border-radius: 0 4px 4px 0;
-  background: #192637;
+  background: var(--app-color-bg-soft);
 }
 
 .cloud-view .modao-risk-item strong {
@@ -671,7 +671,7 @@
 
 .cloud-view[data-state="DEGRADED"] .modao-risk-item {
   border-left-color: var(--cloud-warning);
-  background: #29251f;
+  background: var(--app-color-warning-soft);
 }
 
 .cloud-view[data-state="DEGRADED"] .modao-risk-item strong {
@@ -680,7 +680,7 @@
 
 .cloud-view .exact-json-panel > summary,
 .cloud-detail-drawer .exact-json-panel > summary {
-  color: #b6cef0;
+  color: var(--app-color-primary);
   font-size: 12px;
   cursor: pointer;
   overflow-wrap: anywhere;
@@ -707,7 +707,7 @@
 }
 
 .cloud-detail-drawer {
-  background: #101b2d;
+  background: var(--app-color-panel);
 }
 
 .cloud-detail-drawer :deep(.el-drawer__header) {
@@ -736,7 +736,7 @@
   padding: 12px;
   border: 1px solid var(--cloud-line);
   border-radius: 6px;
-  background: #162236;
+  background: var(--app-color-bg-soft);
 }
 
 @media (max-width: 1200px) {

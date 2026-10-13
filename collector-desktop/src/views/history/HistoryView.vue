@@ -132,6 +132,9 @@
           </div>
         </section>
 
+      </div>
+
+      <div class="history-context-grid">
         <section class="history-panel history-json-panel">
           <div class="history-panel-head">
             <h2>查询结果 JSON</h2>
@@ -141,7 +144,6 @@
             <pre class="history-json-view" tabindex="0" aria-label="完整历史查询 JSON，可独立横向和纵向滚动">{{ historyExportText }}</pre>
           </div>
         </section>
-      </div>
 
       <section class="history-panel history-alarm-panel">
         <div class="history-panel-head">
@@ -166,6 +168,7 @@
         </div>
         <div v-if="relatedAlarms.length === 0" class="history-table-empty" role="status">{{ historyPresentation.alarmEmpty }}</div>
       </section>
+      </div>
 
       <section class="history-panel history-data-panel">
         <div class="history-panel-head">

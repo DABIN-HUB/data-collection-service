@@ -60,11 +60,12 @@ function tickClock() {
   display: flex;
   flex: 0 0 auto;
   min-height: var(--app-topbar-height);
-  padding: 0 var(--app-space-6);
+  padding: 0 30px;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid var(--app-color-border);
-  background: var(--app-color-bg);
+  background: var(--app-color-panel);
 }
 
 .app-topbar .node-status-bar {
@@ -94,7 +95,7 @@ function tickClock() {
 }
 
 .app-topbar__navigation {
-  display: none;
+  display: flex;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -104,6 +105,10 @@ function tickClock() {
   color: var(--console-text-secondary);
   font-size: 13px;
   font-weight: 600;
+}
+
+.app-topbar__menu {
+  display: none;
 }
 
 @media (width <= 900px) {
@@ -119,6 +124,8 @@ function tickClock() {
   }
 
   .app-topbar__menu {
+    display: inline-grid;
+    place-items: center;
     width: 44px;
     min-height: 44px;
     flex: 0 0 44px;

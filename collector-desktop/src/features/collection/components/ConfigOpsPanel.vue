@@ -112,6 +112,7 @@ const syncStatusLastAttemptAt = ref<number | null>(null);
 const syncStatusLastSuccessAt = ref<number | null>(null);
 const syncStatusLoading = ref(false);
 const syncStatusReadFailed = ref(false);
+let syncStatusRequestGeneration = 0;
 
 const selectedSyncType = computed(() => CONFIG_SYNC_TYPES.find((item) => item.type === syncType.value) || CONFIG_SYNC_TYPES[0]);
 const importResultText = computed(() => JSON.stringify(importResultReadFailed.value
@@ -250,17 +251,23 @@ async function runPartialSync() {
 }
 
 async function loadSyncStatus() {
+  const requestGeneration = ++syncStatusRequestGeneration;
   syncStatusLastAttemptAt.value = Date.now();
   syncStatusLoading.value = true;
   syncStatusReadFailed.value = false;
   try {
-    syncStatus.value = await getConfigSyncStatus();
+    const nextStatus = await getConfigSyncStatus();
+    if (requestGeneration !== syncStatusRequestGeneration) return;
+    syncStatus.value = nextStatus;
     syncStatusLastSuccessAt.value = Date.now();
   } catch (error) {
+    if (requestGeneration !== syncStatusRequestGeneration) return;
     syncStatusReadFailed.value = true;
     throw error;
   } finally {
-    syncStatusLoading.value = false;
+    if (requestGeneration === syncStatusRequestGeneration) {
+      syncStatusLoading.value = false;
+    }
   }
 }
 
@@ -323,9 +330,9 @@ function deviceIdOf(device: DeviceInfo): string {
 
 .config-sync-warning {
   padding: 8px 12px;
-  color: #fed7aa;
+  color: var(--app-color-warning);
   border-left: 2px solid var(--console-warning);
-  background: #30271f;
+  background: var(--app-color-warning-soft);
 }
 
 .config-validation-status {
@@ -333,11 +340,11 @@ function deviceIdOf(device: DeviceInfo): string {
 }
 
 .config-validation-status[data-state="valid"] {
-  color: #b6cef0;
+  color: var(--app-color-primary);
 }
 
 .config-validation-status[data-state="invalid"] {
-  color: #fecaca;
+  color: var(--app-color-error);
 }
 
 .config-export-view {

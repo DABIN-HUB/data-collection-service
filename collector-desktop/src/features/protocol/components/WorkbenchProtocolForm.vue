@@ -304,7 +304,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 
 .workbench-protocol-form .protocol-field-group {
   min-width: 0;
-  border-bottom: 1px solid rgba(82, 121, 166, 0.28);
+  border-bottom: 1px solid var(--console-border-soft);
 }
 
 .workbench-protocol-form .protocol-field-group:last-of-type {
@@ -331,8 +331,8 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   height: 7px;
   margin: 0 5px 0 2px;
   flex: none;
-  border-right: 1px solid #9db4d2;
-  border-bottom: 1px solid #9db4d2;
+  border-right: 1px solid var(--console-text-muted);
+  border-bottom: 1px solid var(--console-text-muted);
   transform: rotate(-45deg);
 }
 
@@ -349,14 +349,14 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 }
 
 .workbench-protocol-form .protocol-group-count {
-  color: #94a3b8;
+  color: var(--console-text-muted);
   font-size: 11px;
 }
 
 .workbench-protocol-form .protocol-group-help {
   min-width: 0;
   margin-left: 7px;
-  color: #8ea4bf;
+  color: var(--console-text-muted);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -364,7 +364,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 .workbench-protocol-form .protocol-group-state {
   margin-left: auto;
   flex-shrink: 0;
-  color: #8ea7c7;
+  color: var(--console-text-muted);
   font-size: 11px;
 }
 
@@ -396,14 +396,14 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 }
 
 .workbench-protocol-form .protocol-field-multiline {
-  flex-basis: 100%;
+  max-width: 100%;
 }
 
 .workbench-protocol-form .protocol-field-label {
   display: block;
   min-height: 20px;
   margin-bottom: 6px;
-  color: #bdccdf;
+  color: var(--console-text-secondary);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.65;
@@ -412,12 +412,12 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 
 .workbench-protocol-form .protocol-field-required {
   margin-left: 4px;
-  color: #f3a7a7;
+  color: var(--console-danger-text);
 }
 
 .workbench-protocol-form .protocol-field-condition {
   margin-left: 7px;
-  color: #c3b28a;
+  color: var(--console-warning-text);
   font-size: 10px;
   font-weight: 400;
 }
@@ -439,11 +439,11 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   height: 35px;
   min-height: 35px;
   padding: 7px 9px;
-  color: #dce9f9;
-  border: 1px solid #3a5f8c;
+  color: var(--console-input-text);
+  border: 1px solid var(--console-input-border);
   border-radius: 4px;
   outline: none;
-  background: #12263b;
+  background: var(--console-input-bg);
   font: 12px/1.65 Consolas, "Microsoft YaHei", monospace;
 }
 
@@ -457,7 +457,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 
 .workbench-protocol-form input.protocol-input::placeholder,
 .workbench-protocol-form textarea.protocol-textarea::placeholder {
-  color: #829ab5;
+  color: var(--console-input-placeholder);
   opacity: 1;
 }
 
@@ -474,13 +474,13 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   position: absolute;
   top: 8px;
   right: 10px;
-  color: #94a3b8;
+  color: var(--console-text-muted);
   font-size: 11px;
   pointer-events: none;
 }
 
 .workbench-protocol-form .protocol-secret-badge {
-  color: #91aac9;
+  color: var(--console-text-muted);
   font-size: 10px;
 }
 
@@ -506,13 +506,13 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   flex: none;
   border: 0;
   border-radius: 10px;
-  background: #4b6078;
+  background: var(--console-panel-soft);
   cursor: pointer;
 }
 
 .workbench-protocol-form button.protocol-switch:hover:not(:disabled) {
   border: 0;
-  background: #4b6078;
+  background: var(--console-panel-soft);
 }
 
 .workbench-protocol-form button.protocol-switch[aria-checked="true"],
@@ -526,7 +526,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   height: 12px;
   margin-left: 3px;
   border-radius: 50%;
-  background: #e2e8f0;
+  background: var(--console-panel);
 }
 
 .workbench-protocol-form button.protocol-switch[aria-checked="true"] .protocol-switch-thumb {
@@ -534,23 +534,23 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 }
 
 .workbench-protocol-form .protocol-switch-label {
-  color: #bdd0e7;
+  color: var(--console-text-secondary);
   font-size: 12px;
 }
 
 .workbench-protocol-form input.protocol-input:disabled,
 .workbench-protocol-form select.protocol-select:disabled,
 .workbench-protocol-form textarea.protocol-textarea:disabled {
-  color: #8fa1b7;
-  border-color: #2b405c;
-  background: #101c2c;
+  color: var(--console-input-text-disabled);
+  border-color: var(--console-input-border-disabled);
+  background: var(--console-input-bg-disabled);
   cursor: not-allowed;
   opacity: 1;
 }
 
 .workbench-protocol-form button.protocol-switch:disabled {
   border: 0;
-  background: #4b6078;
+  background: var(--console-panel-soft);
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -562,13 +562,13 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 .workbench-protocol-form input.protocol-input[aria-invalid="true"],
 .workbench-protocol-form select.protocol-select[aria-invalid="true"],
 .workbench-protocol-form textarea.protocol-textarea[aria-invalid="true"] {
-  border-color: #f87171;
+  border-color: var(--console-input-border-error);
 }
 
 .workbench-protocol-form input.protocol-input:focus,
 .workbench-protocol-form select.protocol-select:focus,
 .workbench-protocol-form textarea.protocol-textarea:focus {
-  border-color: #60a5fa;
+  border-color: var(--console-input-border-focus);
   box-shadow: var(--console-focus-ring);
 }
 
@@ -577,13 +577,13 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 .workbench-protocol-form input.protocol-input:focus-visible,
 .workbench-protocol-form select.protocol-select:focus-visible,
 .workbench-protocol-form textarea.protocol-textarea:focus-visible {
-  outline: 2px solid #60a5fa;
+  outline: 2px solid var(--console-input-border-focus);
   outline-offset: 3px;
 }
 
 .workbench-protocol-form .protocol-field-help {
   margin: 5px 0 0;
-  color: #94a9c4;
+  color: var(--console-text-muted);
   font-size: 11px;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -592,7 +592,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 
 .workbench-protocol-form .protocol-field-error {
   margin: 5px 0 0;
-  color: #f3a7a7;
+  color: var(--console-danger-text);
   font-size: 11px;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -601,10 +601,10 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 .workbench-protocol-form .protocol-advanced-note {
   margin: 0 0 12px;
   padding: 9px 12px;
-  color: #a8c0df;
-  border: 1px solid #2c486b;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border-soft);
   border-radius: 4px;
-  background: #172b43;
+  background: var(--console-input-bg-readonly);
   font-size: 11px;
   line-height: 1.8;
   overflow-wrap: anywhere;
@@ -614,16 +614,16 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
 .workbench-protocol-form .protocol-form-errors {
   margin: 0 -18px;
   padding: 10px 18px;
-  color: #94a9c4;
+  color: var(--console-text-muted);
   font-size: 12px;
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
 
 .workbench-protocol-form .protocol-form-errors {
-  color: #ebc497;
-  border-top: 1px solid rgba(82, 121, 166, 0.28);
-  background: #2b292a;
+  color: var(--console-warning-text);
+  border-top: 1px solid var(--console-border-soft);
+  background: var(--app-color-warning-soft);
 }
 
 @media (max-width: 760px) {
@@ -632,7 +632,25 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   }
 
   .workbench-protocol-form .protocol-group-help {
-    display: none;
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .workbench-protocol-form {
+    padding: 0 14px;
+  }
+
+  .workbench-protocol-form .protocol-field-grid {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .workbench-protocol-form .protocol-form-notice,
+  .workbench-protocol-form .protocol-form-errors {
+    margin-inline: -14px;
+    padding-inline: 14px;
   }
 }
 </style>

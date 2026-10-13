@@ -233,7 +233,7 @@ onMounted(() => {
 
 .runtime-status-error {
   margin-left: 8px;
-  color: #fecaca;
+  color: var(--app-color-error);
   font-size: 12px;
 }
 </style>

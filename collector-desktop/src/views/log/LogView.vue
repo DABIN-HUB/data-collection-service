@@ -186,6 +186,7 @@ const lastAttemptedLogServerContext = ref<LogServerQueryContext | null>(null);
 const logLastAttemptAt = ref<number | null>(null);
 const logFailureHttpStatus = ref<number | null>(null);
 let logTimer: number | null = null;
+let isViewMounted = false;
 
 const logQueryOwner = createLatestRequestOwner(isSameLogServerQueryContext);
 const exceptionLookupOwner = createLatestRequestOwner(isSameLogVisibleQueryContext);
@@ -259,6 +260,9 @@ const logSourceDetail = computed(() => {
 });
 
 async function loadLogs(options: { fromTimer?: boolean } = {}) {
+  if (!isViewMounted) {
+    return;
+  }
   const requestContext = currentLogServerQueryContext();
   if (options.fromTimer && shouldSkipLogTimerTick(loading.value, pendingLogQueryContext.value, requestContext)) {
     return;
@@ -467,17 +471,22 @@ function normalizeRouteQuery(value: unknown): string {
 
 async function initializeLogView() {
   await appStore.initialize();
+  if (!isViewMounted) return;
   applyRouteQuery();
   await deviceStore.refresh();
+  if (!isViewMounted) return;
   await loadLogs();
+  if (!isViewMounted) return;
   syncLogTimer();
 }
 
 onMounted(() => {
+  isViewMounted = true;
   void initializeLogView();
 });
 
 onBeforeUnmount(() => {
+  isViewMounted = false;
   logQueryOwner.invalidate();
   exceptionLookupOwner.invalidate();
   loading.value = false;

@@ -1,13 +1,13 @@
 .page-root.exact-page.network-view {
-  --network-line: #33485e;
-  --network-text: #e5edf7;
-  --network-muted: #a0b1c7;
+  --network-line: var(--app-color-border);
+  --network-text: var(--app-color-text-primary);
+  --network-muted: var(--app-color-text-muted);
   display: flex;
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 22px 26px 26px;
+  padding: 27px 30px 24px;
   flex-direction: column;
   gap: 16px;
   overflow: hidden;
@@ -38,7 +38,7 @@
 .page-root.exact-page.network-view h1 {
   margin: 0;
   color: var(--network-text);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.45;
 }
@@ -54,10 +54,10 @@
   max-width: 100%;
   padding: 3px 8px;
   gap: 6px;
-  border: 1px solid #415570;
+  border: 1px solid var(--app-color-border);
   border-radius: 5px;
-  color: #c4d4e8;
-  background: #25364c;
+  color: var(--app-color-text-primary);
+  background: var(--app-color-bg-soft);
   font-size: 12px;
   font-weight: 400;
   overflow-wrap: anywhere;
@@ -67,7 +67,7 @@
   width: 6px;
   height: 6px;
   flex-shrink: 0;
-  background: #8499b2;
+  background: var(--app-color-text-muted);
   box-shadow: none;
 }
 
@@ -105,7 +105,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px 12px;
-  border-bottom: 1px solid #2e4057;
+  border-bottom: 1px solid var(--app-color-border);
 }
 
 .page-root.exact-page.network-view h2,
@@ -128,12 +128,12 @@
 .page-root.exact-page.network-view button:not(.el-button),
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel button:not(.el-button)) {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 35px;
   max-width: 100%;
   padding: 0 12px;
   align-items: center;
   justify-content: center;
-  border: 1px solid #506987;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
   color: var(--network-text);
   background: transparent;
@@ -146,9 +146,9 @@
 
 .page-root.exact-page.network-view button:not(.el-button, :disabled):hover,
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel button:not(.el-button, :disabled):hover) {
-  border-color: #7191b8;
+  border-color: var(--app-control-border-hover);
   color: var(--network-text);
-  background: rgba(80, 105, 135, 0.2);
+  background: var(--app-control-bg-hover);
 }
 
 .page-root.exact-page.network-view button.primary {
@@ -164,8 +164,8 @@
 }
 
 .page-root.exact-page.network-view button.network-export {
-  border-color: #496a91;
-  color: #c4d8f3;
+  border-color: var(--app-color-border);
+  color: var(--app-color-primary);
   background: transparent;
 }
 
@@ -213,9 +213,9 @@
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel input),
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel select) {
   width: 100%;
-  height: 34px;
+  height: 35px;
   min-width: 0;
-  min-height: 34px;
+  min-height: 35px;
   max-width: 100%;
   border-radius: 6px;
   font-size: 12px;
@@ -253,7 +253,7 @@
 .page-root.exact-page.network-view .network-toolbar-footer {
   padding: 12px 16px;
   justify-content: space-between;
-  border-top: 1px solid #2e4057;
+  border-top: 1px solid var(--app-color-border);
 }
 
 .page-root.exact-page.network-view .network-device-actions > span {
@@ -272,14 +272,14 @@
   gap: 0;
   border: 1px solid var(--network-line);
   border-radius: 8px;
-  background: #192637;
+  background: var(--app-color-panel);
 }
 
 .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card {
   min-width: 0;
   margin: 14px 0;
   padding: 0 16px;
-  border-right: 1px solid #34465f;
+  border-right: 1px solid var(--app-color-border);
 }
 
 .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card:last-child { border-right: 0; }
@@ -378,10 +378,10 @@
   margin: 0;
   padding: 12px;
   overflow: auto;
-  border: 1px solid #34485f;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
-  color: #c4d8ed;
-  background: #101d2d;
+  color: var(--app-code-text);
+  background: var(--app-code-bg);
   font-family: Consolas, "JetBrains Mono", monospace;
   font-size: 12px;
   line-height: 1.6;
@@ -397,9 +397,9 @@
   padding: 12px;
   gap: 8px;
   overflow: auto;
-  border: 1px solid #34485f;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
-  background: #101d2d;
+  background: var(--app-code-bg);
 }
 
 .page-root.exact-page.network-view .network-trace-lines strong {
@@ -410,7 +410,7 @@
 
 .page-root.exact-page.network-view .network-trace-lines code {
   min-width: 0;
-  color: #c4d8ed;
+  color: var(--app-code-text);
   font-family: Consolas, "JetBrains Mono", monospace;
   font-size: 12px;
   white-space: pre-wrap;
@@ -444,7 +444,7 @@
 .page-root.exact-page.network-view .network-history-table th,
 .page-root.exact-page.network-view .network-history-table td {
   padding: 11px 12px;
-  border-bottom: 1px solid #2e4057;
+  border-bottom: 1px solid var(--app-color-border);
   text-align: left;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -455,7 +455,7 @@
   z-index: 1;
   top: 0;
   color: var(--network-muted);
-  background: #202d3f;
+  background: var(--app-color-bg-soft);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -467,7 +467,7 @@
 
 .page-root.exact-page.network-view .network-history-table td:nth-child(7) { color: var(--network-muted); }
 .page-root.exact-page.network-view .network-history-table tbody tr:last-child td { border-bottom: 0; }
-.page-root.exact-page.network-view .network-history-table tbody tr:hover td { background: #1f2e43; }
+.page-root.exact-page.network-view .network-history-table tbody tr:hover td { background: var(--app-control-bg-hover); }
 
 .page-root.exact-page.network-view .network-history-address {
   display: block;
@@ -485,7 +485,7 @@
   margin: 0;
   padding: 16px;
   align-items: center;
-  border-top: 1px solid #2e4057;
+  border-top: 1px solid var(--app-color-border);
   color: var(--network-muted);
   font-size: 13px;
   overflow-wrap: anywhere;
@@ -501,13 +501,13 @@
 }
 
 .page-root.exact-page.network-view .status-badge.is-online {
-  color: #81d5b5;
-  background: #193f38;
+  color: var(--app-color-success);
+  background: var(--app-color-success-soft);
 }
 
 .page-root.exact-page.network-view .status-badge.is-error {
-  color: #f2a7aa;
-  background: #432d3c;
+  color: var(--app-color-error);
+  background: var(--app-color-error-soft);
 }
 
 /* 仅适配本页原边缘遥测面板，不改组件的表单、提交和设备选择语义。 */
@@ -517,9 +517,9 @@
 }
 
 .page-root.exact-page.network-view :deep(.edge-mode-row button.is-active) {
-  border-color: #6387b4;
-  color: #dbeafe;
-  background: #253d5b;
+  border-color: var(--app-control-border-hover);
+  color: var(--app-color-primary);
+  background: var(--app-color-info-soft);
 }
 
 .page-root.exact-page.network-view :deep(.edge-form-grid) {
@@ -570,7 +570,7 @@
 .page-root.exact-page.network-view :deep(.edge-action-row) {
   padding: 12px 16px;
   gap: 8px 12px;
-  border-top: 1px solid #2e4057;
+  border-top: 1px solid var(--app-color-border);
 }
 
 .page-root.exact-page.network-view :deep(.edge-action-row > span) {
@@ -590,9 +590,9 @@
 .page-root.exact-page.network-view :deep(.edge-json-grid .exact-json-panel) {
   min-width: 0;
   padding: 0;
-  border: 1px solid #34485f;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
-  background: #142235;
+  background: var(--app-code-bg);
 }
 
 .page-root.exact-page.network-view :deep(.edge-json-grid summary) {
@@ -606,7 +606,7 @@
   min-height: 128px;
   max-height: 260px;
   border: 0;
-  border-top: 1px solid #34485f;
+  border-top: 1px solid var(--app-color-border);
   border-radius: 0 0 6px 6px;
 }
 
@@ -653,7 +653,7 @@
   .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card:nth-child(2) { border-right: 0; }
 
   .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card:nth-child(n + 3) {
-    border-top: 1px solid #34465f;
+    border-top: 1px solid var(--app-color-border);
   }
 
   .page-root.exact-page.network-view .network-result-grid,
@@ -701,9 +701,9 @@
 }
 
 .page-root.exact-page.network-view .heading-online.is-read-error {
-  border-color: #754a51;
-  color: #fecaca;
-  background: #432d3c;
+  border-color: var(--app-color-error);
+  color: var(--app-color-error);
+  background: var(--app-color-error-soft);
 }
 
 .page-root.exact-page.network-view .heading-online.is-read-error i {
@@ -711,15 +711,15 @@
 }
 
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary) {
-  border-color: #9b704a;
-  color: #fed7aa;
+  border-color: var(--app-color-warning);
+  color: var(--app-color-warning);
   background: transparent;
 }
 
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary:not(:disabled):hover) {
-  border-color: #c8945f;
-  color: #fed7aa;
-  background: rgba(155, 112, 74, 0.14);
+  border-color: var(--app-color-warning);
+  color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
 }
 
 .page-root.exact-page.network-view .network-condition-group {
@@ -764,7 +764,7 @@
 
 .page-root.exact-page.network-view .network-telemetry-tools {
   min-width: 0;
-  border-top: 1px solid #2e4057;
+  border-top: 1px solid var(--app-color-border);
 }
 
 .page-root.exact-page.network-view .network-telemetry-tools > summary {
@@ -792,7 +792,7 @@
   }
 
   .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card {
-    border-top: 1px solid #34465f;
+    border-top: 1px solid var(--app-color-border);
     border-right: 0;
   }
 

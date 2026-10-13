@@ -235,7 +235,7 @@ watch(() => [form.gatewayId, form.protocol, form.configVersion, form.deviceId, f
 .edge-action-row button.primary {
   color: #fff;
   border-color: var(--exact-blue);
-  background: #2563eb;
+  background: var(--app-color-primary);
 }
 
 .edge-action-row span {
@@ -250,15 +250,15 @@ watch(() => [form.gatewayId, form.protocol, form.configVersion, form.deviceId, f
   margin-bottom: 8px;
   padding: 10px;
   color: var(--exact-dim);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  border: 1px solid var(--app-color-border-active);
   border-radius: 8px;
-  background: rgba(37, 99, 235, 0.08);
+  background: var(--app-color-info-soft);
   font-size: 12px;
 }
 
 .edge-result-meta.is-error {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(127, 29, 29, 0.15);
+  border-color: var(--app-color-error);
+  background: var(--app-color-error-soft);
 }
 
 .edge-result-meta strong {

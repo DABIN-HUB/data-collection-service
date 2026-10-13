@@ -1,10 +1,35 @@
 # collector-desktop 前端架构重构进度
 
-## 最新范围：提交并运行最新 JAR（2026-10-13）
+## 最新范围：批准稿精密工业工作台实施与真实 renderer 验收（2026-10-13）
 
-用户最新要求“提交一下代码，并且编译运行最新的jar 包运行在9090 即可”，取代此前继续全量页面验收的执行请求。已终止任务自有、不回显的临时认证输入进程；不再等待认证输入，不继续截图、像素终审或最终效果图 ZIP。原 120 条盘点、原 84 条历史合同、历史 FAIL/BLOCKED 和 `SCOPED_MF_FOCUS_01_PASS` 仍按各自范围保留，不因提交或启动升级为完整五页 PASS。
+登录/连接页、共享浅色壳、14 个路由呈现、设备五分区编辑器、点位六分区编辑器及相关弹层已完成生产实施。用户已回复“接受，继续”，接受已披露的 8 个 script 差异及既有 `.gitignore` 边界；随后明确要求“执行完成后提交一下代码，然后吧本地运行的服务重新编译启动”。最新范围因此增加本地限定提交、精确提交隔离无测试打包及 9090 服务替换，不包括推送、修改认证/依赖配置或业务写入。当前为 `IMPLEMENTED / USER_ACCEPTED_PROTECTION_SCOPE / RELEASE_REQUESTED`，不是完整业务验收或最终像素签收。
 
-本轮发布只纳入已完成的共享响应式壳、五页前端呈现、共享来源状态组件/纯展示 helper、焦点边界修复、进度文档和完整同步静态资源。30 个既有 Java 文件改动、`.hermes.md`、`.workbuddy-ai/` 和用户私有工件不纳入提交或编译，不 push。最新 `npm run build` 与 `npm run sync:web` 已实际 exit 0，renderer 与 Boot 源静态目录的完整 60 项路径、字节及 SHA-256 一致，入口为 `index-CUrdtFzV.js`；第三方 PURE 注释及大 chunk 警告如实保留。
+用户接受后的 lint、Stylelint、typecheck、build、build:web 五项门禁均重新实际 exit 0；renderer 与 Boot 静态目录的完整 60 项路径及 SHA-256 一致，入口 `index-C8DUMKg8.js`。Vite 仍有第三方 PURE 注释与 vendor chunk 体积 warning，未更改依赖或放宽规则。正式构建独立预览入口 `http://127.0.0.1:5175/`，原开发入口 5174 保留；它们不代表运行中 9090 已替换。
+
+最新真实正式构建观察按清单精确使用 1600×1000、1280×800、390×844，14 路由共 42 个组合，页面级横向溢出 0、Runtime exception 0；原先 1440×900/1024×768 的观察仅保留为历史，不能替代要求尺寸。入口 HTML 与 dist 原字节相同，全部页面实际加载 `index-C8DUMKg8.js`；本轮全部 265 个请求均为 GET，388 条浏览器日志均为 CORS 分类，真实失败/未知不补假数据。三宽度设备卡片/表格切换、五个编辑分区及上下端点、Escape 关闭、日志“更多筛选”有实际观察，共 76 张新 PNG；pre/textarea 正文仅在截图时隐藏，保留几何，不签其内容可读性。
+
+窄屏导航原生 Tab/Shift+Tab 共 28 次均未越出抽屉；Escape、真实路由点击和 900→1024→390 断点的背景锁/回焦有实际记录。观察工具的遮罩中心点击实际命中了覆盖其上的导航链接，不能当作遮罩关闭证据。设备编辑器 Escape 关闭并清除 modal-active，但从分区按钮关闭后焦点实际落到 BODY，不能标记 Dialog 焦点恢复通过；该既有 UI 限制未在本轮新增脚本修复。截图存在/几何通过不等于独立最终像素审查或全成功态验收。
+
+### 本轮保护核对与剩余边界
+
+- 改前 manifest 为 1530 个 tracked 文件、41 个 Vue script、146 个源快照和 69 个批准稿文件；允许呈现范围内源文件按批准稿变化。
+- renderer 与 Boot 静态同步校验：60/60 common 文件一致，0 mismatch，0 missing，0 extra。
+- 按 manifest 的 Vue `<script>` 字节核对仍发现 8 个差异：`AlarmView.vue`、`CloudView.vue`、`DeviceListView.vue`、`LogView.vue`、`NetworkView.vue`、`RealtimeView.vue`、`DeviceOperationShell.vue`、`ConfigOpsPanel.vue`。其中设备列表属于批准的页面本地 UI 例外；其余差异为当前工作区既有生命周期/请求归属/最后成功快照保护等行为改动，本轮未回滚，未将其冒称为 script 保护通过。
+- 全仓库 `git diff --check` 仅因既有 `.gitignore:42` EOF 空行返回 exit 2；前端源与 Boot 静态同步路径限定核对返回 exit 0。未修改 `.gitignore`，以免越过当前工作区边界。
+- 用户已接受上述保护例外；其源差异保持原范围，不据此宣称全部 script 字节一致。本次提交只纳入前端生产源码、完整 Boot 同步静态资源和本进度文档；既有 `.gitignore`、`.hermes.md`、`.workbuddy-ai/`、私有审计/设计/运行证据不纳入。
+
+### 真实 renderer 证据
+
+- 机器可读记录：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/runtime-ui-results-with-events.json`。
+- PNG 目录：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/runtime-ui/`；文件按 `{wide|medium|narrow}-{route}.png` 命名，另有设备新增弹层交互截图。
+- 代表性访问方式：浏览器打开 `http://127.0.0.1:5174/#/login`；其他页面使用 hash 路由，例如 `#/dashboard`、`#/device`、`#/device/workbench`、`#/shadow`。
+- 最新正式构建证据：`designs/collector-workbench-implementation/evidence/candidate-C8DUMKg8/RUNTIME.json`、`IDENTITY.json`、`screenshots/`，仅保留本地，不提交截图及运行记录。
+
+### 最新提交与重启执行边界
+
+从本次实际提交的精确 HEAD 创建隔离 worktree，以 `-Dmaven.test.skip=true clean package` 编译生产模块，不编译或运行测试；旧 9090 保持运行直到新可执行包及全部嵌入静态资源核验通过。替换前保留旧 JAR，按真实监听 PID/创建时间/可执行文件核对后只终止该服务，沿用原 Java、工作目录和启动参数。新提交、JAR SHA-256、旧/新 PID、完整 HTTP 静态资源读回、健康组件状态及回滚包另存忽略目录 `collector-boot/target/releases/` 下安全回执；回执生成前不预先宣称提交或重启成功。服务启动与依赖健康、视觉验收分别记录，不改历史 PASS/FAIL/BLOCKED。
+
+### 以下为此前发布与专项验收历史（不是本轮部署结果）
 
 提交之后从该精确 HEAD 创建隔离 worktree，采用 `-Dmaven.test.skip=true clean package`，不新增、修改、编译或运行测试。旧 9090 服务保持运行直到新可执行 JAR 核证成功；替换前保留旧包备份，替换后核实新 PID、9090 页面及全部嵌入静态资源字节，健康状态与启动结果分别记录。打包、部署结果及回滚路径以忽略目录 `collector-boot/target/releases/` 下本次安全部署回执为准，不预先宣称成功；以下更新时间和未部署说明均为历史窗口。
 

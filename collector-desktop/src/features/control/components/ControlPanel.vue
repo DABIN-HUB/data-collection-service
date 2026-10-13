@@ -518,9 +518,9 @@ watch(() => props.deviceId, () => {
 
 .control-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
   align-items: start;
-  gap: 16px;
+  gap: 18px;
 }
 
 .operation-panel,
@@ -553,7 +553,7 @@ watch(() => props.deviceId, () => {
 }
 
 .control-workbench .operation-tabs button.active {
-  color: var(--console-text-primary);
+  color: var(--console-primary);
   font-weight: 600;
 }
 
@@ -840,7 +840,7 @@ watch(() => props.deviceId, () => {
 .control-workbench button.primary {
   max-width: 60%;
   overflow: hidden;
-  color: var(--console-text-primary);
+  color: #fff;
   border-color: var(--console-primary);
   background: var(--console-primary);
   text-overflow: ellipsis;
@@ -936,7 +936,7 @@ watch(() => props.deviceId, () => {
   flex-direction: column;
   justify-content: center;
   gap: 9px;
-  text-align: center;
+  text-align: left;
 }
 
 .result-summary strong {
@@ -960,12 +960,12 @@ watch(() => props.deviceId, () => {
 
 .result-empty {
   display: flex;
-  min-height: 270px;
+  min-height: 240px;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 12px;
-  text-align: center;
+  text-align: left;
 }
 
 .result-empty strong {
@@ -1159,7 +1159,7 @@ watch(() => props.deviceId, () => {
   color: var(--console-danger-text);
 }
 
-@container (max-width: 760px) {
+@container (max-width: 900px) {
   .control-grid {
     grid-template-columns: minmax(0, 1fr);
   }

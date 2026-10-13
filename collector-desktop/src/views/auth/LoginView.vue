@@ -5,9 +5,14 @@
         <div class="login-brand">
           <div class="login-logo">采</div>
           <div>
-            <h1>数据采集工作台</h1>
-            <p>Collector Studio · v{{ appStore.appVersion }}</p>
+            <strong>工业数据控制台</strong>
+            <p>数据采集工作台 · v{{ appStore.appVersion }}</p>
           </div>
+        </div>
+
+        <div class="login-heading">
+          <h1>连接采集服务</h1>
+          <p>后端服务由你启动，工作台负责配置、控制与监控。</p>
         </div>
 
         <el-form label-position="top" class="login-form" @submit.prevent>
@@ -30,7 +35,7 @@
           />
           <el-alert class="desktop-mode-alert" type="info" :closable="false">
             <template #title>
-              Electron 平台：{{ appStore.platform }}；后端由用户手动启动，桌面端不会自动拉起 Spring Boot jar。
+              当前运行平台：{{ appStore.platform }}。请先启动采集服务，工作台不会自动启动后端。
             </template>
           </el-alert>
           <el-button class="login-submit" type="primary" size="large" :loading="testing" @click="enterWorkbench">
@@ -45,15 +50,15 @@
       </div>
 
       <div class="login-illustration">
-        <div class="server-stack">
-          <div class="server-card large"></div>
-          <div class="server-card medium"></div>
-          <div class="server-card small"></div>
-          <span class="cube c1"></span>
-          <span class="cube c2"></span>
-          <span class="cube c3"></span>
+        <h2>让设备、数据与链路<br />处于同一工作视野</h2>
+        <p>从协议连接、点位建模到运行排错，在一个工作台中完成工业数据采集的日常操作。</p>
+        <div class="login-diagram" role="img" aria-label="设备通过采集服务向工作台提供数据的架构示意，不表示实时连接状态">
+          <div class="diagram-device"><span aria-hidden="true">▤</span><strong>工业设备</strong><small>协议与点位</small></div>
+          <span class="diagram-link" aria-hidden="true">→</span>
+          <div class="diagram-service"><span aria-hidden="true">▥</span><strong>采集服务</strong><small>采集 · 处理 · 上报</small></div>
+          <span class="diagram-link" aria-hidden="true">→</span>
+          <div class="diagram-device"><span aria-hidden="true">▦</span><strong>工作台</strong><small>配置与监控</small></div>
         </div>
-        <h2>工业协议采集客户端</h2>
         <p>后端 Spring Boot 服务由你手动启动，桌面端只负责配置、控制、监控和展示。</p>
         <p v-if="appStore.configPath" class="desktop-config-path">本地配置：{{ appStore.configPath }}</p>
       </div>
@@ -123,32 +128,32 @@ function openDocs() {
 <style scoped>
 .login-page {
   display: flex;
-  min-height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
   color: var(--console-text-secondary);
-  background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.2), transparent 32%), var(--console-bg);
+  background: var(--console-bg);
 }
 
 .login-card {
   display: grid;
-  width: min(960px, 100%);
-  overflow: hidden;
-  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.85fr);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel);
+  width: 100%;
+  min-height: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   background: var(--console-panel);
-  box-shadow: var(--console-overlay-shadow);
 }
 
 .login-form-panel,
 .login-illustration {
-  padding: 32px;
+  display: flex;
+  min-width: 0;
+  padding: 48px max(35px, calc((50vw - 380px) / 2));
+  flex-direction: column;
+  justify-content: center;
 }
 
 .login-form-panel {
-  background: linear-gradient(180deg, rgba(37, 46, 63, 0.96), rgba(26, 35, 50, 0.96));
+  background: var(--console-panel);
 }
 
 .login-brand {
@@ -163,18 +168,44 @@ function openDocs() {
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1px solid rgba(59, 130, 246, 0.48);
-  border-radius: 14px;
-  color: var(--console-text-primary);
-  background: rgba(37, 99, 235, 0.32);
+  border: 1px solid #cee3df;
+  border-radius: 8px;
+  color: var(--console-primary);
+  background: var(--app-color-info-soft);
   font-size: 20px;
   font-weight: 700;
 }
 
-.login-brand h1,
+.login-heading h1,
 .login-illustration h2 {
   margin: 0;
   color: var(--console-text-primary);
+}
+
+.login-brand strong {
+  color: var(--console-text-primary);
+  font-size: 18px;
+}
+
+.login-brand p {
+  margin: 5px 0 0;
+  font-size: 11px;
+}
+
+.login-heading {
+  margin: 12px 0 25px;
+}
+
+.login-heading h1 {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.login-heading p {
+  margin: 9px 0 0;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
 }
 
 .login-brand p,
@@ -194,6 +225,12 @@ footer {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+footer {
+  margin-top: 30px;
+  font-size: 10px;
 }
 
 .login-submit {
@@ -201,65 +238,65 @@ footer {
 }
 
 .login-illustration {
-  border-left: 1px solid var(--console-border-soft);
-  background: linear-gradient(145deg, rgba(13, 27, 42, 0.9), rgba(16, 29, 49, 0.94));
+  padding: 65px 55px;
+  background: #e5eef0;
 }
 
-.server-stack {
-  position: relative;
-  height: 180px;
-  margin-bottom: 24px;
+.login-illustration h2 {
+  font-size: 26px;
+  font-weight: 550;
+  line-height: 1.5;
 }
 
-.server-card,
-.cube {
-  position: absolute;
-  display: block;
-  border: 1px solid rgba(82, 121, 166, 0.58);
-  border-radius: var(--console-radius-lg);
-  background: rgba(18, 38, 59, 0.86);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+.login-illustration p {
+  max-width: 390px;
+  font-size: 12px;
+  line-height: 1.9;
 }
 
-.server-card.large {
-  inset: 18px 32px auto 8px;
-  height: 76px;
+.login-diagram {
+  display: flex;
+  width: 100%;
+  max-width: 470px;
+  margin: 40px 0;
+  align-items: center;
+  gap: 8px;
 }
 
-.server-card.medium {
-  right: 12px;
-  bottom: 44px;
-  width: 62%;
-  height: 58px;
+.diagram-device,
+.diagram-service {
+  display: grid;
+  min-width: 0;
+  padding: 20px 10px;
+  flex: 1;
+  gap: 8px;
+  border: 1px solid #bbcfd6;
+  border-radius: 8px;
+  background: #f5f9fa;
+  text-align: center;
 }
 
-.server-card.small {
-  bottom: 8px;
-  left: 34px;
-  width: 42%;
-  height: 42px;
+.diagram-service {
+  background: #d4e5e6;
 }
 
-.cube {
-  width: 18px;
-  height: 18px;
-  border-color: rgba(34, 211, 238, 0.52);
-  background: rgba(34, 211, 238, 0.18);
+.login-diagram strong {
+  font-size: 12px;
 }
 
-.cube.c1 {
-  top: 8px;
-  right: 36px;
+.login-diagram small {
+  color: #637f8b;
+  font-size: 10px;
 }
 
-.cube.c2 {
-  top: 102px;
-  left: 8px;
+.diagram-device > span,
+.diagram-service > span {
+  color: #52818b;
+  font-size: 28px;
 }
 
-.cube.c3 {
-  right: 26px;
-  bottom: 12px;
+.diagram-link {
+  color: #7698a3;
 }
 
 .desktop-config-path {
@@ -268,7 +305,7 @@ footer {
 
 @media (max-width: 840px) {
   .login-page {
-    padding: 20px;
+    padding: 0;
   }
 
   .login-card {
@@ -276,8 +313,11 @@ footer {
   }
 
   .login-illustration {
-    border-top: 1px solid var(--console-border-soft);
-    border-left: 0;
+    display: none;
+  }
+
+  .login-form-panel {
+    padding: 32px 24px;
   }
 }
 </style>

@@ -1,29 +1,29 @@
 /* 批准设备管理稿的页面局部样式，通过 DeviceListView 的 scoped style 接入。 */
 .exact-page.device-list-view {
-  --device-bg: var(--console-bg, #0d1b2a);
-  --device-surface: var(--console-panel, #1a2332);
-  --device-input: var(--console-input-bg, #12263b);
-  --device-line: #33485e;
-  --device-text: #e5edf7;
-  --device-muted: #a0b1c7;
-  --device-blue: var(--console-primary, #2563eb);
-  --device-green: #81d5b5;
-  --device-amber: #f4bf7b;
-  --device-red: #f2a7aa;
+  --device-bg: var(--console-bg);
+  --device-surface: var(--console-panel);
+  --device-input: var(--console-input-bg);
+  --device-line: var(--console-border-soft);
+  --device-text: var(--console-text-primary);
+  --device-muted: var(--console-text-muted);
+  --device-blue: var(--console-primary);
+  --device-green: var(--console-success-text);
+  --device-amber: var(--console-warning-text);
+  --device-red: var(--console-danger-text);
   --device-columns: minmax(180px, 1.05fr) minmax(166px, 1fr) minmax(158px, 0.94fr) minmax(236px, 1.3fr) 150px;
   display: flex;
   min-width: 0;
   min-height: 0;
   height: auto;
-  padding: 22px 26px 18px;
+  padding: 27px 30px 24px;
   flex: 1 1 0;
   flex-direction: column;
   gap: 18px;
   overflow: hidden;
   color: var(--device-text);
   background: var(--device-bg);
-  font: 13px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  color-scheme: dark;
+  font: 13px/1.55 "Bahnschrift", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color-scheme: light;
 }
 
 .device-page-heading {
@@ -49,7 +49,7 @@
 .device-title-line h1 {
   margin: 0;
   color: var(--device-text);
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.45;
   letter-spacing: 0.1px;
@@ -58,10 +58,10 @@
 .device-count {
   padding: 2px 8px;
   flex: none;
-  color: #c8d6e9;
-  border: 1px solid #374b64;
+  color: var(--console-text-muted);
+  border: 1px solid var(--console-border-soft);
   border-radius: 5px;
-  background: #202d41;
+  background: var(--console-bg-soft);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -91,7 +91,7 @@
   color: var(--device-text);
   border: 1px solid var(--device-line);
   border-radius: 6px;
-  background: #202d3f;
+  background: var(--console-panel);
   font: inherit;
   font-weight: 400;
   white-space: nowrap;
@@ -100,8 +100,8 @@
 
 .exact-page.device-list-view button.device-button:not(:disabled):hover {
   color: var(--device-text);
-  border-color: #6387b4;
-  background: #27374e;
+  border-color: var(--console-border-soft);
+  background: var(--console-bg-soft);
 }
 
 .exact-page.device-list-view button.device-button.primary {
@@ -113,25 +113,25 @@
 .exact-page.device-list-view button.device-button.primary:not(:disabled):hover {
   color: #fff;
   border-color: var(--device-blue);
-  background: #3273f2;
+  background: var(--console-primary-hover);
 }
 
 .exact-page.device-list-view button.device-button.subtle-primary {
-  color: #aecdff;
-  border-color: #3d5f89;
-  background: #1b3453;
+  color: var(--console-info-text);
+  border-color: var(--console-border-soft);
+  background: var(--app-color-info-soft);
 }
 
 .exact-page.device-list-view button.device-button.subtle-primary:not(:disabled):hover {
-  color: #aecdff;
-  border-color: #6387b4;
-  background: #27374e;
+  color: var(--console-info-text);
+  border-color: var(--console-border-soft);
+  background: var(--console-bg-soft);
 }
 
 .exact-page.device-list-view button.device-button:disabled {
-  color: #8fa1b7;
-  border-color: #2b405c;
-  background: #101c2c;
+  color: var(--console-text-muted);
+  border-color: var(--console-border-soft);
+  background: var(--console-bg-soft);
   cursor: not-allowed;
   opacity: 1;
 }
@@ -141,12 +141,12 @@
 .device-list-view select.device-protocol-filter:focus-visible,
 .device-list-view select.device-status-filter:focus-visible,
 .device-action-menu button.device-menu-item:focus-visible {
-  outline: 2px solid #79b0ff;
+  outline: 2px solid var(--console-input-border-focus);
   outline-offset: 3px;
 }
 
 .device-list-view .device-row:focus-visible {
-  outline: 2px solid #79b0ff;
+  outline: 2px solid var(--console-input-border-focus);
   outline-offset: -3px;
 }
 
@@ -185,7 +185,7 @@
   position: absolute;
   top: 10px;
   left: 12px;
-  color: #92a6bf;
+  color: var(--console-text-muted);
   pointer-events: none;
 }
 
@@ -195,7 +195,7 @@
   min-height: 36px;
   padding: 0 12px;
   color: var(--device-text);
-  border: 1px solid #3b5574;
+  border: 1px solid var(--console-border-soft);
   border-radius: 6px;
   background: var(--device-input);
   font: inherit;
@@ -208,7 +208,7 @@
 }
 
 .device-list-view .device-search input::placeholder {
-  color: #91a4bf;
+  color: var(--console-text-muted);
   opacity: 1;
 }
 
@@ -223,8 +223,8 @@
 .device-list-view .device-search input:focus,
 .device-list-view select.device-protocol-filter:focus,
 .device-list-view select.device-status-filter:focus {
-  border-color: #79b0ff;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  border-color: var(--console-input-border-focus);
+  box-shadow: 0 0 0 3px var(--app-color-info-soft);
 }
 
 .exact-page.device-list-view .device-toolbar button.device-button {
@@ -238,10 +238,10 @@
   flex: none;
   align-items: flex-start;
   gap: 8px;
-  color: #efb0b5;
-  border: 1px solid #684550;
+  color: var(--console-danger-text);
+  border: 1px solid var(--console-border-soft);
   border-radius: 6px;
-  background: #332731;
+  background: var(--app-color-danger-soft);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -270,9 +270,9 @@
   flex: none;
   grid-template-columns: var(--device-columns);
   gap: 14px;
-  color: #9eb1cb;
-  border-bottom: 1px solid #3a4c62;
-  background: #172435;
+  color: var(--console-text-muted);
+  border-bottom: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
   font-size: 12px;
 }
 
@@ -287,7 +287,7 @@
   flex: 1 1 0;
   overflow: auto;
   scrollbar-gutter: stable;
-  scrollbar-color: #3d536f #122034;
+  scrollbar-color: var(--console-scrollbar-thumb) var(--console-bg-soft);
 }
 
 .device-register-body::-webkit-scrollbar,
@@ -298,14 +298,14 @@
 
 .device-register-body::-webkit-scrollbar-track,
 .device-action-menu::-webkit-scrollbar-track {
-  background: #122034;
+  background: var(--console-bg-soft);
 }
 
 .device-register-body::-webkit-scrollbar-thumb,
 .device-action-menu::-webkit-scrollbar-thumb {
   border: 0;
   border-radius: 5px;
-  background: #3d536f;
+  background: var(--console-scrollbar-thumb);
 }
 
 .device-row {
@@ -317,7 +317,7 @@
   grid-template-columns: var(--device-columns);
   align-items: start;
   gap: 14px;
-  border-bottom: 1px solid #2e4057;
+  border-bottom: 1px solid var(--console-border-soft);
   background: var(--device-surface);
   cursor: pointer;
 }
@@ -327,12 +327,12 @@
 }
 
 .device-row:hover {
-  background: #1d2b3d;
+  background: var(--console-bg-soft);
 }
 
 .device-row.is-selected {
-  background: #1c2d45;
-  box-shadow: inset 3px 0 #4c8dff;
+  background: var(--app-color-info-soft);
+  box-shadow: inset 3px 0 var(--console-primary-hover);
 }
 
 .device-cell {
@@ -345,7 +345,7 @@
 
 .device-identity h2 {
   margin: 0 0 4px;
-  color: #eff4fc;
+  color: var(--console-text-primary);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
@@ -359,7 +359,7 @@
 
 .device-id {
   display: block;
-  color: #a7bbd5;
+  color: var(--console-text-muted);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
@@ -369,12 +369,12 @@
   margin-top: 8px;
   align-items: center;
   gap: 5px;
-  color: #a1b3cd;
+  color: var(--console-text-muted);
   font-size: 11px;
 }
 
 .device-source.is-local {
-  color: #b8ceee;
+  color: var(--console-text-muted);
 }
 
 .device-source > svg {
@@ -386,7 +386,7 @@
 .device-protocol-name {
   display: block;
   margin-bottom: 6px;
-  color: #d5e2f6;
+  color: var(--console-text-primary);
   font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -396,7 +396,7 @@
   display: block;
   max-width: 100%;
   overflow: hidden;
-  color: #a9bedb;
+  color: var(--console-text-muted);
   font-size: 11.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -416,30 +416,30 @@
   padding: 2px 8px;
   align-items: center;
   gap: 7px;
-  color: #c4d4e8;
-  border: 1px solid #415570;
+  color: var(--console-text-primary);
+  border: 1px solid var(--console-border-soft);
   border-radius: 5px;
-  background: #25364c;
+  background: var(--console-bg-soft);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .device-phase.is-error {
-  color: #edb3b5;
-  border-color: #6a4b57;
-  background: #3a2b36;
+  color: var(--console-danger-text);
+  border-color: var(--console-border-soft);
+  background: var(--app-color-danger-soft);
 }
 
 .device-phase.is-wait {
-  color: #dfc79a;
-  border-color: #665b48;
-  background: #353329;
+  color: var(--console-warning-text);
+  border-color: var(--console-border-soft);
+  background: var(--app-color-warning-soft);
 }
 
 .device-phase.is-stale {
-  color: #bcc1ce;
-  border-color: #4e5767;
-  background: #2d3341;
+  color: var(--console-text-muted);
+  border-color: var(--console-border-soft);
+  background: var(--console-bg-soft);
 }
 
 .device-dot {
@@ -455,13 +455,13 @@
   display: grid;
   margin-top: 7px;
   gap: 1px;
-  color: #a7b8cf;
+  color: var(--console-text-muted);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
 .device-transport strong {
-  color: #c5d4e7;
+  color: var(--console-text-primary);
   font-weight: 400;
 }
 
@@ -471,7 +471,7 @@
   max-width: 100%;
   align-items: center;
   gap: 6px;
-  color: #becbdb;
+  color: var(--console-text-muted);
   font-size: 12px;
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -495,7 +495,7 @@
 }
 
 .device-health.is-stale {
-  color: #bbc3d0;
+  color: var(--console-text-muted);
 }
 
 .device-counts {
@@ -503,7 +503,7 @@
   margin: 4px 0 5px;
   flex-wrap: wrap;
   gap: 0 10px;
-  color: #a6b8cf;
+  color: var(--console-text-muted);
   font-size: 11.5px;
 }
 
@@ -512,18 +512,18 @@
 }
 
 .device-counts b {
-  color: #d4e1f1;
+  color: var(--console-text-primary);
   font-weight: 500;
 }
 
 .device-last-valid {
-  color: #9cb0c9;
+  color: var(--console-text-muted);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
 
 .device-last-valid .device-mono {
-  color: #b6c7dc;
+  color: var(--console-text-muted);
 }
 
 .device-actions {
@@ -553,9 +553,9 @@
   grid-column: 1 / -1;
   align-items: flex-start;
   gap: 7px;
-  color: #d0c19e;
+  color: var(--console-text-primary);
   border-radius: 5px;
-  background: #343329;
+  background: var(--app-color-warning-soft);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
@@ -572,18 +572,18 @@
 }
 
 .device-row-notice.is-stale {
-  color: #b6c2d4;
-  background: #273448;
+  color: var(--console-text-muted);
+  background: var(--console-bg-soft);
 }
 
 .device-row-notice.is-error {
-  color: #dba5b0;
-  background: #352a36;
+  color: var(--console-danger-text);
+  background: var(--app-color-danger-soft);
 }
 
 .device-row-notice.is-busy {
-  color: #acc9f0;
-  background: #213854;
+  color: var(--console-info-text);
+  background: var(--app-color-info-soft);
 }
 
 .device-register-footer {
@@ -596,15 +596,15 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  color: #9bb0c8;
+  color: var(--console-text-muted);
   border-top: 1px solid var(--device-line);
-  background: #172435;
+  background: var(--console-bg-soft);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
 .device-register-footer strong {
-  color: #c8d8eb;
+  color: var(--console-text-primary);
   font-weight: 400;
 }
 
@@ -614,7 +614,7 @@
   flex: none;
   align-items: flex-start;
   gap: 8px;
-  color: #90a7c2;
+  color: var(--console-text-muted);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
@@ -624,7 +624,7 @@
   height: 14px;
   margin-top: 1px;
   flex: none;
-  color: #84a3cb;
+  color: var(--console-text-muted);
 }
 
 .device-empty {
@@ -646,10 +646,10 @@
   margin-bottom: 20px;
   flex: none;
   place-items: center;
-  color: #7899c4;
-  border: 1px solid #3a536e;
+  color: var(--console-text-muted);
+  border: 1px solid var(--console-border-soft);
   border-radius: 12px;
-  background: #1e3048;
+  background: var(--console-bg-soft);
 }
 
 .device-empty-illustration > svg {
@@ -674,7 +674,7 @@
 
 .device-loading-caption {
   padding: 15px 18px;
-  color: #b0c4df;
+  color: var(--console-text-muted);
   font-size: 12px;
 }
 
@@ -684,7 +684,7 @@
   padding: 24px 18px;
   grid-template-columns: var(--device-columns);
   gap: 14px;
-  border-bottom: 1px solid #2c3d53;
+  border-bottom: 1px solid var(--console-border-soft);
   opacity: 0.55;
 }
 
@@ -698,7 +698,7 @@
   height: 11px;
   margin: 7px 0;
   border-radius: 4px;
-  background: #2d4059;
+  background: var(--console-bg-soft);
 }
 
 .device-loading-line:nth-child(1) {
@@ -727,16 +727,16 @@
   min-width: 0;
   max-height: calc(100vh - 32px);
   overflow: auto;
-  color: #e5edf7;
-  font: 13px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  color-scheme: dark;
-  scrollbar-color: #3d536f #122034;
+  color: var(--console-text-primary);
+  font: 13px/1.55 "Bahnschrift", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color-scheme: light;
+  scrollbar-color: var(--console-scrollbar-thumb) var(--console-bg-soft);
 }
 
 .device-menu-title {
   padding: 7px 8px 8px;
-  color: #d6e3f4;
-  border-bottom: 1px solid #394f69;
+  color: var(--console-text-primary);
+  border-bottom: 1px solid var(--console-border-soft);
   font-size: 12px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -747,13 +747,13 @@
 }
 
 .device-menu-group + .device-menu-group {
-  border-top: 1px solid #39495f;
+  border-top: 1px solid var(--console-border-soft);
 }
 
 .device-menu-group-label {
   display: block;
   padding: 0 8px 4px;
-  color: #98adc9;
+  color: var(--console-text-muted);
   font-size: 11px;
 }
 
@@ -766,7 +766,7 @@
   align-items: center;
   justify-content: flex-start;
   gap: 7px;
-  color: #e5edf7;
+  color: var(--console-text-primary);
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -779,15 +779,15 @@
 }
 
 .device-action-menu button.device-menu-item:not(:disabled):hover {
-  background: #30425b;
+  background: var(--console-bg-soft);
 }
 
 .device-action-menu button.device-menu-item.is-danger {
-  color: #f0adb7;
+  color: var(--console-danger-text);
 }
 
 .device-action-menu button.device-menu-item:disabled {
-  color: #788ba5;
+  color: var(--console-text-muted);
   border: none;
   background: transparent;
   cursor: not-allowed;
@@ -796,7 +796,7 @@
 
 .device-menu-hint {
   margin-left: auto;
-  color: #9aacbf;
+  color: var(--console-text-muted);
   font-size: 10.5px;
 }
 
@@ -872,14 +872,14 @@
   .device-cell-label {
     display: block;
     margin-bottom: 5px;
-    color: #91a7c2;
+    color: var(--console-text-muted);
     font-size: 11px;
   }
 
   .device-actions {
     padding-top: 10px;
     grid-column: 1 / -1;
-    border-top: 1px solid #32445e;
+    border-top: 1px solid var(--console-border-soft);
   }
 
   .exact-page.device-list-view .device-actions button.device-button.device-more {
@@ -917,12 +917,16 @@
 
 /* 命令式确认窗在 Teleport 中生成，仅本页显式 customClass 命中这些规则。 */
 :global(.el-message-box.device-list-confirmation) {
+  color: var(--console-text-primary);
+  border-color: var(--console-border-soft);
   border-radius: 10px;
+  background: var(--console-panel);
+  box-shadow: var(--console-overlay-shadow);
 }
 
 :global(.device-list-confirmation .el-message-box__header) {
   padding: 19px 20px 15px;
-  border-bottom-color: #33485e;
+  border-bottom-color: var(--console-border-soft);
 }
 
 :global(.device-list-confirmation .el-message-box__title) {
@@ -948,7 +952,7 @@
 
 :global(.device-list-confirmation .el-message-box__btns) {
   padding: 14px 20px;
-  border-top-color: #33485e;
+  border-top-color: var(--console-border-soft);
 }
 
 :global(.device-list-confirmation .el-button) {
@@ -956,6 +960,235 @@
   font-family: inherit;
   font-size: 13px;
   font-weight: 400;
+}
+
+/* 两种布局复用同一设备与菜单，表格仅在自己的区域横向滚动。 */
+.device-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.device-view-switch {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--device-line);
+  border-radius: 6px;
+  background: var(--device-surface);
+}
+
+.device-list-view .device-view-switch button {
+  display: grid;
+  width: 29px;
+  min-height: 27px;
+  padding: 5px;
+  place-items: center;
+  color: var(--device-muted);
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.device-list-view .device-view-switch button.active {
+  color: var(--device-blue);
+  background: var(--app-color-info-soft);
+}
+
+.device-view-switch svg {
+  width: 17px;
+  height: 17px;
+}
+
+.device-view-switch button:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 3px;
+}
+
+.device-configured-points {
+  margin-top: 9px;
+  color: var(--device-muted);
+  font-size: 11.5px;
+}
+
+.device-view-table .device-register-body {
+  max-height: min(68vh, 680px);
+}
+
+.device-view-table .device-register-head,
+.device-view-table .device-row {
+  min-width: 1040px;
+  grid-template-columns: var(--device-columns);
+}
+
+.device-view-table .device-register-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+}
+
+.device-view-table .device-cell-label {
+  display: none;
+}
+
+.device-view-table .device-actions {
+  position: sticky;
+  right: -18px;
+  padding-top: 0;
+  grid-column: auto;
+  border-top: 0;
+  background: var(--device-surface);
+}
+
+.device-view-table .device-register-head > :last-child {
+  position: sticky;
+  right: 0;
+  background: var(--console-bg-soft);
+}
+
+.device-equipment {
+  display: none;
+}
+
+.device-view-cards {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.device-view-cards .device-register-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-content: start;
+}
+
+.device-view-cards .device-row {
+  min-width: 0;
+  padding: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  border: 1px solid var(--device-line);
+  border-radius: 8px;
+  background: var(--device-surface);
+}
+
+.device-view-cards .device-row:hover {
+  border-color: var(--console-input-border-hover);
+}
+
+.device-view-cards .device-row.is-selected {
+  box-shadow: inset 3px 0 var(--device-blue);
+}
+
+.device-view-cards .device-row.is-warning {
+  border-top: 3px solid var(--console-warning);
+}
+
+.device-view-cards .device-row.is-error {
+  border-top: 3px solid var(--console-danger);
+}
+
+.device-view-cards .device-identity {
+  position: relative;
+  padding-left: 46px;
+  padding-bottom: 0;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  border-bottom: 0;
+}
+
+.device-view-cards .device-equipment {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: var(--console-text-muted);
+  border: 1px solid var(--device-line);
+  border-radius: 6px;
+  background: var(--console-bg-soft);
+}
+
+.device-view-cards .device-lifecycle {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.device-view-cards .device-transport {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+}
+
+.device-view-cards .device-connection,
+.device-view-cards .device-quality {
+  padding-top: 13px;
+  border-top: 1px solid var(--device-line);
+}
+
+.device-view-cards .device-cell-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--device-muted);
+  font-size: 10px;
+}
+
+.device-view-cards .device-identity .device-cell-label,
+.device-view-cards .device-lifecycle .device-cell-label {
+  display: none;
+}
+
+.device-view-cards .device-actions {
+  margin: 0 -18px -18px;
+  padding: 10px 18px;
+  grid-column: 1 / -1;
+  grid-row: auto;
+  order: 10;
+  border-top: 1px solid var(--device-line);
+  border-radius: 0 0 7px 7px;
+  background: var(--console-bg-soft);
+}
+
+.device-view-cards .device-register-footer {
+  margin-top: 16px;
+  padding-inline: 0;
+  background: transparent;
+}
+
+.device-view-cards .device-empty,
+.device-view-cards .device-loading-caption {
+  grid-column: 1 / -1;
+}
+
+/* 只覆盖本页的 Teleport 外壳，保留 script 中原确认配置的字节。 */
+:global(.el-popper:has(.device-action-menu)) {
+  color: var(--console-text-primary);
+  border-color: var(--console-border-soft);
+  background: var(--console-panel);
+  box-shadow: var(--console-overlay-shadow);
+}
+
+@media (min-width: 1650px) {
+  .device-view-cards .device-register-body {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1280px) {
+  .device-view-cards .device-register-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .device-view-cards .device-register-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
@@ -1004,7 +1237,7 @@
 
   .device-identity {
     padding-bottom: 13px;
-    border-bottom: 1px solid #32445a;
+    border-bottom: 1px solid var(--console-border-soft);
   }
 
   .device-actions {

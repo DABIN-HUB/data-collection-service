@@ -38,17 +38,23 @@
           <option value="CONNECTING">连接中/等待首采</option>
         </select>
       </div>
-      <button type="button" class="device-button" :disabled="deviceStore.syncOperating" @click="syncDevices"><DeviceListIcon name="refresh" />同步远端配置</button>
+      <div class="device-toolbar-actions">
+        <button type="button" class="device-button" :disabled="deviceStore.syncOperating" @click="syncDevices"><DeviceListIcon name="refresh" />同步远端配置</button>
+        <div class="device-view-switch" role="group" aria-label="设备列表显示方式">
+          <button type="button" :class="{ active: deviceView === 'cards' }" aria-label="卡片视图" :aria-pressed="deviceView === 'cards'" @click="closeDeviceMenu(); deviceView = 'cards'"><Grid /></button>
+          <button type="button" :class="{ active: deviceView === 'table' }" aria-label="表格视图" :aria-pressed="deviceView === 'table'" @click="closeDeviceMenu(); deviceView = 'table'"><List /></button>
+        </div>
+      </div>
     </div>
 
     <div v-if="detailError || deviceStore.error || deviceStore.syncError" class="device-error-banner" role="alert">
       <DeviceListIcon name="alert" /><span>{{ detailError || deviceStore.error || deviceStore.syncError }}</span>
     </div>
-    <div class="device-register">
-      <div class="device-register-head" aria-hidden="true">
-        <span>设备身份 / 来源</span><span>连接与采集</span><span>运行阶段 / 通信状态</span><span>采集健康 / 有效样本</span><span>操作</span>
-      </div>
-      <div class="device-register-body" @scroll="closeDeviceMenu">
+    <div class="device-register" :class="`device-view-${deviceView}`" :role="deviceView === 'table' ? 'table' : undefined" aria-label="设备清单">
+      <div class="device-register-body" :role="deviceView === 'table' ? 'rowgroup' : undefined" @scroll="closeDeviceMenu">
+        <div v-if="deviceView === 'table'" class="device-register-head" role="row">
+          <span role="columnheader">设备身份 / 来源</span><span role="columnheader">连接与采集</span><span role="columnheader">运行阶段 / 通信状态</span><span role="columnheader">采集健康 / 有效样本</span><span role="columnheader">操作</span>
+        </div>
         <template v-if="filteredDevices.length === 0 && deviceStore.loading && !deviceStore.error">
           <div class="device-loading-caption" role="status">{{ deviceListEmptyText }}</div>
           <div v-for="row in 4" :key="row" class="device-skeleton-row" aria-hidden="true">
@@ -65,7 +71,8 @@
           v-for="device in filteredDevices"
           :key="device.normalizedId"
           class="device-row"
-          :class="{ 'is-selected': deviceStore.selectedDeviceId === device.normalizedId }"
+          :class="[{ 'is-selected': deviceStore.selectedDeviceId === device.normalizedId }, statusBadgeClass(device), devicePresentation(device).healthTone]"
+          :role="deviceView === 'table' ? 'row' : undefined"
           :data-device-id="device.normalizedId"
           :aria-label="`选择设备 ${device.displayName || device.normalizedId}`"
           :aria-current="deviceStore.selectedDeviceId === device.normalizedId ? 'true' : undefined"
@@ -74,24 +81,26 @@
           @keydown.enter.self.prevent="selectDevice(device.normalizedId)"
           @keydown.space.self.prevent="selectDevice(device.normalizedId)"
         >
-          <div class="device-cell device-identity">
+          <div class="device-cell device-identity" :role="deviceView === 'table' ? 'cell' : undefined">
+            <span class="device-equipment" aria-hidden="true"><DeviceListIcon name="box" /></span>
             <span class="device-cell-label">设备身份 / 来源</span>
             <h2>{{ device.displayName || device.normalizedId }}</h2>
             <span class="device-id device-mono">{{ device.normalizedId }}</span>
             <span class="device-source" :class="{ 'is-local': isLocalDevice(device) }"><DeviceListIcon :name="isLocalDevice(device) ? 'local' : 'cloud'" />{{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</span>
           </div>
-          <div class="device-cell device-connection">
+          <div class="device-cell device-connection" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-cell-label">连接与采集</span>
             <strong class="device-protocol-name">{{ device.displayProtocol || '-' }}</strong>
             <span class="device-address device-mono" :title="deviceAddress(device)">{{ deviceAddress(device) }}</span>
+            <div class="device-configured-points">配置点位 <span class="device-mono">{{ typeof device.pointCount === 'number' && Number.isFinite(device.pointCount) && device.pointCount >= 0 ? device.pointCount : Array.isArray(device.points) ? device.points.length : '未知' }}</span></div>
             <div class="device-interval">采集周期 <span class="device-mono">{{ device.collectionInterval ?? '-' }}</span> ms</div>
           </div>
-          <div class="device-cell device-lifecycle">
+          <div class="device-cell device-lifecycle" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-cell-label">运行阶段 / 通信状态</span>
             <span class="device-phase" :class="[statusBadgeClass(device), devicePresentation(device).phaseTone]"><i class="device-dot"></i>{{ devicePresentation(device).lifecycle }}</span>
             <div class="device-transport"><span>{{ devicePresentation(device).transportText }}</span><span>{{ devicePresentation(device).protocolText }}</span></div>
           </div>
-          <div class="device-cell device-quality">
+          <div class="device-cell device-quality" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-cell-label">采集健康 / 有效样本</span>
             <span class="device-health" :class="devicePresentation(device).healthTone"><i class="device-dot"></i>{{ devicePresentation(device).health }}</span>
             <div class="device-counts">
@@ -102,7 +111,7 @@
             </div>
             <div class="device-last-valid">最近有效 <span class="device-mono">{{ devicePresentation(device).lastValid }}</span></div>
           </div>
-          <div class="device-cell device-actions">
+          <div class="device-cell device-actions" :role="deviceView === 'table' ? 'cell' : undefined">
             <button type="button" class="device-button subtle-primary" @click.stop="openDeviceOperation(device, 'config')">配置</button>
             <button type="button" class="device-button" @click.stop="editDevice(device)">编辑</button>
             <ElPopover :visible="activeMenuDeviceId === device.normalizedId" placement="bottom-end" :width="262" :offset="7" :show-arrow="false" :popper-style="deviceMenuPopoverStyle" :persistent="false" :hide-after="0">
@@ -144,7 +153,7 @@
           <div v-if="deviceStore.isDeviceOperating(device.normalizedId)" class="device-row-notice is-busy" role="status"><DeviceListIcon name="info" /><span>设备操作进行中；启动、停止及配置缓存操作暂不可重复提交。</span></div>
         </article>
       </div>
-      <footer class="device-register-footer"><span>{{ deviceResultLabel }}</span><span>点击设备行选择设备；更多菜单包含监测与维护操作</span></footer>
+      <footer class="device-register-footer"><span>{{ deviceResultLabel }}</span><span>点击设备选择；配置与运行分别读取，更多菜单包含监测与维护操作</span></footer>
     </div>
     <div class="device-semantic-note"><DeviceListIcon name="info" /><span>运行阶段、通信就绪与采集健康是独立状态。设备已连接或启动请求已受理，不代表当前点位有效。</span></div>
 
@@ -156,6 +165,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox, ElPopover } from "element-plus";
+import { Grid, List } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { clearDeviceConfig, exportConfigs, getLocalDevice, importConfigs, refreshDeviceConfig } from "@/api/config.api";
@@ -179,6 +189,7 @@ const route = useRoute();
 const router = useRouter();
 
 const deviceKeyword = ref("");
+const deviceView = ref<"cards" | "table">("cards");
 const protocolFilter = ref("");
 const statusFilter = ref("");
 const localEditorVisible = ref(false);
@@ -197,7 +208,7 @@ const filteredDevices = computed(() => {
   const keyword = deviceKeyword.value.trim().toLowerCase();
   return deviceStore.devices.filter((device) => {
     const protocol = String(device.displayProtocol || device.protocolType || device.connectionType || "");
-    const status = String(device.status || device["runtimeStatus"] || "").toUpperCase();
+    const status = deviceFilterStatus(device);
     const text = [device.displayName, device.normalizedId, device.deviceId, device.id, device.ipAddress, device["host"], protocol, status, deviceAddress(device)]
       .join(" ")
       .toLowerCase();
@@ -470,6 +481,15 @@ function statusBadgeClass(device: DeviceViewModel): string {
   if (phase === "FAILED" || phase === "DEGRADED" || status === "ERROR") return "is-error";
   // 配置 ONLINE / 运行阶段 ONLINE 不能证明当前点位质量 GOOD。
   return "";
+}
+
+function deviceFilterStatus(device: DeviceViewModel): string {
+  if (device.runtimeStale) return "STALE";
+  const phase = String(device.runtime?.phase || "").toUpperCase();
+  if (["STARTING", "CONNECTING", "WAITING_FIRST_SAMPLE", "RECONNECTING"].includes(phase)) return "CONNECTING";
+  const status = String(device.status || device["runtimeStatus"] || "").toUpperCase();
+  if (["FAILED", "DEGRADED"].includes(phase) || status === "ERROR") return "ERROR";
+  return status;
 }
 
 function routeDeviceId(): string {

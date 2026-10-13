@@ -1,7 +1,8 @@
 <template>
-  <el-dialog :model-value="modelValue" title="批量编辑点位" width="520px" @update:model-value="$emit('update:modelValue', $event)">
+  <el-dialog :model-value="modelValue" title="批量编辑点位" width="min(560px, calc(100vw - 32px))" class="point-batch-edit-dialog" @update:model-value="$emit('update:modelValue', $event)">
     <div class="batch-edit-body">
       <el-alert :title="`已选择 ${selectedCount} 个点位`" type="info" :closable="false" />
+      <p class="batch-form-note">仅修改勾选的字段；应用到点位草稿后，需在点位工作区保存。</p>
       <el-checkbox-group v-model="fields" class="batch-field-list">
         <el-checkbox label="alarmEnabled">报警启用</el-checkbox>
         <el-checkbox label="dataType">数据类型</el-checkbox>
@@ -90,8 +91,31 @@ void props;
 </script>
 
 <style scoped>
+:global(.point-batch-edit-dialog.el-dialog) {
+  display: flex;
+  max-height: min(720px, 90dvh);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:global(.point-batch-edit-dialog .el-dialog__header),
+:global(.point-batch-edit-dialog .el-dialog__footer) {
+  flex: none;
+}
+
+:global(.point-batch-edit-dialog .el-dialog__body) {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.batch-form-note {
+  margin: 0 0 16px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
 .batch-edit-body,
-.batch-form,
 .batch-field-list {
   display: grid;
   gap: 12px;
@@ -99,11 +123,45 @@ void props;
 
 .batch-field-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-md);
+  background: var(--console-bg-soft);
+}
+
+.batch-form {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 20px;
+}
+
+.batch-form :deep(.el-form-item) {
+  width: min(200px, 100%);
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  flex: none;
+}
+
+.batch-form :deep(.el-form-item:has(.el-input-number)) {
+  width: min(160px, 100%);
 }
 
 .batch-form :deep(.el-select),
 .batch-form :deep(.el-input),
 .batch-form :deep(.el-input-number) {
   width: 100%;
+}
+
+@media (max-width: 600px) {
+  .batch-form {
+    flex-direction: column;
+  }
+
+  .batch-field-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

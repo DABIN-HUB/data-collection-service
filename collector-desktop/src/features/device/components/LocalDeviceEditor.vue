@@ -314,7 +314,7 @@
           <button id="localEditorNextBtn" type="button" @click="activeStep === localEditorSteps.length - 1 ? save() : moveStep(1)">{{ activeStep === localEditorSteps.length - 1 ? "完成配置" : "下一步" }}</button>
           <button id="saveLocalDeviceBtn" type="button" class="primary" :disabled="saving" @click="save">{{ saving ? "保存中..." : "保存并测试" }}</button>
         </div>
-        <p class="local-footer-note">保存配置；勾选后请求启动，不执行独立连接测试。</p>
+        <p class="local-footer-note">“保存并测试”保存完整配置；仅勾选“保存后立即本地启动”才请求启动。启动受理不等于采集就绪，也不执行独立连接测试。</p>
       </footer>
     </div>
   </Teleport>

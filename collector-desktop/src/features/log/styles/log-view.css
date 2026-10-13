@@ -1,12 +1,12 @@
 .exact-page.log-view {
   --log-line: var(--console-border);
   --log-line-soft: var(--console-border-soft);
-  --log-muted: #a0b1c7;
+  --log-muted: var(--app-color-text-muted);
 
-  padding: 22px 26px 26px;
+  padding: 27px 30px 24px;
   min-width: 0;
   gap: 16px;
-  color: #e2e8f0;
+  color: var(--app-color-text-primary);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -40,7 +40,7 @@
 }
 
 .log-view h1 {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.45;
 }
@@ -53,25 +53,25 @@
 .log-view .log-result-badge {
   max-width: 100%;
   padding: 3px 8px;
-  border: 1px solid #415570;
+  border: 1px solid var(--app-color-border);
   border-radius: 5px;
-  color: #c4d4e8;
-  background: #25364c;
+  color: var(--app-color-text-primary);
+  background: var(--app-color-bg-soft);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .exact-page.log-view button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 35px;
   max-width: 100%;
   padding: 0 12px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid #3b5574;
+  border: 1px solid var(--app-color-border);
   border-radius: 6px;
-  color: #e2e8f0;
+  color: var(--app-color-text-primary);
   background: transparent;
   font: inherit;
   font-weight: 400;
@@ -81,8 +81,8 @@
 }
 
 .exact-page.log-view button:hover {
-  border-color: #6387b4;
-  background: #17263b;
+  border-color: var(--app-control-border-hover);
+  background: var(--app-control-bg-hover);
 }
 
 .exact-page.log-view button.primary {
@@ -116,7 +116,7 @@
   height: 17px;
   flex-shrink: 0;
   border-radius: 20px;
-  background: #465971;
+  background: var(--app-color-border-active);
 }
 
 .log-view .log-toggle-track i {
@@ -126,7 +126,7 @@
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #e2e8f0;
+  background: var(--app-color-panel);
 }
 
 .log-view .is-active .log-toggle-track {
@@ -141,7 +141,7 @@
   padding: 14px 16px;
   border-color: var(--log-line);
   border-radius: 8px;
-  background: #101b2d;
+  background: var(--app-color-panel);
 }
 
 .log-view .log-panel-heading {
@@ -156,7 +156,7 @@
 
 .log-view .log-panel-heading h2 {
   margin: 0;
-  color: #e2e8f0;
+  color: var(--app-color-text-primary);
   font-size: 14px;
   font-weight: 600;
 }
@@ -184,7 +184,7 @@
 }
 
 .log-view .log-field label {
-  color: #b6c7dc;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
@@ -201,19 +201,19 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  height: 34px;
-  min-height: 34px;
+  height: 35px;
+  min-height: 35px;
   padding: 0 10px;
-  border: 1px solid #3b5574;
+  border: 1px solid var(--app-color-border);
   border-radius: 5px;
-  color: #e2e8f0;
-  background: #0b1626;
+  color: var(--app-color-text-primary);
+  background: var(--app-color-panel);
   font: inherit;
   font-size: 12px;
 }
 
 .log-view .log-field input::placeholder {
-  color: #8da2bc;
+  color: var(--app-control-placeholder);
   opacity: 1;
 }
 
@@ -226,9 +226,9 @@
 .log-view .log-more-filters > summary {
   display: list-item;
   width: fit-content;
-  min-height: 34px;
+  min-height: 35px;
   padding: 7px 10px;
-  color: #b6c7dc;
+  color: var(--app-color-text-muted);
   border: 1px solid transparent;
   border-radius: 5px;
   cursor: pointer;
@@ -236,12 +236,12 @@
 }
 
 .log-view .log-more-filters > summary:hover {
-  color: #e2e8f0;
-  background: #17263b;
+  color: var(--app-color-text-primary);
+  background: var(--app-control-bg-hover);
 }
 
 .log-view .log-more-filters[open] > summary {
-  color: #e2e8f0;
+  color: var(--app-color-text-primary);
 }
 
 .log-view .log-more-filters > .log-query-fields {
@@ -302,22 +302,22 @@
 }
 
 .log-view .exact-diagnostic-card > span {
-  color: #a5b9d3;
+  color: var(--app-color-text-muted);
   font-size: 12px;
 }
 
 .log-view .exact-diagnostic-card > strong {
   display: block;
   margin-top: 4px;
-  color: #edf4ff;
+  color: var(--app-color-text-primary);
   font-size: 22px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
-.log-view .log-summary-error > strong { color: #f2a7aa; }
-.log-view .log-summary-warn > strong { color: #f4bf7b; }
+.log-view .log-summary-error > strong { color: var(--app-color-error); }
+.log-view .log-summary-warn > strong { color: var(--app-color-warning); }
 
 .log-view .log-summary-cards.is-unknown strong {
   color: var(--log-muted);
@@ -330,14 +330,14 @@
   overflow: hidden;
   border-color: var(--log-line);
   border-radius: 8px;
-  background: #0b1626;
+  background: var(--app-color-panel);
 }
 
 .log-view .log-stream-heading {
   margin: 0;
   padding: 13px 16px;
   border-bottom: 1px solid var(--log-line-soft);
-  background: #101b2d;
+  background: var(--app-color-panel);
 }
 
 .log-view .log-stream-scroll {
@@ -366,28 +366,28 @@
   position: sticky;
   z-index: 1;
   top: 0;
-  color: #a5b9d3;
-  background: #192637;
+  color: var(--app-color-text-muted);
+  background: var(--app-color-bg-soft);
   font-weight: 500;
 }
 
 .log-view .modao-log-row {
   min-height: 36px;
-  color: #d5e0ef;
+  color: var(--app-color-text-primary);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 13px;
   line-height: 1.7;
 }
 
 .log-view .modao-log-row:hover {
-  background: #13233a;
+  background: var(--app-control-bg-hover);
 }
 
 .log-view .modao-log-time,
 .log-view .modao-log-name,
 .log-view .modao-log-thread {
   min-width: 0;
-  color: #a0b1c7;
+  color: var(--app-color-text-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -398,10 +398,10 @@
   overflow-wrap: anywhere;
 }
 
-.log-view .modao-log-level.ERROR { color: #f2a7aa; }
-.log-view .modao-log-level.WARN { color: #f4bf7b; }
-.log-view .modao-log-level.INFO { color: #85b7ff; }
-.log-view .modao-log-level.DEBUG { color: #a0b1c7; }
+.log-view .modao-log-level.ERROR { color: var(--app-color-error); }
+.log-view .modao-log-level.WARN { color: var(--app-color-warning); }
+.log-view .modao-log-level.INFO { color: var(--app-color-info); }
+.log-view .modao-log-level.DEBUG { color: var(--app-color-text-muted); }
 
 .log-view .log-empty {
   position: sticky;
@@ -488,7 +488,7 @@
 
 .log-view .log-recovery-actions a {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 35px;
   align-items: center;
   color: inherit;
   text-decoration: underline;

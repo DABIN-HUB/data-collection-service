@@ -146,7 +146,7 @@ watch(() => props.modelValue, (value) => {
 .protocol-field-group {
   min-width: 0;
   padding-top: 14px;
-  border-top: 1px solid #334357;
+  border-top: 1px solid var(--console-border-soft);
 }
 
 .protocol-field-group:first-of-type {
@@ -176,7 +176,7 @@ watch(() => props.modelValue, (value) => {
   min-width: 0;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 13px 18px;
+  gap: 18px 24px;
 }
 
 .protocol-field-row {
@@ -190,7 +190,7 @@ watch(() => props.modelValue, (value) => {
 
 .protocol-field-label {
   min-height: 18px;
-  color: #c3d0e1;
+  color: var(--console-text-secondary);
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -198,12 +198,12 @@ watch(() => props.modelValue, (value) => {
 
 .protocol-field-required {
   margin-left: 4px;
-  color: #ffa4aa;
+  color: var(--console-danger-text);
 }
 
 .protocol-field-condition {
   margin-left: 7px;
-  color: #f4bf7b;
+  color: var(--console-warning-text);
   font-size: 11px;
 }
 
@@ -240,6 +240,13 @@ watch(() => props.modelValue, (value) => {
   white-space: nowrap;
 }
 
+@media (max-width: 600px) {
+  .protocol-form-grid {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
 .protocol-field-control.has-unit :deep(.el-input-number .el-input__inner) {
   padding-right: 22px;
 }
@@ -248,14 +255,14 @@ watch(() => props.modelValue, (value) => {
   position: absolute;
   top: 8px;
   right: 36px;
-  color: #99aac0;
+  color: var(--console-text-muted);
   font-size: 12px;
   pointer-events: none;
 }
 
 .protocol-field-help {
   margin: 0;
-  color: #9caec5;
+  color: var(--console-text-muted);
   font-size: 11px;
   line-height: 1.7;
   overflow-wrap: anywhere;

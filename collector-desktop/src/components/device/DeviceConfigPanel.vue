@@ -80,7 +80,7 @@
           <div class="point-content point-data-grid">
             <div class="point-data-table-column table-area">
               <div class="table-scroll">
-                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" :row-key="pointRowKey" :row-class-name="pointRowClassName" class="industrial-point-table" highlight-current-row empty-text="暂无点位运行数据，可刷新数据或打开点位编辑查看配置" @row-click="selectWorkbenchPoint">
+                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" :row-key="pointRowKey" :row-class-name="pointRowClassName" class="industrial-point-table" max-height="360" highlight-current-row empty-text="暂无点位运行数据，可刷新数据或打开点位编辑查看配置" @row-click="selectWorkbenchPoint">
                   <el-table-column prop="pointCode" label="点位编码" min-width="140" />
                   <el-table-column prop="pointName" label="点位名称" min-width="140" />
                   <el-table-column prop="address" label="地址" min-width="96" />
@@ -667,7 +667,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 12px;
+  gap: 17px;
 }
 
 .local-section-card {
@@ -680,8 +680,8 @@ onBeforeUnmount(() => {
 
 .run-control-card {
   display: flex;
-  min-height: 72px;
-  padding: 14px 18px;
+  min-height: 84px;
+  padding: 18px 19px;
   align-items: center;
   gap: 28px;
   flex-wrap: wrap;
@@ -775,7 +775,7 @@ onBeforeUnmount(() => {
   min-height: 0;
   padding: 0;
   overflow: hidden;
-  border-color: rgba(82, 121, 166, 0.28);
+  border-color: var(--console-border-soft);
   border-radius: 6px;
 }
 
@@ -800,7 +800,7 @@ onBeforeUnmount(() => {
 }
 
 .protocol-config-collapse[open] > summary {
-  border-bottom: 1px solid rgba(82, 121, 166, 0.28);
+  border-bottom: 1px solid var(--console-border-soft);
 }
 
 .protocol-config-collapse[open] > summary::after {
@@ -826,17 +826,17 @@ onBeforeUnmount(() => {
   height: 23px;
   min-height: 23px;
   padding: 1px 8px;
-  color: #a8b6c8;
-  border: 1px solid #415064;
+  color: var(--console-text-muted);
+  border: 1px solid var(--console-border-soft);
   border-radius: 4px;
-  background: #1f2a3b;
+  background: var(--console-bg-soft);
   font-size: 11px;
   font-weight: 400;
 }
 
 .device-config-workbench-pane .protocol-config-collapse button.protocol-name-badge:hover {
-  color: #e2e8f0;
-  background: #24384f;
+  color: var(--console-primary);
+  background: var(--app-color-info-soft);
 }
 
 .protocol-field-count {
@@ -891,8 +891,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border-top: 1px solid rgba(82, 121, 166, 0.28);
-  background: #172536;
+  border-top: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
   flex-wrap: wrap;
 }
 
@@ -998,7 +998,7 @@ onBeforeUnmount(() => {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 285px;
+  grid-template-columns: minmax(0, 1fr) 257px;
   align-items: stretch;
 }
 
@@ -1067,9 +1067,10 @@ onBeforeUnmount(() => {
 .compact-point-detail {
   min-width: 0;
   min-height: 0;
-  padding: 0 18px 18px;
+  padding: 18px;
   color: var(--console-text-secondary);
   border-left: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
 }
 
 .compact-detail-head,
@@ -1171,6 +1172,15 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
 }
 
+.industrial-pagination-row :deep(.el-pagination) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+:global(.el-dialog.device-operation-dialog) {
+  max-width: calc(100vw - 32px);
+}
+
 .embedded-point-editor {
   max-height: 420px;
   margin: 0 18px 18px;
@@ -1185,7 +1195,7 @@ onBeforeUnmount(() => {
   outline-offset: 3px;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .point-data-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1216,6 +1226,7 @@ onBeforeUnmount(() => {
 
   .device-inner-tabbar {
     gap: 18px;
+    overflow-x: auto;
   }
 
   .protocol-config-collapse > summary {
@@ -1224,6 +1235,20 @@ onBeforeUnmount(() => {
 
   .protocol-config-collapse > summary small {
     margin-left: 0;
+  }
+
+  .runtime-heading {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .device-data-topline,
+  .device-inner-tabbar {
+    max-width: 100%;
+  }
+
+  .device-inner-tab {
+    flex-shrink: 0;
   }
 }
 </style>

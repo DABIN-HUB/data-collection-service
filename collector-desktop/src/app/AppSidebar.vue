@@ -3,7 +3,7 @@
     <div class="sidebar-top">
       <div class="brand">
         <span class="brand-mark"><img :src="factoryIcon" alt="" /></span>
-        <div class="brand-copy"><strong>工业数据控制台</strong></div>
+        <div class="brand-copy"><strong>工业数据控制台</strong><small>设备 · 数据 · 链路</small></div>
       </div>
       <nav class="section-nav" aria-label="控制台主导航">
         <div v-for="group in navigationGroups" :key="group.title" class="nav-group">
@@ -78,7 +78,7 @@ function saveToken() {
   min-width: var(--app-sidebar-width);
   height: 100%;
   min-height: 0;
-  padding: 16px 14px;
+  padding: 27px 17px 16px;
   flex-direction: column;
   justify-content: space-between;
   gap: 16px;
@@ -108,9 +108,10 @@ function saveToken() {
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px solid var(--console-border-soft);
+  color: #84c2c1;
+  border: 0;
   border-radius: var(--console-radius-lg);
-  background: var(--console-panel-soft);
+  background: transparent;
 }
 
 .brand-mark img {
@@ -122,8 +123,15 @@ function saveToken() {
 .brand-copy strong {
   display: block;
   color: var(--console-text-primary);
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.2;
+}
+
+.brand-copy small {
+  display: block;
+  margin-top: 4px;
+  color: var(--console-text-dim);
+  font-size: 11px;
 }
 
 .section-nav {
@@ -137,11 +145,11 @@ function saveToken() {
 .nav-group + .nav-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 .nav-group + .nav-group {
-  margin-top: 14px;
+  margin-top: 18px;
 }
 
 .nav-group-title {
@@ -149,31 +157,41 @@ function saveToken() {
   padding: 0 8px;
   color: var(--console-text-dim);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .section-nav a {
+  position: relative;
   display: flex;
-  min-height: 38px;
+  min-height: 39px;
   padding: 0 10px;
   align-items: center;
   gap: 9px;
   color: var(--console-text-muted);
   border: 1px solid transparent;
-  border-radius: var(--console-radius-lg);
+  border-radius: 5px;
   text-decoration: none;
 }
 
 .section-nav a:hover {
   color: var(--console-text-primary);
   border-color: var(--console-border-soft);
-  background: rgba(59, 130, 246, 0.08);
+  background: #283f4d;
 }
 
 .section-nav a.is-active {
   color: var(--console-text-primary);
-  border-color: var(--console-primary-hover);
-  background: rgba(37, 99, 235, 0.18);
+  border-color: transparent;
+  background: #345462;
+}
+
+.section-nav a.is-active::before {
+  position: absolute;
+  inset: 10px auto 10px -2px;
+  width: 3px;
+  border-radius: 2px;
+  background: #92d1cd;
+  content: "";
 }
 
 .nav-glyph {
@@ -193,6 +211,8 @@ function saveToken() {
   display: grid;
   flex: 0 0 auto;
   gap: 10px;
+  padding-top: 15px;
+  border-top: 1px solid var(--console-border-soft);
 }
 
 .system-status {
@@ -202,9 +222,9 @@ function saveToken() {
   align-items: center;
   gap: 8px;
   color: var(--console-text-muted);
-  border: 1px solid var(--console-border-soft);
+  border: 0;
   border-radius: var(--console-radius-lg);
-  background: var(--console-panel);
+  background: transparent;
   font-size: 12px;
 }
 
@@ -226,8 +246,10 @@ function saveToken() {
 }
 
 .sidebar-token-drawer summary {
+  display: flex;
   min-height: 32px;
   padding: 0 10px;
+  align-items: center;
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-lg);
   background: var(--console-panel);
@@ -258,6 +280,11 @@ function saveToken() {
 .top-token-panel label {
   color: var(--console-text-muted);
   font-size: 12px;
+}
+
+.top-token-panel input {
+  width: 100%;
+  min-width: 0;
 }
 
 .section-nav a:focus-visible,

@@ -44,13 +44,15 @@ function formatTime(value: number | string): string {
 .operation-source {
   display: flex;
   min-width: 0;
-  padding: 12px 0;
+  padding: 10px 15px;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 16px;
   color: var(--console-text-muted);
-  border-bottom: 1px solid var(--console-border-soft);
-  font-size: 12px;
+  border: 1px solid var(--console-border);
+  border-radius: var(--console-radius-md);
+  background: var(--console-bg-soft);
+  font-size: 11px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -88,6 +90,17 @@ function formatTime(value: number | string): string {
 .operation-source--ready .operation-source__badge,
 .operation-source--empty .operation-source__badge {
   color: var(--ops-state-ready);
+}
+
+.operation-source--ready,
+.operation-source--empty {
+  border-color: #d2e2df;
+  background: var(--app-color-info-soft);
+}
+
+.operation-source--error {
+  border-color: #ecd4d4;
+  background: var(--app-color-error-soft);
 }
 
 .operation-source--pending .operation-source__badge,

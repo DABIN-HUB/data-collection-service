@@ -15,27 +15,33 @@
 
     <div class="exact-page-body realtime-body">
       <div class="realtime-query-toolbar">
-        <div class="realtime-auto-group">
-          <button type="button" class="realtime-auto" :class="{ 'is-active': realtimeAuto }" :aria-pressed="realtimeAuto" @click="realtimeAuto = !realtimeAuto">
-            <span class="realtime-toggle-track" aria-hidden="true"><i></i></span>自动刷新
-          </button>
-          <small>默认间隔 5 秒</small>
-        </div>
         <div class="realtime-filters">
+          <label class="realtime-field">
+            <span>设备范围</span>
           <select v-model="realtimeDeviceId" class="realtime-device-filter" aria-label="实时数据设备" @change="handleRealtimeDeviceChange">
             <option value="">全部设备</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
             </option>
           </select>
+          </label>
+          <label class="realtime-field">
+            <span>点位搜索</span>
           <input v-model="realtimeKeyword" class="realtime-search" type="search" aria-label="搜索点位" placeholder="搜索点位名称、编码或地址" />
+          </label>
+        </div>
+        <div class="realtime-auto-group">
+          <button type="button" class="realtime-auto" :class="{ 'is-active': realtimeAuto }" :aria-pressed="realtimeAuto" @click="realtimeAuto = !realtimeAuto">
+            <span class="realtime-toggle-track" aria-hidden="true"><i></i></span>自动刷新
+          </button>
+          <small>默认间隔 5 秒</small>
         </div>
       </div>
 
       <div v-if="realtimeError" class="realtime-notice realtime-notice-error" role="alert">
         <strong>实时数据刷新失败</strong>
         <span>{{ realtimeError }}</span>
-        <span>当前记录与健康快照已清空，请检查服务后立即刷新。</span>
+        <span>{{ realtimeRows.length || deviceHealthSnapshot || allDeviceHealth.length ? '保留最近一次成功快照，当前刷新未提交新数据。' : '尚无可显示的成功快照，请检查服务后立即刷新。' }}</span>
       </div>
       <div v-else-if="loading" class="realtime-notice" role="status">
         <template v-if="realtimeRows.length || deviceHealthSnapshot || allDeviceHealth.length || realtimeDeltaState.cursor">
@@ -77,7 +83,7 @@
       </div>
 
       <div class="realtime-summary" aria-label="当前筛选结果的点位质量摘要">
-        <template v-if="realtimeError || (!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor)">
+        <template v-if="!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor">
           <div><span>实时记录</span><strong>—</strong></div>
           <div><span>质量正常</span><strong>—</strong></div>
           <div><span>异常/未知</span><strong>—</strong></div>
@@ -173,7 +179,7 @@
         </div>
         <div class="realtime-pagination">
           <div class="realtime-page-count">
-            <template v-if="realtimeError || (!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor)">
+            <template v-if="!realtimeRows.length && !deviceHealthSnapshot && !allDeviceHealth.length && !realtimeDeltaState.cursor">
               <span>{{ realtimeError ? '记录数暂不可用' : '记录数暂未知' }}</span>
             </template>
             <template v-else>
@@ -387,10 +393,6 @@ async function loadRealtime(source: RealtimeLoadSource = "manual") {
       return;
     }
     realtimeError.value = error instanceof Error ? error.message : "实时数据刷新失败";
-    realtimeRows.value = [];
-    resetRealtimeDeltaState(realtimeDeltaState);
-    deviceHealthSnapshot.value = null;
-    allDeviceHealth.value = [];
     logRealtimeRequestError(error);
   } finally {
     if (realtimeRequestOwner.isLatest(requestTicket)) {

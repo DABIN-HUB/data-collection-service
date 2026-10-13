@@ -183,6 +183,29 @@ onBeforeUnmount(() => {
 }
 
 .app-shell__navigation {
+  --console-text-primary: #fff;
+  --console-text-secondary: #dce5ea;
+  --console-text-muted: #b8c9d3;
+  --console-text-dim: #8ea5b3;
+  --console-border: #354d5b;
+  --console-border-soft: #354955;
+  --console-border-active: #7cafb6;
+  --console-panel: #263d4b;
+  --console-panel-soft: #283f4d;
+  --console-bg-soft: #203541;
+  --console-primary-hover: #92d1cd;
+  --console-input-bg: #203541;
+  --console-input-border: #526c7b;
+  --console-input-text-disabled: #8ea5b3;
+  --app-control-text: #dce5ea;
+  --app-control-placeholder: #93a7b5;
+  --app-control-bg: #203541;
+  --app-control-bg-hover: #283f4d;
+  --app-control-bg-focus: #203541;
+  --app-control-border: #526c7b;
+  --app-control-border-focus: #92d1cd;
+  --app-scrollbar-track: #1d303d;
+  --app-scrollbar-thumb: #526c7b;
   display: flex;
   min-height: 0;
   flex: 0 0 var(--app-sidebar-width);
@@ -197,7 +220,7 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 120;
   inset: 0;
-  background: rgba(2, 6, 15, 0.7);
+  background: rgba(29, 48, 61, 0.38);
 }
 
 .app-shell__drawer-heading {
@@ -241,22 +264,22 @@ onBeforeUnmount(() => {
 }
 
 .app-shell :deep(button:not(.el-button)) {
-  min-height: 30px;
+  min-height: var(--app-control-height);
   padding: 0 12px;
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border);
   border-radius: var(--console-radius-md);
-  background: var(--console-panel-soft);
+  background: var(--console-panel);
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .app-shell :deep(button:not(.el-button, :disabled):hover) {
   color: var(--console-text-primary);
   border-color: var(--console-primary-hover);
-  background: rgba(59, 130, 246, 0.14);
+  background: var(--app-color-info-soft);
 }
 
 .app-shell :deep(button:not(.el-button).primary) {
@@ -266,9 +289,9 @@ onBeforeUnmount(() => {
 }
 
 .app-shell :deep(button:not(.el-button).danger) {
-  color: #fecaca;
-  border-color: rgba(239, 68, 68, 0.5);
-  background: rgba(239, 68, 68, 0.12);
+  color: var(--console-danger);
+  border-color: #e4c4c5;
+  background: var(--app-control-bg-error);
 }
 
 .app-shell :deep(button:not(.el-button):disabled) {
@@ -279,10 +302,10 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.app-shell :deep(input:not(.el-input__inner)),
+.app-shell :deep(input:not([type="checkbox"], [type="radio"], [type="file"], .el-input__inner, .el-select__input, .el-range-input)),
 .app-shell :deep(select),
 .app-shell :deep(textarea:not(.el-textarea__inner)) {
-  min-height: 30px;
+  min-height: var(--app-control-height);
   padding: 0 10px;
   color: var(--console-text-secondary);
   border: 1px solid var(--console-input-border);
@@ -299,11 +322,11 @@ onBeforeUnmount(() => {
   resize: vertical;
 }
 
-.app-shell :deep(input:not(.el-input__inner):focus),
+.app-shell :deep(input:not([type="checkbox"], [type="radio"], [type="file"], .el-input__inner, .el-select__input, .el-range-input):focus),
 .app-shell :deep(select:focus),
 .app-shell :deep(textarea:not(.el-textarea__inner):focus) {
   border-color: var(--console-primary-hover);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  box-shadow: var(--app-focus-ring);
 }
 
 @media (width <= 900px) {

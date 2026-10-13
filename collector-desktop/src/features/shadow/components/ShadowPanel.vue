@@ -30,6 +30,7 @@
           </div>
         </div>
         <template v-if="stateView === 'table'">
+          <p v-if="visibleFields.length === 0" class="narrow-table-empty">{{ fieldEmptyText }}</p>
           <div class="table-scroll">
             <table class="shadow-table">
               <thead><tr><th scope="col">字段</th><th scope="col">当前 · reported</th><th scope="col">已保存 · desired</th><th scope="col">差异 · delta</th></tr></thead>
@@ -90,6 +91,7 @@
         <div class="inline-actions history-controls"><label for="shadow-history-limit">读取条数</label><input id="shadow-history-limit" v-model.number="shadowHistoryLimit" type="number" min="1" max="200" /><button type="button" :disabled="!deviceId || !shadowCapabilityAvailable || loadingHistory" @click="loadShadowHistory">读取历史</button></div>
       </header>
       <p class="history-status section-status" :class="{ 'is-warning': shadowHistoryError }" role="status">{{ shadowHistoryStatusText }}</p>
+      <p v-if="visibleHistory.length === 0" class="narrow-table-empty">{{ shadowHistoryEmptyText }}</p>
       <div class="table-scroll">
         <table class="history-table">
           <thead><tr><th scope="col">版本</th><th scope="col">操作</th><th scope="col">时间</th><th scope="col">完整记录</th></tr></thead>
@@ -598,8 +600,8 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 .shadow-grid {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) 350px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 18px;
   align-items: start;
 }
 .shadow-panel {
@@ -688,6 +690,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 }
 .table-scroll {
   overflow: auto;
+  scrollbar-width: thin;
 }
 .state-panel > .table-scroll {
   max-height: 320px;
@@ -707,7 +710,10 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 }
 .shadow-table th,
 .history-table th {
-  height: 35px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 40px;
   padding: 8px 18px;
   color: var(--console-text-muted);
   border-bottom: 1px solid var(--console-border-soft);
@@ -719,7 +725,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 }
 .shadow-table td,
 .history-table td {
-  height: 43px;
+  height: 53px;
   padding: 9px 18px;
   border-bottom: 1px solid var(--console-border-soft);
   vertical-align: top;
@@ -944,7 +950,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   color: var(--console-danger-text);
 }
 .shadow-workbench button.primary {
-  color: var(--console-text-primary);
+  color: #fff;
   border-color: var(--console-primary);
   background: var(--console-primary);
 }
@@ -1050,9 +1056,18 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   font-size: 12px;
 }
 
+.narrow-table-empty {
+  display: none;
+  margin: 0;
+  padding: 28px 18px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 @container (max-width: 1050px) {
   .shadow-grid {
-    grid-template-columns: minmax(0, 1fr) 310px;
+    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
     gap: 12px;
   }
   .shadow-metric {
@@ -1073,7 +1088,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   }
 }
 
-@container (max-width: 880px) {
+@container (max-width: 900px) {
   .shadow-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1083,6 +1098,16 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 }
 
 @container (max-width: 600px) {
+  .narrow-table-empty {
+    display: block;
+  }
+  .shadow-table .empty-state,
+  .history-table .empty-state {
+    display: none;
+  }
+  .shadow-metric > div {
+    flex-wrap: wrap;
+  }
   .shadow-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px 0;
@@ -1099,7 +1124,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   }
   .panel-head .inline-actions {
     max-width: 100%;
-    overflow-x: auto;
+    flex-wrap: wrap;
   }
   .state-caption {
     flex-direction: column;

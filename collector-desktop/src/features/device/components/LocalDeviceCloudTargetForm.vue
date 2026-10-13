@@ -21,7 +21,7 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
 <style scoped>
 .local-cloud-target-form {
   min-width: 0;
-  color: var(--panel-text);
+  color: var(--console-text-primary);
   font-size: 12px;
 }
 
@@ -44,7 +44,7 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  color: #c3d0e1;
+  color: var(--console-text-secondary);
 }
 
 .cloud-identity-fields input,
@@ -55,7 +55,7 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
   height: 35px;
   padding: 7px 9px;
   color: var(--panel-text);
-  border: 1px solid #45607d;
+  border: 1px solid var(--console-input-border);
   border-radius: 4px;
   background: var(--editor-input);
   font: inherit;
@@ -66,7 +66,7 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
 }
 
 .cloud-identity-fields input::placeholder {
-  color: #7e94ae;
+  color: var(--console-input-placeholder);
 }
 
 .cloud-topic-label small {
@@ -80,25 +80,25 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
   height: 76px;
   min-height: 76px;
   padding: 9px 10px;
-  color: #a8c6eb;
-  border: 1px solid #334e6b;
+  color: var(--console-code-text);
+  border: 1px solid var(--console-border-soft);
   border-radius: 4px;
-  background: #142338;
+  background: var(--console-code-bg);
   font: 11px/1.7 Consolas, "Microsoft YaHei UI", monospace;
-  resize: none;
+  resize: vertical;
   overflow-wrap: anywhere;
 }
 
 .cloud-identity-fields input:focus-visible,
 .cloud-identity-fields select:focus-visible,
 .cloud-topic-label textarea:focus-visible {
-  outline: 2px solid #7ab3ff;
+  outline: 2px solid var(--console-input-border-focus);
   outline-offset: 3px;
 }
 
 .local-cloud-target-form :deep(.el-switch) {
-  --el-switch-on-color: #447fe5;
-  --el-switch-off-color: #42526a;
+  --el-switch-on-color: var(--console-primary);
+  --el-switch-off-color: var(--console-panel-soft);
   height: 35px;
 }
 

@@ -8,11 +8,13 @@
           v-for="field in group.fields"
           :key="field.name"
           class="protocol-field-row"
-          :class="{ 'is-required': field.required, 'is-boolean': field.type === 'boolean', 'is-wide': isWideField(field) }"
+          :class="{ 'is-required': field.required, 'is-boolean': field.type === 'boolean', 'is-wide': isWideField(field), 'is-number': field.type === 'number' || field.type === 'integer', 'is-select': Boolean(field.options?.length) }"
+          :data-field="field.name"
+          :style="{ '--option-width': `${Math.max(160, Math.min(560, Math.max(...(field.options || []).map(option => Array.from(option).reduce((width, char) => width + ((char.codePointAt(0) || 0) > 255 ? 13 : 7.5), 0))) + 48))}px` }"
           :title="fieldHelp(field)"
         >
           <label class="protocol-field-label" :title="field.label || field.name">
-            {{ displayFieldLabel(field) }}<span v-if="field.required" class="protocol-field-required">*</span>
+            {{ displayFieldLabel(field) }}<span v-if="field.required" class="protocol-field-required">*</span><small v-if="field.requiredWhen" class="protocol-field-condition">条件必填</small>
           </label>
           <div class="protocol-field-control">
             <el-switch
@@ -46,6 +48,7 @@
               @update:model-value="updateField(field.name, $event)"
             />
           </div>
+          <p v-if="field.description || field.requiredWhen" class="protocol-field-help">{{ field.description }}<span v-if="field.requiredWhen"> 条件：{{ field.requiredWhen }}</span></p>
         </div>
       </div>
     </section>
@@ -133,10 +136,21 @@ watch(() => props.modelValue, (value) => {
 
 .protocol-field-group {
   margin-top: 0;
+  min-width: 0;
+}
+
+.protocol-field-row.is-number:not(.is-select) .protocol-field-control {
+  width: min(144px, 100%);
+}
+
+.protocol-field-row[data-field$="Port"].is-number:not(.is-select) .protocol-field-control,
+.protocol-field-row[data-field="port"].is-number:not(.is-select) .protocol-field-control {
+  width: min(112px, 100%);
 }
 
 .dynamic-form > .protocol-field-group + .protocol-field-group {
-  margin-top: 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--console-border-soft);
 }
 
 .protocol-field-group h4 {
@@ -146,57 +160,81 @@ watch(() => props.modelValue, (value) => {
   gap: 7px;
   color: var(--console-text-primary);
   font-size: 13px;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
-.protocol-field-group h4::before {
-  display: inline-block;
-  width: 3px;
-  height: 14px;
-  border-radius: 999px;
-  background: var(--console-primary-hover);
-  content: "";
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .protocol-form-grid {
-  display: grid;
+  display: flex;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 14px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 18px 24px;
 }
 
 .protocol-field-row {
-  display: grid;
+  --field-width: 220px;
+  display: flex;
   min-width: 0;
   min-height: 34px;
-  width: 100%;
-  grid-template-columns: 72px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 8px;
+  width: min(var(--field-width), 100%);
+  max-width: 100%;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .protocol-field-row.is-wide {
-  grid-column: 1 / -1;
-  grid-template-columns: minmax(96px, 108px) minmax(0, 1fr);
+  --field-width: 560px;
+}
+
+.protocol-field-row[data-field*="opic"] {
+  --field-width: 480px;
+}
+
+.protocol-field-row[data-field="host"],
+.protocol-field-row[data-field="clientId"] {
+  --field-width: 320px;
+}
+
+.protocol-field-row.is-number,
+.protocol-field-row.is-boolean {
+  --field-width: 160px;
+}
+
+.protocol-field-row.is-select {
+  --field-width: var(--option-width);
 }
 
 .protocol-field-label {
   min-width: 0;
-  overflow: hidden;
-  color: var(--console-text-muted);
+  color: var(--console-text-secondary);
   font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .protocol-field-required {
   margin-left: 2px;
-  color: #fca5a5;
+  color: var(--console-danger-text);
+}
+
+.protocol-field-condition {
+  margin-left: 7px;
+  color: var(--console-warning-text);
+  font-size: 11px;
+}
+
+.protocol-field-help {
+  margin: 0;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .protocol-field-control {
@@ -225,9 +263,10 @@ watch(() => props.modelValue, (value) => {
   min-height: 32px;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 600px) {
   .protocol-form-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    gap: 16px;
   }
 }
 </style>

@@ -1,8 +1,10 @@
 :root {
-  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  font-family: Bahnschrift, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
   color: var(--app-color-text-secondary);
   background: var(--app-color-bg);
-  color-scheme: dark;
+  color-scheme: light;
+  font-size: 13px;
+  line-height: 1.55;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -33,6 +35,22 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 3px;
+}
+
+code,
+pre {
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+time {
+  font-variant-numeric: tabular-nums;
 }
 
 input[type="checkbox"],
@@ -153,25 +171,21 @@ select:-webkit-autofill:focus {
   height: 8px;
   border-radius: 999px;
   display: inline-block;
-  background: #94a3b8;
-  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+  background: var(--ops-state-unknown);
 }
 
 .dot.good {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.16);
+  background: var(--app-color-success);
 }
 
 .dot.warn {
-  background: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+  background: var(--app-color-warning);
 }
 
 .dot.bad {
-  background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
+  background: var(--app-color-danger);
 }
 
 .dot.muted {
-  background: #94a3b8;
+  background: var(--ops-state-unknown);
 }
