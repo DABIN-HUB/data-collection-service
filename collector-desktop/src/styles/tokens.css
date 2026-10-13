@@ -60,6 +60,12 @@
   --app-code-text: #dbeafe;
   --app-sidebar-width: 220px;
   --app-topbar-height: 40px;
+  --ops-state-pending: #94a3b8;
+  --ops-state-unknown: #bfcbdd;
+  --ops-state-loading: #bfdbfe;
+  --ops-state-ready: #a7f3d0;
+  --ops-state-degraded: #fed7aa;
+  --ops-state-error: #fecaca;
   --app-space-1: 4px;
   --app-space-2: 8px;
   --app-space-3: 12px;

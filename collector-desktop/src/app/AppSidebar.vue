@@ -13,6 +13,7 @@
             :key="item.key"
             :to="item.path"
             :class="{ 'is-active': isNavigationActive(item) }"
+            @click="emit('navigate')"
           >
             <span class="nav-glyph" aria-hidden="true"><img :src="item.icon" alt="" /></span><span>{{ item.label }}</span>
           </RouterLink>
@@ -46,9 +47,10 @@ import { useAppStore } from "@/stores/app.store";
 const appStore = useAppStore();
 const route = useRoute();
 const tokenInput = ref("");
+const emit = defineEmits<{ navigate: [] }>();
 
-const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
-const systemStatusClass = computed(() => appStore.initialized ? "is-online" : "is-unknown");
+const systemStatusText = computed(() => appStore.initialized ? "客户端就绪" : "初始化中");
+const systemStatusClass = computed(() => "is-unknown");
 
 onMounted(() => {
   tokenInput.value = appStore.token;
@@ -83,7 +85,7 @@ function saveToken() {
   overflow: hidden;
   color: var(--console-text-secondary);
   border-right: 1px solid var(--console-border);
-  background: var(--console-sidebar);
+  background: var(--app-color-sidebar);
 }
 
 .sidebar-top {
@@ -214,10 +216,6 @@ function saveToken() {
   background: currentColor;
 }
 
-.system-status.is-online {
-  color: var(--console-success);
-}
-
 .system-status.is-unknown {
   color: var(--console-text-muted);
 }
@@ -260,5 +258,25 @@ function saveToken() {
 .top-token-panel label {
   color: var(--console-text-muted);
   font-size: 12px;
+}
+
+.section-nav a:focus-visible,
+.sidebar-token-drawer summary:focus-visible,
+.top-token-panel button:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 2px;
+}
+
+@media (width <= 900px) {
+  .app-sidebar {
+    width: 100%;
+    min-width: 0;
+    padding: 12px 16px 16px;
+    border-right: 0;
+  }
+
+  .section-nav a {
+    min-height: 40px;
+  }
 }
 </style>

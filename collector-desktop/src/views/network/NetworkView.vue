@@ -3,7 +3,7 @@
     <div class="section-heading network-heading">
       <div class="heading-title-line">
         <h1>网络检测</h1>
-        <span class="heading-online" :class="{ 'is-pending': !networkResult }"><i aria-hidden="true"></i>{{ networkResult ? networkResult.conclusionText : '尚未执行' }}</span>
+        <span class="heading-online" :class="{ 'is-pending': !networkResult, 'is-read-error': networkResult && isNetworkReadFailure(networkResult) }"><i aria-hidden="true"></i>{{ networkResult ? networkConclusion(networkResult) : '尚未执行' }}</span>
       </div>
       <p>检测本机、白名单目标或设备配置地址；仅在点击开始检测后执行。</p>
     </div>
@@ -11,40 +11,50 @@
     <div class="exact-page-body network-body">
       <section class="exact-surface network-toolbar" aria-labelledby="network-conditions-title">
         <div class="exact-surface-head network-panel-head">
-          <h2 id="network-conditions-title">检测参数</h2>
+          <h2 id="network-conditions-title">检测条件</h2>
           <span>端口仅用于 TCP 检测</span>
         </div>
         <div class="network-condition-fields">
-          <label class="network-field network-mode-field" for="network-type">
-            <span>检测方式</span>
-            <select id="network-type" v-model="networkType" @change="syncNetworkMode">
-              <option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option>
-            </select>
-          </label>
-          <label class="network-field network-device-field" for="network-device">
-            <span>目标设备</span>
-            <select id="network-device" v-model="networkDeviceId" @change="applyNetworkDevice">
-              <option value="">本机 / 白名单目标</option>
-              <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
-                {{ device.displayName || device.normalizedId }}
-              </option>
-            </select>
-          </label>
-          <label class="network-field network-target-field" for="network-target">
-            <span>目标地址</span>
-            <input id="network-target" v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" />
-          </label>
-          <label class="network-field network-port-field" for="network-port">
-            <span>TCP 端口</span>
-            <input id="network-port" v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" aria-describedby="network-port-note" />
-          </label>
-          <label class="network-field network-timeout-field" for="network-timeout">
-            <span>检测超时</span>
-            <span class="network-unit-control">
-              <input id="network-timeout" v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" aria-describedby="network-timeout-unit" />
-              <span id="network-timeout-unit" class="network-unit">ms</span>
-            </span>
-          </label>
+          <fieldset class="network-condition-group network-target-group">
+            <legend>目标地址</legend>
+            <div class="network-group-fields">
+              <label class="network-field network-device-field" for="network-device">
+                <span>目标设备</span>
+                <select id="network-device" v-model="networkDeviceId" @change="applyNetworkDevice">
+                  <option value="">本机 / 白名单目标</option>
+                  <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
+                    {{ device.displayName || device.normalizedId }}
+                  </option>
+                </select>
+              </label>
+              <label class="network-field network-target-field" for="network-target">
+                <span>目标地址</span>
+                <input id="network-target" v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" />
+              </label>
+            </div>
+          </fieldset>
+          <fieldset class="network-condition-group network-parameter-group">
+            <legend>检测参数</legend>
+            <div class="network-group-fields">
+              <label class="network-field network-mode-field" for="network-type">
+                <span>检测方式</span>
+                <select id="network-type" v-model="networkType" @change="syncNetworkMode">
+                  <option v-for="item in NETWORK_DIAGNOSTIC_TYPES" :key="item.value" :value="item.value">{{ item.label }}</option>
+                </select>
+              </label>
+              <label class="network-field network-port-field" for="network-port">
+                <span>TCP 端口</span>
+                <input id="network-port" v-model.number="networkPort" type="number" min="1" max="65535" :disabled="networkType !== 'TCP'" placeholder="TCP 目标端口" aria-describedby="network-port-note" />
+              </label>
+              <label class="network-field network-timeout-field" for="network-timeout">
+                <span>检测超时</span>
+                <span class="network-unit-control">
+                  <input id="network-timeout" v-model.number="networkTimeout" type="number" min="100" max="10000" placeholder="超时 ms" aria-describedby="network-timeout-unit" />
+                  <span id="network-timeout-unit" class="network-unit">ms</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
         </div>
         <div class="network-toolbar-footer">
           <div class="network-device-actions">
@@ -53,16 +63,24 @@
           </div>
           <div class="network-toolbar-actions">
             <button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button>
-            <button type="button" :disabled="networkHistory.length === 0" class="network-export" @click="downloadNetworkReport">导出检测结果</button>
+            <button type="button" :disabled="networkHistory.length === 0" class="network-export" aria-describedby="network-export-note" @click="downloadNetworkReport">导出检测结果</button>
           </div>
+          <p id="network-export-note" class="network-export-note">{{ networkHistory.length === 0 ? '当前会话暂无检测结果，导出不可用。' : '导出当前会话保留的检测历史，最多 10 条。' }}</p>
         </div>
       </section>
 
+      <OperationSourceStatus
+        :state="networkSourceState"
+        source="网络检测接口 · 仅由用户提交"
+        :last-attempt-at="networkLastAttemptAt"
+        :last-success-at="networkLastSuccessAt"
+        :detail="networkSourceDetail"
+      />
       <div class="exact-diagnostic-cards network-summary-cards" :class="{ 'is-pending': !networkResult }" aria-label="检测摘要">
         <div class="exact-diagnostic-card"><span>{{ networkResult ? '结果方式' : '当前配置方式' }}</span><strong>{{ networkResult ? networkResult.type : networkType }}</strong></div>
-        <div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkResult.conclusionText : '尚未执行' }}</strong></div>
-        <div class="exact-diagnostic-card network-reason-summary"><span>原因说明</span><strong>{{ networkResult ? networkResult.reasonText : '检测后显示' }}</strong></div>
-        <div class="exact-diagnostic-card"><span>检测历史记录</span><strong>{{ networkHistory.length }}</strong></div>
+        <div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkConclusion(networkResult) : '尚未执行' }}</strong></div>
+        <div class="exact-diagnostic-card network-reason-summary"><span>原因说明</span><strong>{{ networkResult ? networkReason(networkResult) : '检测后显示' }}</strong></div>
+        <div class="exact-diagnostic-card"><span>当前会话历史</span><strong>{{ networkHistory.length }}</strong></div>
       </div>
 
       <section class="exact-surface network-result-panel" :class="{ 'is-pending': !networkResult }">
@@ -115,34 +133,37 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-if="networkHistory.length === 0">
-                <td colspan="7" class="exact-empty">暂无网络检测历史</td>
-              </tr>
               <tr v-for="item in networkHistory" :key="`${item.completedAt || '-'}-${item.type}-${item.target}-${item.port || '-'}`">
                 <td>{{ formatTime(item.completedAt) }}</td>
                 <td>{{ item.type }}</td>
                 <td><span class="network-history-address" :title="item.target">{{ item.target }}</span></td>
                 <td>{{ item.port ?? '-' }}</td>
-                <td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ item.conclusionText }}</span></td>
+                <td><span class="status-badge" :class="item.reachable ? 'is-online' : 'is-error'">{{ networkConclusion(item) }}</span></td>
                 <td>{{ item.durationMs ?? '-' }} ms</td>
-                <td>{{ item.reasonText }}</td>
+                <td>{{ networkReason(item) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p v-if="networkHistory.length === 0" class="network-history-empty" role="status">当前会话暂无检测历史</p>
       </section>
 
-      <EdgeTelemetryPanel :devices="deviceStore.devices" :selected-device-id="networkDeviceId" @select-device="selectNetworkDevice" />
+      <details class="network-telemetry-tools">
+        <summary>边缘遥测调试 <span>高级工具 · 展开后可查看参数、预览与原提交入口</span></summary>
+        <EdgeTelemetryPanel :devices="deviceStore.devices" :selected-device-id="networkDeviceId" @select-device="selectNetworkDevice" />
+      </details>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, toRaw, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 
 import { diagnoseNetwork } from "@/api/ops.api";
+import { ApiRequestError } from "@/api/http";
+import OperationSourceStatus from "@/components/ui/OperationSourceStatus.vue";
 import EdgeTelemetryPanel from "@/features/network/components/EdgeTelemetryPanel.vue";
 import {
   NETWORK_DIAGNOSTIC_TYPES,
@@ -172,9 +193,53 @@ const networkTimeout = ref(3000);
 const networkOperating = ref(false);
 const networkResult = ref<NormalizedNetworkDiagnosticResult | null>(null);
 const networkHistory = ref<NormalizedNetworkDiagnosticResult[]>([]);
+const networkLastAttemptAt = ref<number | null>(null);
+const networkLastSuccessAt = ref<number | null>(null);
+// 仅关联原结果的呈现元数据；不改归一化对象、历史、导出或网络算法。
+const networkReadFailures = new WeakMap<NormalizedNetworkDiagnosticResult, number | null>();
 
 const selectedNetworkDevice = computed(() => deviceStore.devices.find((device) => device.normalizedId === networkDeviceId.value));
-const networkResultRows = computed(() => networkResult.value ? buildNetworkResultRows(networkResult.value) : []);
+const networkResultRows = computed(() => {
+  const result = networkResult.value;
+  if (!result) return [];
+  return buildNetworkResultRows(result).map((row) => {
+    if (row.label === "检测结论") return { ...row, value: networkConclusion(result) };
+    if (row.label === "失败原因") return { ...row, value: networkReason(result) };
+    return row;
+  });
+});
+const networkSourceState = computed<"pending" | "loading" | "ready" | "error">(() => {
+  if (networkOperating.value) return "loading";
+  if (!networkResult.value) return "pending";
+  return isNetworkReadFailure(networkResult.value) ? "error" : "ready";
+});
+const networkSourceDetail = computed(() => {
+  const result = networkResult.value;
+  if (!result) return networkOperating.value ? "正在执行已提交参数；尚无完成结果。" : "未提交检测，不产生尝试或成功时间；历史 0 是当前会话的真实计数。";
+  const target = `${result.target}${result.port !== undefined ? `:${result.port}` : ''}`;
+  const attribution = `下方结果属于已提交的 ${result.type} / ${target}，编辑当前表单不会重标旧结果。`;
+  if (networkOperating.value) return `检测进行中；${attribution}最后成功时间仅指此前成功返回的接口结果。`;
+  if (isNetworkReadFailure(result)) return `${attribution}接口读取失败不能证明目标不可达；最后成功时间仅指此前成功返回的接口结果。`;
+  return `${attribution}接口成功返回不等于目标可达，请以真实检测结论为准。`;
+});
+
+function isNetworkReadFailure(result: NormalizedNetworkDiagnosticResult): boolean {
+  return networkReadFailures.has(toRaw(result));
+}
+
+function networkConclusion(result: NormalizedNetworkDiagnosticResult): string {
+  if (!isNetworkReadFailure(result)) return result.conclusionText;
+  const status = networkReadFailures.get(toRaw(result));
+  return status === 401 || status === 403 ? "权限不足" : "检测读取失败";
+}
+
+function networkReason(result: NormalizedNetworkDiagnosticResult): string {
+  if (!isNetworkReadFailure(result)) return result.reasonText;
+  const status = networkReadFailures.get(toRaw(result));
+  return status === 401 || status === 403
+    ? `接口访问失败（HTTP ${status}），请检查接口访问权限；目标可达性未知`
+    : "未取得检测接口结果，请检查接口访问权限或连接；目标可达性未知";
+}
 
 async function runNetwork() {
   let payload: NetworkDiagnosticPayload;
@@ -193,8 +258,10 @@ async function runNetwork() {
 
   networkOperating.value = true;
   const submission = buildNetworkSubmissionSnapshot(payload);
+  networkLastAttemptAt.value = submission.submittedAt;
   try {
     const result = normalizeNetworkDiagnosticResultForSubmission(await diagnoseNetwork(payload), submission);
+    networkLastSuccessAt.value = result.completedAt ?? null;
     networkResult.value = result;
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
   } catch (caught) {
@@ -209,6 +276,7 @@ async function runNetwork() {
       details: [],
       completedAt: Date.now()
     }, submission);
+    networkReadFailures.set(result, caught instanceof ApiRequestError ? caught.httpStatus ?? null : null);
     networkResult.value = result;
     networkHistory.value = appendNetworkHistory(networkHistory.value, result, 10);
     ElMessage.error(message);

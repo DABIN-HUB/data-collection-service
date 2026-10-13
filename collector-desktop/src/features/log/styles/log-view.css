@@ -4,6 +4,7 @@
   --log-muted: #a0b1c7;
 
   padding: 22px 26px 26px;
+  min-width: 0;
   gap: 16px;
   color: #e2e8f0;
   font-size: 13px;
@@ -11,11 +12,13 @@
 }
 
 .log-view .log-body {
+  min-width: 0;
   gap: 16px;
   scrollbar-gutter: stable;
 }
 
 .log-view .log-body > * {
+  min-width: 0;
   flex: 0 0 auto;
 }
 
@@ -48,12 +51,14 @@
 }
 
 .log-view .log-result-badge {
+  max-width: 100%;
   padding: 3px 8px;
   border: 1px solid #415570;
   border-radius: 5px;
   color: #c4d4e8;
   background: #25364c;
-  font-size: 11px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .exact-page.log-view button {
@@ -70,7 +75,8 @@
   background: transparent;
   font: inherit;
   font-weight: 400;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -186,7 +192,7 @@
 .log-view .log-field-device { width: 224px; }
 .log-view .log-field-logger { width: 228px; }
 .log-view .log-field-thread { width: 196px; }
-.log-view .log-field-keyword { width: 330px; }
+.log-view .log-field-keyword { flex: 1 1 280px; }
 .log-view .log-field-limit { width: 110px; }
 
 .log-view .log-field input,
@@ -313,6 +319,12 @@
 .log-view .log-summary-error > strong { color: #f2a7aa; }
 .log-view .log-summary-warn > strong { color: #f4bf7b; }
 
+.log-view .log-summary-cards.is-unknown strong {
+  color: var(--log-muted);
+  font-size: 16px;
+  font-weight: 500;
+}
+
 .log-view .modao-log-panel {
   padding: 0;
   overflow: hidden;
@@ -395,6 +407,8 @@
   position: sticky;
   left: 0;
   box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   min-height: 224px;
   padding: 28px 20px;
   color: var(--log-muted);
@@ -422,7 +436,7 @@
   }
 }
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
   .exact-page.log-view {
     padding: 18px 14px;
   }
@@ -446,5 +460,77 @@
 
   .log-view .exact-diagnostic-card:nth-child(-n + 2) {
     border-bottom: 1px solid var(--log-line-soft);
+  }
+}
+
+.log-view .log-heading > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.log-view .log-export-note {
+  margin: 12px 0 0;
+  color: var(--log-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.log-view .log-recovery-actions {
+  display: flex;
+  min-width: 0;
+  margin-top: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.log-view .log-recovery-actions a {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.log-view .log-recovery-actions > span {
+  flex-basis: 100%;
+}
+
+.log-view .log-recovery-actions a:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .log-view .log-field-device,
+  .log-view .log-field-keyword,
+  .log-view .log-field-logger,
+  .log-view .log-field-thread {
+    width: 100%;
+    flex: 0 1 100%;
+  }
+
+  .exact-page.log-view button,
+  .log-view .log-more-filters > summary,
+  .log-view .log-recovery-actions a {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 450px) {
+  .log-view .log-summary-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .log-view .log-summary-cards .exact-diagnostic-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--log-line-soft);
+  }
+
+  .log-view .log-summary-cards .exact-diagnostic-card:last-child {
+    border-bottom: 0;
   }
 }

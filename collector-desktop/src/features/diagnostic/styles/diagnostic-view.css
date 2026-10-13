@@ -8,7 +8,7 @@
   gap: 16px;
   color: var(--diagnostic-text);
   background: var(--app-color-bg);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -54,7 +54,7 @@
   border-radius: 5px;
   color: #c4d4e8;
   background: #203048;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -131,7 +131,7 @@
   border-radius: 6px;
   color: #ebcf9e;
   background: #353329;
-  font-size: 12px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
@@ -237,7 +237,7 @@
 }
 
 .diagnostic-view .diagnostic-col-name { width: 180px; }
-.diagnostic-view .diagnostic-col-status { width: 82px; }
+.diagnostic-view .diagnostic-col-status { width: 140px; }
 .diagnostic-view .diagnostic-col-current { width: 39%; }
 
 .diagnostic-view .diagnostic-check-table th,
@@ -345,6 +345,10 @@
 .exact-page.diagnostic-view :deep(.runtime-device-table) {
   width: auto;
   margin: 12px;
+  border: 0;
+  border-top: 1px solid var(--diagnostic-line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .exact-page.diagnostic-view :deep(.diagnostic-detail-grid > .diagnostic-sub-card) {
@@ -386,9 +390,10 @@
 .exact-page.diagnostic-view :deep(.modao-risk-item) {
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid var(--diagnostic-line);
-  border-radius: 5px;
-  background: #142033;
+  border: 0;
+  border-left: 2px solid #415570;
+  border-radius: 0;
+  background: rgb(112 137 169 / 5%);
   overflow-wrap: anywhere;
 }
 
@@ -480,10 +485,8 @@
   background: #203048;
 }
 
-/* 主诊断列表的空 tone 原本代表警告；仅区分风险色，不改变状态计算。 */
-.diagnostic-view .diagnostic-check-table .status-badge:not(.is-online, .is-error),
 .exact-page.diagnostic-view :deep(.status-badge.is-warning) {
-  color: #f4bf7b;
+  color: #fed7aa;
   background: #493821;
 }
 
@@ -575,9 +578,149 @@
 .exact-page.diagnostic-view :deep(select:focus-visible),
 .exact-page.diagnostic-view :deep(summary:focus-visible),
 .exact-page.diagnostic-view :deep(pre:focus-visible),
-.diagnostic-view .diagnostic-table-scroll:focus-visible {
+.exact-page.diagnostic-view :deep(section[tabindex]:focus-visible),
+.diagnostic-view .diagnostic-table-scroll:focus-visible,
+.diagnostic-view .diagnostic-check-table tr:focus-visible {
   outline: 2px solid #79b0ff;
   outline-offset: -2px;
+}
+
+.diagnostic-view .diagnostic-risk-counts {
+  display: flex;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  border-bottom: 1px solid var(--diagnostic-line);
+  font-size: 13px;
+}
+
+.diagnostic-view .diagnostic-risk-counts strong {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.diagnostic-view .diagnostic-risk-counts .is-error { color: #fecaca; }
+.diagnostic-view .diagnostic-risk-counts .is-warning { color: #fed7aa; }
+.diagnostic-view .diagnostic-risk-counts .is-unknown { color: #bccce2; }
+
+.diagnostic-view .diagnostic-priority {
+  display: flex;
+  min-width: 0;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 16px;
+  border-left: 3px solid #7089a9;
+  background: rgb(112 137 169 / 6%);
+}
+
+.diagnostic-view .diagnostic-priority.is-error { border-left-color: var(--app-color-error); }
+.diagnostic-view .diagnostic-priority.is-warning { border-left-color: var(--app-color-warning); }
+
+.diagnostic-view .diagnostic-priority-copy {
+  min-width: 0;
+  flex: 1 1 340px;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-priority-copy p {
+  max-width: 80ch;
+  margin: 0 0 6px;
+}
+
+.diagnostic-view .diagnostic-priority-copy p:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.diagnostic-view .diagnostic-recovery-actions,
+.exact-page.diagnostic-view :deep(.diagnostic-detail-recovery) {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-recovery) {
+  padding: 12px 16px;
+  border-top: 1px solid var(--diagnostic-line);
+}
+
+.diagnostic-view .diagnostic-source-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-row-reason {
+  margin: 0 0 6px;
+}
+
+.diagnostic-view .diagnostic-row-source {
+  margin-top: 6px;
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.diagnostic-view .diagnostic-row-source > summary {
+  color: #aecdff;
+  cursor: pointer;
+}
+
+.diagnostic-view .diagnostic-row-source[open] > summary {
+  margin-bottom: 8px;
+}
+
+.diagnostic-view .diagnostic-check-table td .status-badge {
+  margin: 0 4px 4px 0;
+}
+
+.diagnostic-view .diagnostic-source-ledger {
+  padding: 12px 16px;
+  border-top: 1px solid var(--diagnostic-line);
+}
+
+.diagnostic-view .diagnostic-source-ledger summary {
+  cursor: pointer;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-panel .operation-source) {
+  margin: 0 16px;
+}
+
+.exact-page.diagnostic-view :deep(.diagnostic-detail-panel h2 small) {
+  display: inline-block;
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view :deep(.status-badge.is-unknown) {
+  color: #c4d4e8;
+  background: #203048;
+}
+
+/* 单设备查询保留原绑定与禁用条件，但不与完整诊断争夺主操作。 */
+.exact-page.diagnostic-view :deep(.runtime-device-toolbar button.primary:not(:disabled)) {
+  border-color: #3b5574;
+  color: var(--diagnostic-text);
+  background: transparent;
+}
+
+.exact-page.diagnostic-view :deep(.runtime-device-toolbar button.primary:not(:disabled):hover) {
+  border-color: #6387b4;
+  background: #203048;
 }
 
 @media (max-width: 1440px) {
@@ -623,6 +766,30 @@
   }
 }
 
+@media (max-width: 900px) {
+  .exact-page.diagnostic-view {
+    padding: 16px;
+  }
+
+  .diagnostic-view .diagnostic-heading-copy,
+  .diagnostic-view .heading-actions {
+    flex-basis: 100%;
+  }
+
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-grid),
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-grid.compact-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .diagnostic-view .diagnostic-priority-copy {
+    flex-basis: auto;
+  }
+
+  .diagnostic-view .diagnostic-priority {
+    flex-direction: column;
+  }
+}
+
 @media (max-width: 760px) {
   .exact-page.diagnostic-view {
     padding: 18px 14px 20px;
@@ -659,5 +826,36 @@
 
   .exact-page.diagnostic-view :deep(.runtime-device-toolbar select) {
     width: min(230px, 100%);
+  }
+}
+
+@media (max-width: 640px) {
+  .exact-page.diagnostic-view :deep(button) {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 440px) {
+  .diagnostic-view .diagnostic-summary-rail,
+  .exact-page.diagnostic-view :deep(.diagnostic-detail-cards),
+  .exact-page.diagnostic-view :deep(.runtime-summary-cards),
+  .exact-page.diagnostic-view :deep(.modao-property-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .diagnostic-view .diagnostic-summary-item:nth-child(n) {
+    border-right: 0;
+  }
+
+  .diagnostic-view .diagnostic-summary-item + .diagnostic-summary-item {
+    border-top: 1px solid var(--diagnostic-line);
+  }
+
+  .diagnostic-view .diagnostic-risk-counts {
+    gap: 8px 16px;
+  }
+
+  .diagnostic-view .diagnostic-recovery-actions {
+    width: 100%;
   }
 }

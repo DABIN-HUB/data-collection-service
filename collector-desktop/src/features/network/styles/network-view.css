@@ -13,7 +13,7 @@
   overflow: hidden;
   color: var(--network-text);
   background: transparent;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -151,15 +151,13 @@
   background: rgba(80, 105, 135, 0.2);
 }
 
-.page-root.exact-page.network-view button.primary,
-.page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary) {
+.page-root.exact-page.network-view button.primary {
   border-color: var(--app-color-primary);
   color: #fff;
   background: var(--app-color-primary);
 }
 
-.page-root.exact-page.network-view button.primary:not(:disabled):hover,
-.page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary:not(:disabled):hover) {
+.page-root.exact-page.network-view button.primary:not(:disabled):hover {
   border-color: var(--app-color-primary-hover);
   color: #fff;
   background: var(--app-color-primary-hover);
@@ -186,7 +184,7 @@
   padding: 16px;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px 24px;
 }
 
 .page-root.exact-page.network-view .network-field {
@@ -354,11 +352,10 @@
 
 .page-root.exact-page.network-view .network-pending-note {
   margin: 0 16px 16px;
-  padding: 12px 16px;
-  border: 1px solid #3b5574;
-  border-radius: 6px;
+  padding: 12px 0 0;
+  border: 0;
   color: var(--network-muted);
-  background: rgba(37, 54, 76, 0.34);
+  background: transparent;
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -480,14 +477,18 @@
   white-space: nowrap;
 }
 
-.page-root.exact-page.network-view .network-history-table td.exact-empty {
-  display: table-cell;
-  height: 92px;
-  min-height: 0;
-  padding: 22px 16px;
+.page-root.exact-page.network-view .network-history-empty {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  min-height: 88px;
+  margin: 0;
+  padding: 16px;
+  align-items: center;
+  border-top: 1px solid #2e4057;
   color: var(--network-muted);
-  text-align: left;
-  vertical-align: middle;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .page-root.exact-page.network-view .status-badge {
@@ -620,6 +621,7 @@
 .page-root.exact-page.network-view button:focus-visible,
 .page-root.exact-page.network-view input:focus-visible,
 .page-root.exact-page.network-view select:focus-visible,
+.page-root.exact-page.network-view .network-telemetry-tools > summary:focus-visible,
 .page-root.exact-page.network-view [tabindex]:focus-visible,
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel button:focus-visible),
 .page-root.exact-page.network-view :deep(.edge-telemetry-panel input:focus-visible),
@@ -660,14 +662,23 @@
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 900px) {
   .page-root.exact-page.network-view { padding: 16px; }
 
-  .page-root.exact-page.network-view .network-target-field { flex-basis: 100%; }
+  .page-root.exact-page.network-view .network-condition-fields .network-condition-group { flex: 0 1 100%; }
 
-  .page-root.exact-page.network-view .network-device-field {
-    min-width: min(180px, 100%);
-    flex: 1 1 180px;
+  .page-root.exact-page.network-view .network-target-group .network-group-fields {
+    flex-direction: column;
+  }
+
+  .page-root.exact-page.network-view .network-target-field {
+    width: 100%;
+    flex: 0 1 auto;
+  }
+
+  .page-root.exact-page.network-view button:not(.el-button),
+  .page-root.exact-page.network-view :deep(.edge-telemetry-panel button:not(.el-button)) {
+    min-height: 40px;
   }
 
   .page-root.exact-page.network-view .network-toolbar-actions {
@@ -682,5 +693,110 @@
   .page-root.exact-page.network-view :deep(.edge-json-grid),
   .page-root.exact-page.network-view :deep(.edge-result-meta) {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-root.exact-page.network-view .network-result-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.page-root.exact-page.network-view .heading-online.is-read-error {
+  border-color: #754a51;
+  color: #fecaca;
+  background: #432d3c;
+}
+
+.page-root.exact-page.network-view .heading-online.is-read-error i {
+  background: currentColor;
+}
+
+.page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary) {
+  border-color: #9b704a;
+  color: #fed7aa;
+  background: transparent;
+}
+
+.page-root.exact-page.network-view :deep(.edge-telemetry-panel button.primary:not(:disabled):hover) {
+  border-color: #c8945f;
+  color: #fed7aa;
+  background: rgba(155, 112, 74, 0.14);
+}
+
+.page-root.exact-page.network-view .network-condition-group {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.page-root.exact-page.network-view .network-target-group {
+  flex: 1 1 494px;
+}
+
+.page-root.exact-page.network-view .network-parameter-group {
+  flex: 0 1 444px;
+}
+
+.page-root.exact-page.network-view .network-condition-group legend {
+  margin-bottom: 12px;
+  padding: 0;
+  color: var(--network-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.page-root.exact-page.network-view .network-group-fields {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.page-root.exact-page.network-view .network-export-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--network-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.page-root.exact-page.network-view .network-telemetry-tools {
+  min-width: 0;
+  border-top: 1px solid #2e4057;
+}
+
+.page-root.exact-page.network-view .network-telemetry-tools > summary {
+  min-height: 40px;
+  padding: 12px 0;
+  color: var(--network-text);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.page-root.exact-page.network-view .network-telemetry-tools > summary span {
+  margin-left: 8px;
+  color: var(--network-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+@media (max-width: 450px) {
+  .page-root.exact-page.network-view { padding: 12px; }
+
+  .page-root.exact-page.network-view .network-summary-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card {
+    border-top: 1px solid #34465f;
+    border-right: 0;
+  }
+
+  .page-root.exact-page.network-view .network-summary-cards .exact-diagnostic-card:first-child {
+    border-top: 0;
   }
 }

@@ -12,9 +12,12 @@
 }
 
 .exact-page.cloud-view {
+  width: 100%;
+  min-width: 0;
   padding: 22px 26px 26px;
   gap: 16px;
   background: transparent;
+  overflow: auto;
 }
 
 .cloud-view .cloud-heading {
@@ -55,6 +58,7 @@
 
 .cloud-view .heading-actions {
   min-width: 0;
+  max-width: 100%;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
@@ -67,6 +71,7 @@
 .cloud-view .heading-note {
   color: var(--cloud-muted);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .exact-page.cloud-view button:not(.el-button) {
@@ -143,6 +148,10 @@
 .exact-page.cloud-view input:focus-visible,
 .exact-page.cloud-view select:focus-visible,
 .cloud-view .cloud-table-scroll:focus-visible,
+.cloud-view .json-view:focus-visible,
+.cloud-detail-drawer .json-view:focus-visible,
+.cloud-view a:focus-visible,
+.cloud-view [tabindex="-1"]:focus-visible,
 .cloud-view summary:focus-visible,
 .cloud-detail-drawer summary:focus-visible {
   outline: 2px solid var(--app-control-border-focus);
@@ -151,12 +160,74 @@
 
 .cloud-view .cloud-body {
   gap: 16px;
-  overflow-x: hidden;
+  overflow: visible;
+  flex: 0 0 auto;
   scrollbar-gutter: stable;
 }
 
 .cloud-view .cloud-body > * {
+  min-width: 0;
   flex: 0 0 auto;
+}
+
+.cloud-view .cloud-risk-overview {
+  display: flex;
+  min-width: 0;
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  border-left: 2px solid #71849d;
+  background: #192637;
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-risk-overview > div:first-child {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.cloud-view .cloud-risk-overview strong {
+  color: var(--cloud-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cloud-view .cloud-risk-overview p,
+.cloud-view .modao-risk-item p {
+  max-width: 80ch;
+  margin: 4px 0;
+  color: var(--cloud-text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-risk-overview[data-risk="known"] {
+  border-left-color: var(--cloud-warning);
+  background: #29251f;
+}
+
+.cloud-view .cloud-read-links {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.cloud-view .cloud-read-links a,
+.cloud-view .modao-risk-item a {
+  display: inline-flex;
+  min-height: 34px;
+  max-width: 100%;
+  align-items: center;
+  color: #b6cef0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .modao-risk-item a + a {
+  margin-left: 16px;
 }
 
 .cloud-view .exact-surface,
@@ -191,6 +262,7 @@
   margin: 0 0 12px;
   padding: 0 0 10px;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   border-bottom: 1px solid var(--cloud-line-soft);
 }
@@ -243,7 +315,15 @@
   border: 1px solid #415570;
   border-radius: 5px;
   background: #202d3f;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 400;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-state small {
+  color: var(--cloud-muted);
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -270,6 +350,25 @@
 
 .cloud-view[data-state="DEGRADED"] .exact-cloud-status {
   border-left: 2px solid #8a6c47;
+}
+
+.cloud-view[data-read-state="error"] .cloud-state,
+.cloud-view[data-read-state="error"] .cloud-status-title {
+  color: var(--cloud-danger);
+}
+
+.cloud-view[data-read-state="degraded"] .cloud-state,
+.cloud-view[data-read-state="degraded"] .cloud-status-title {
+  color: var(--cloud-warning);
+}
+
+.cloud-view[data-read-state="ready"][data-business-status="DOWN" i]:not([data-state="DISABLED"]) .cloud-state,
+.cloud-view[data-read-state="ready"][data-business-status="DOWN" i]:not([data-state="DISABLED"]) .cloud-status-title,
+.cloud-view[data-read-state="ready"][data-business-status="ERROR" i]:not([data-state="DISABLED"]) .cloud-state,
+.cloud-view[data-read-state="ready"][data-business-status="ERROR" i]:not([data-state="DISABLED"]) .cloud-status-title,
+.cloud-view[data-read-state="ready"][data-business-status="FAILED" i]:not([data-state="DISABLED"]) .cloud-state,
+.cloud-view[data-read-state="ready"][data-business-status="FAILED" i]:not([data-state="DISABLED"]) .cloud-status-title {
+  color: var(--cloud-danger);
 }
 
 .cloud-view .cloud-status-content small {
@@ -358,7 +457,6 @@
   min-width: 0;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0;
-  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -406,6 +504,7 @@
 }
 
 .cloud-view .cloud-table-scroll {
+  min-width: 0;
   max-width: 100%;
   max-height: 360px;
   overflow: auto;
@@ -544,6 +643,7 @@
   min-width: 0;
   padding: 10px 12px;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 12px;
   border: 0;
   border-left: 2px solid #71849d;
@@ -554,8 +654,12 @@
 .cloud-view .modao-risk-item strong {
   flex-shrink: 0;
   color: var(--cloud-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
+}
+.cloud-view .modao-risk-item > div {
+  min-width: 0;
+  flex: 1 1 280px;
 }
 
 .cloud-view .modao-risk-item small {
@@ -666,6 +770,20 @@
   }
 }
 
+@media (max-width: 900px) {
+  .cloud-view .cloud-strategy-grid,
+  .cloud-detail-drawer .modao-property-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .exact-page.cloud-view button:not(.el-button),
+  .cloud-view .cloud-read-links a,
+  .cloud-view .modao-risk-item a {
+    min-height: 40px;
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
 @media (max-width: 760px) {
   .exact-page.cloud-view {
     padding: 16px;
@@ -708,5 +826,22 @@
 
   .cloud-view .cloud-management-actions > .cloud-test-result {
     flex-basis: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .cloud-view .cloud-metric-rail,
+  .cloud-view .cloud-stat-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cloud-view .cloud-metric-rail .modao-property-item,
+  .cloud-view .cloud-metric-rail .modao-property-item:nth-child(4n) {
+    padding-left: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--cloud-line-soft);
+  }
+  .cloud-view .cloud-status-title {
+    font-size: 18px;
+    overflow-wrap: anywhere;
   }
 }

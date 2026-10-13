@@ -19,7 +19,7 @@
     </div>
     <p v-if="overviewError" class="runtime-status-error" role="alert">运行快照不可用/已过期：{{ overviewError }}</p>
     <div class="exact-diagnostic-cards runtime-summary-cards">
-      <div class="exact-diagnostic-card"><span>配置设备</span><strong>{{ runtimeSummary.total }}</strong></div>
+      <div class="exact-diagnostic-card"><span>配置设备</span><strong>{{ inventoryCount === undefined ? runtimeSummary.total : inventoryCount ?? '未知' }}</strong></div>
       <div class="exact-diagnostic-card"><span>正在运行</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.running }}</strong></div>
       <div class="exact-diagnostic-card"><span>连接正常</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.connected }}</strong></div>
       <div class="exact-diagnostic-card"><span>异常/退化</span><strong>{{ overviewError ? '未知/过期' : runtimeSummary.abnormal }}</strong></div>
@@ -65,6 +65,7 @@ import { buildDeviceRuntimeSummary, buildUnavailableRunningFlagDetail, normalize
 const props = defineProps<{
   devices: DeviceInfo[];
   selectedDeviceId?: string;
+  inventoryCount?: number | null;
 }>();
 const emit = defineEmits<{
   (event: "select-device", deviceId: string): void;

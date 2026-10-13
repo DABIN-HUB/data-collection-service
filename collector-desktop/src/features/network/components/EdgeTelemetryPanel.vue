@@ -134,6 +134,9 @@ const resultText = computed(() => {
   if (attributedResult.value?.error) {
     return `提交失败：${attributedResult.value.error}`;
   }
+  if (!attributedResult.value) {
+    return submitting.value ? "提交中，响应计数未知" : normalized.message || "尚未提交边缘遥测";
+  }
   if (!normalized.gatewayId && !normalized.message) {
     return "等待提交";
   }

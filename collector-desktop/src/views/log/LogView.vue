@@ -4,7 +4,7 @@
       <div>
         <div class="heading-title-line">
           <h1>日志</h1>
-          <span class="log-result-badge">{{ filteredLogs.length }} 条 · 错误 {{ logSummary.error }}</span>
+          <span class="log-result-badge">{{ hasLogLastGoodForCurrentServerContext ? `${filteredLogs.length} 条 · 错误 ${logSummary.error}` : '数量未知 · 当前条件尚未成功读取' }}</span>
         </div>
         <p>查询运行记录、定位异常并导出当前结果。</p>
       </div>
@@ -72,18 +72,32 @@
             <button type="button" :disabled="exceptionLoading" @click="searchLatestExceptionLogs">最近异常定位</button>
           </div>
           <div class="log-action-group" role="group" aria-label="导出当前结果">
-            <button type="button" @click="downloadLogs('txt')">导出文本</button>
-            <button type="button" @click="downloadLogs('json')">导出 JSON</button>
+            <button type="button" :disabled="!canExportLogs" aria-describedby="log-export-note" @click="downloadLogs('txt')">导出文本</button>
+            <button type="button" :disabled="!canExportLogs" aria-describedby="log-export-note" @click="downloadLogs('json')">导出 JSON</button>
           </div>
         </div>
+        <p id="log-export-note" class="log-export-note">{{ logExportNote }}</p>
       </section>
-      <el-alert v-if="logReadStatusText" class="log-read-status" :title="logReadStatusText" :type="logReadStatusType" :closable="false" />
+      <el-alert v-if="logReadStatusText" class="log-read-status" :title="logReadStatusText" :type="logReadStatusType" :closable="false" show-icon>
+        <div class="log-recovery-actions">
+          <button v-if="hasCurrentLogError" type="button" :disabled="logQueryDisabled" @click="refreshLogs">重试读取</button>
+          <RouterLink to="/diagnostic">查看接口 / 权限状态</RouterLink>
+          <span>只读诊断入口，不修改访问凭据。</span>
+        </div>
+      </el-alert>
+      <OperationSourceStatus
+        :state="logSourceState"
+        :source="logSourceText"
+        :last-attempt-at="logDisplayedLastAttemptAt"
+        :last-success-at="hasLogLastGoodForCurrentServerContext ? logLastSuccessAt : null"
+        :detail="logSourceDetail"
+      />
 
-      <div class="exact-diagnostic-cards log-summary-cards" aria-label="当前可见日志摘要">
-        <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ logSummary.total }}</strong></div>
-        <div class="exact-diagnostic-card log-summary-error"><span>错误日志</span><strong>{{ logSummary.error }}</strong></div>
-        <div class="exact-diagnostic-card log-summary-warn"><span>警告日志</span><strong>{{ logSummary.warn }}</strong></div>
-        <div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ logSummary.loggerCount }} / {{ logSummary.threadCount }}</strong></div>
+      <div class="exact-diagnostic-cards log-summary-cards" :class="{ 'is-unknown': !hasLogLastGoodForCurrentServerContext }" aria-label="当前条件的可见日志摘要">
+        <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.total : '未知' }}</strong></div>
+        <div class="exact-diagnostic-card log-summary-error"><span>错误日志</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.error : '未知' }}</strong></div>
+        <div class="exact-diagnostic-card log-summary-warn"><span>警告日志</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.warn : '未知' }}</strong></div>
+        <div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ hasLogLastGoodForCurrentServerContext ? `${logSummary.loggerCount} / ${logSummary.threadCount}` : '未知' }}</strong></div>
       </div>
 
       <section class="exact-surface modao-log-panel" aria-labelledby="log-stream-title">
@@ -118,10 +132,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { useRoute } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 
+import { ApiRequestError } from "@/api/http";
 import { getExceptionStats } from "@/api/monitor.api";
 import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
+import OperationSourceStatus from "@/components/ui/OperationSourceStatus.vue";
 import {
   buildLogExportFilename,
   buildLogQueryParams,
@@ -162,8 +178,13 @@ const loading = ref(false);
 const error = ref("");
 const exceptionLoading = ref(false);
 const pendingLogQueryContext = ref<LogServerQueryContext | null>(null);
+const pendingLogAttemptAt = ref<number | null>(null);
 const lastSuccessfulLogServerContext = ref<LogServerQueryContext | null>(null);
 const logLastSuccessAt = ref<number | null>(null);
+// 仅供呈现：尝试时间与访问分类也受原请求所有权约束，不另建日志缓存。
+const lastAttemptedLogServerContext = ref<LogServerQueryContext | null>(null);
+const logLastAttemptAt = ref<number | null>(null);
+const logFailureHttpStatus = ref<number | null>(null);
 let logTimer: number | null = null;
 
 const logQueryOwner = createLatestRequestOwner(isSameLogServerQueryContext);
@@ -183,20 +204,59 @@ const logQueryDisabled = computed(() => shouldDisableLogSubmit(
   currentLogServerQueryContext()
 ));
 const hasLogLastGoodForCurrentServerContext = computed(() => hasLastGoodForContext(lastSuccessfulLogServerContext.value, currentLogServerQueryContext(), isSameLogServerQueryContext));
+const hasCurrentLogAttempt = computed(() => isSameLogServerQueryContext(lastAttemptedLogServerContext.value, currentLogServerQueryContext()));
+const isCurrentLogLoading = computed(() => loading.value && isSameLogServerQueryContext(pendingLogQueryContext.value, currentLogServerQueryContext()));
+const logDisplayedLastAttemptAt = computed(() => isCurrentLogLoading.value ? pendingLogAttemptAt.value : hasCurrentLogAttempt.value ? logLastAttemptAt.value : null);
+const hasCurrentLogError = computed(() => hasCurrentLogAttempt.value && Boolean(error.value));
+const logSafeFailureText = computed(() => {
+  if (logFailureHttpStatus.value === 401 || logFailureHttpStatus.value === 403) {
+    return `权限不足（HTTP ${logFailureHttpStatus.value}），请检查接口访问权限`;
+  }
+  return "接口读取失败，请检查接口访问权限或连接";
+});
 const logReadStatusText = computed(() => buildContextualReadStatus({
-  loading: loading.value,
-  error: error.value,
+  loading: isCurrentLogLoading.value,
+  error: hasCurrentLogError.value ? logSafeFailureText.value : "",
   lastSuccessfulContext: lastSuccessfulLogServerContext.value,
   currentContext: currentLogServerQueryContext(),
   isSameContext: isSameLogServerQueryContext,
   loadingText: "日志加载中...",
   refreshingText: "日志刷新中 · 当前显示上次成功日志",
   staleText: "日志刷新失败 · 当前显示上次成功日志",
-  initialErrorPrefix: "日志加载失败",
-  lastSuccessAt: logLastSuccessAt.value
+  initialErrorPrefix: "日志加载失败"
 }));
-const logReadStatusType = computed(() => error.value && hasLogLastGoodForCurrentServerContext.value ? "warning" : "error");
-const logEmptyText = computed(() => error.value ? `日志加载失败：${error.value}` : "当前条件下没有可显示日志");
+const logReadStatusType = computed(() => isCurrentLogLoading.value ? "info" : hasLogLastGoodForCurrentServerContext.value ? "warning" : "error");
+const logEmptyText = computed(() => {
+  if (!hasLogLastGoodForCurrentServerContext.value) {
+    return isCurrentLogLoading.value ? "当前条件的日志加载中" : "当前条件尚未成功加载日志";
+  }
+  return logs.value.length === 0 ? "本次成功查询暂无日志记录" : "当前结果中没有匹配设备或线程等筛选条件的日志";
+});
+const canExportLogs = computed(() => hasLogLastGoodForCurrentServerContext.value && filteredLogs.value.length > 0);
+const logExportNote = computed(() => {
+  if (!hasLogLastGoodForCurrentServerContext.value) return "当前条件尚未成功读取，无当前可导出日志。";
+  if (!filteredLogs.value.length) return "当前可见结果为空，暂无可导出日志。";
+  if (hasCurrentLogError.value || isCurrentLogLoading.value) return "导出显示中的上次成功结果，仅包含当前本地筛选后的日志。";
+  return "导出当前可见结果，仅包含当前本地筛选后的日志。";
+});
+const logSourceState = computed<"unknown" | "empty" | "loading" | "ready" | "degraded" | "error">(() => {
+  if (isCurrentLogLoading.value) return "loading";
+  if (hasCurrentLogError.value) return hasLogLastGoodForCurrentServerContext.value ? "degraded" : "error";
+  if (!hasLogLastGoodForCurrentServerContext.value) return "unknown";
+  return logs.value.length === 0 ? "empty" : "ready";
+});
+const logSourceText = computed(() => {
+  const context = currentLogServerQueryContext();
+  const level = ({ ERROR: "错误", WARN: "警告", INFO: "信息", DEBUG: "调试" } as Record<string, string>)[context.level] || (context.level ? "指定级别" : "全部级别");
+  return `运行日志接口 · ${level}，记录器${context.logger ? '已设置' : '不限'}，关键字${context.keyword ? '已设置' : '不限'}，最多 ${context.limit ?? '未指定'} 条`;
+});
+const logSourceDetail = computed(() => {
+  if (!hasLogLastGoodForCurrentServerContext.value) {
+    return logs.value.length ? "当前服务端条件尚未成功读取；此前返回的可见行不代表当前条件的查询结果。" : "当前服务端条件尚未成功读取，日志数量与级别分布未知。";
+  }
+  if (hasCurrentLogError.value || isCurrentLogLoading.value) return "当前显示同一服务端条件的上次成功数据；设备与线程仍只筛选这些返回结果。";
+  return "时间属于当前服务端条件的成功读取；设备与线程为本地筛选，自动刷新 5 秒是设置间隔，不是数据更新时间。";
+});
 
 async function loadLogs(options: { fromTimer?: boolean } = {}) {
   const requestContext = currentLogServerQueryContext();
@@ -213,6 +273,8 @@ async function loadLogs(options: { fromTimer?: boolean } = {}) {
   loading.value = true;
   error.value = "";
   pendingLogQueryContext.value = requestContext;
+  const attemptAt = Date.now();
+  pendingLogAttemptAt.value = attemptAt;
   try {
     const nextLogs = normalizeLogRows(await getOpsLogs(buildLogQueryParams(requestContext)));
     if (!logQueryOwner.canCommit(ticket, currentLogServerQueryContext())) {
@@ -221,6 +283,9 @@ async function loadLogs(options: { fromTimer?: boolean } = {}) {
     logs.value = nextLogs;
     lastSuccessfulLogServerContext.value = requestContext;
     logLastSuccessAt.value = Date.now();
+    lastAttemptedLogServerContext.value = requestContext;
+    logLastAttemptAt.value = attemptAt;
+    logFailureHttpStatus.value = null;
   } catch (caught) {
     if (!logQueryOwner.canCommit(ticket, currentLogServerQueryContext())) {
       return;
@@ -229,10 +294,14 @@ async function loadLogs(options: { fromTimer?: boolean } = {}) {
       logs.value = [];
     }
     error.value = caught instanceof Error ? caught.message : "运行日志加载失败";
+    lastAttemptedLogServerContext.value = requestContext;
+    logLastAttemptAt.value = attemptAt;
+    logFailureHttpStatus.value = caught instanceof ApiRequestError ? caught.httpStatus ?? null : null;
   } finally {
     if (logQueryOwner.isLatest(ticket)) {
       loading.value = false;
       pendingLogQueryContext.value = null;
+      pendingLogAttemptAt.value = null;
     }
   }
 }
@@ -414,6 +483,7 @@ onBeforeUnmount(() => {
   loading.value = false;
   exceptionLoading.value = false;
   pendingLogQueryContext.value = null;
+  pendingLogAttemptAt.value = null;
   if (logTimer) {
     clearInterval(logTimer);
     logTimer = null;
