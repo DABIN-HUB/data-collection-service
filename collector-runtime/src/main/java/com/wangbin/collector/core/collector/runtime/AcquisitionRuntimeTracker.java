@@ -200,6 +200,26 @@ public class AcquisitionRuntimeTracker {
         };
     }
 
+    /** 订阅确认只更新有效期，不刷新最后采样时间或制造一次采集成功。 */
+    public void recordEventLease(String deviceId, long generation, String pointId, long expiresAt) {
+        Window window = windows.get(deviceId);
+        if (window == null || window.generation != generation) return;
+        synchronized (window) {
+            if (!taskGuard.isCurrent(deviceId, generation)) return;
+            PointFact fact = window.points.get(pointId);
+            if (fact != null) fact.eventLeaseExpiresAt = Math.max(0L, expiresAt);
+        }
+    }
+
+    public long eventLeaseExpiresAt(String deviceId, long generation, String pointId) {
+        Window window = windows.get(deviceId);
+        if (window == null || window.generation != generation) return 0L;
+        synchronized (window) {
+            PointFact fact = window.points.get(pointId);
+            return fact != null && taskGuard.isCurrent(deviceId, generation) ? fact.eventLeaseExpiresAt : 0L;
+        }
+    }
+
     /** 启动失败只能清理自己的代次，不能覆盖已经启动的新窗口。 */
     public void clearIfGeneration(String deviceId, long generation) {
         windows.computeIfPresent(deviceId, (ignored, window) -> window.generation == generation ? null : window);
@@ -368,6 +388,7 @@ public class AcquisitionRuntimeTracker {
         private final String dataType;
         private boolean polling;
         private boolean event;
+        private long eventLeaseExpiresAt;
         private long lastAttemptAt;
         private long lastObservedAt;
         private long lastFailureAt;

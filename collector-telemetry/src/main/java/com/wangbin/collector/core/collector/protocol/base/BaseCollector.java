@@ -79,6 +79,14 @@ public abstract class BaseCollector implements ProtocolCollector,
         }
     }
 
+    /** 订阅 ACK 只更新原代次的有效期，不计为新的点位采样。 */
+    protected void reportEventLease(DataPoint point, long generation, long expiresAt) {
+        if (acquisitionRuntimeTracker != null && deviceInfo != null && point != null) {
+            acquisitionRuntimeTracker.recordEventLease(deviceInfo.getDeviceId(), generation,
+                    point.getPointId(), expiresAt);
+        }
+    }
+
     @Autowired(required = false)
     public void setDeviceDataActivityReporter(DeviceDataActivityReporter reporter) {
         this.deviceDataActivityReporter = reporter;
@@ -419,9 +427,8 @@ protected volatile boolean connected = false;
             return result;
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
-            lastError = e.getMessage();
+            recordOperationFailure(e, point);
             log.error("点位写入失败: {}.{}", deviceInfo.getDeviceId(), point.getPointName(), e);
-            recordException(e, point);
             throw new CollectorException("点位写入失败", deviceInfo.getDeviceId(),
                     point.getPointId(), DataQuality.DEVICE_ERROR);
         }
@@ -486,9 +493,8 @@ protected volatile boolean connected = false;
             return results;
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
-            lastError = e.getMessage();
+            recordOperationFailure(e, null);
             log.error("批量点位写入失败: {}", deviceInfo.getDeviceId(), e);
-            recordException(e, null);
             throw new CollectorException("批量点位写入失败", deviceInfo.getDeviceId(),
                     null, DataQuality.DEVICE_ERROR);
         }
@@ -648,9 +654,8 @@ protected volatile boolean connected = false;
             return result;
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
-            lastError = e.getMessage();
+            recordOperationFailure(e, null);
             log.error("设备命令执行失败: {}, 命令: {}", deviceInfo.getDeviceId(), command, e);
-            recordException(e, null);
             throw new CollectorException("设备命令执行失败", deviceInfo.getDeviceId(),
                     null, DataQuality.DEVICE_ERROR);
         }
@@ -834,6 +839,59 @@ protected volatile boolean connected = false;
         invocationConfigVersion.set(runtimeConfigVersion);
     }
 
+    /** 异常或取消时清除本线程的调用结果和配置版本，不保留上一轮数据。 */
+    protected void clearInvocationProcessResults() {
+        invocationProcessResults.remove();
+        invocationConfigVersion.remove();
+    }
+
+    /** 读取结束后释放调用版本；成功结果留给同线程缓存切面消费。 */
+    protected void finishInvocationProcessResults() {
+        invocationConfigVersion.remove();
+    }
+
+    /** 自定义协议读取共用交接契约，不再次转换或覆盖质量处理器的判断。 */
+    protected ProcessResult completeReadProcessResult(DataPoint point, ProcessResult result,
+                                                       Object rawValue, long requestedAt) {
+        ProcessResult snapshot = result.snapshot();
+        snapshot.setRawValue(rawValue);
+        enrichTelemetryMetadata(snapshot, rawValue, result.getProcessedValue(),
+                readSampleAt(point, requestedAt), readSampleSource(point));
+        lastProcessResults.put(point.getPointId(), snapshot);
+        return snapshot.snapshot();
+    }
+
+    /** 在发送协议请求前核对点位归属，设备和点位的独立身份不能被地址替代。 */
+    protected void validateReadPointOwnership(DataPoint point) {
+        if (point == null || point.getPointId() == null || point.getPointId().isBlank()) {
+            throw new IllegalArgumentException("读取点位缺少 pointId");
+        }
+        if (deviceInfo == null || !Objects.equals(deviceInfo.getDeviceId(), point.getDeviceId())) {
+            throw new IllegalArgumentException("读取点位不属于当前设备");
+        }
+    }
+
+    /** 部分批读失败保留异常类别，不能以缺值或旧缓存冒充本轮成功。 */
+    protected ProcessResult failedProtocolReadResult(Throwable failure) {
+        DataQuality quality = DataQuality.VALUE_INVALID;
+        String errorCode = "PROTOCOL_READ_ERROR";
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.net.SocketTimeoutException
+                    || cause instanceof java.util.concurrent.TimeoutException) {
+                quality = DataQuality.TIMEOUT;
+                errorCode = "TIMEOUT";
+                break;
+            }
+            if (cause instanceof java.io.IOException) {
+                quality = DataQuality.DEVICE_ERROR;
+                errorCode = "COMMUNICATION_ERROR";
+            }
+        }
+        ProcessResult result = ProcessResult.error(null, "本轮协议读取失败: " + errorCode, quality);
+        result.setErrorCode(errorCode);
+        return result;
+    }
+
     protected void addInvocationProcessResult(String pointId, ProcessResult result) {
         Map<String, ProcessResult> copy = new LinkedHashMap<>();
         Map<String, ProcessResult> previous = invocationProcessResults.get();
@@ -964,6 +1022,12 @@ protected volatile boolean connected = false;
         if (version == null) version = runtimeConfigVersion;
         if (version != null) result.addMetadata(
                 com.wangbin.collector.core.processor.ProcessResultMetadataKeys.CONFIG_VERSION, version);
+    }
+
+    /** 累计失败由模板保留；有会话身份的协议可原子约束当前错误及外部异常副作用。 */
+    protected void recordOperationFailure(Throwable throwable, DataPoint point) {
+        lastError = throwable.getMessage();
+        recordException(throwable, point);
     }
 
     /**

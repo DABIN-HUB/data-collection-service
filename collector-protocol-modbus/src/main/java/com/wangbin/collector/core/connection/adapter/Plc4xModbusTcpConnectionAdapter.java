@@ -2,12 +2,26 @@ package com.wangbin.collector.core.connection.adapter;
 
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.enums.ConnectionStatus;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.plc4x.java.DefaultPlcDriverManager;
 import org.apache.plc4x.java.api.PlcConnection;
+import org.apache.plc4x.java.api.PlcDriver;
+import org.apache.plc4x.java.modbus.readwrite.ModbusTcpADU;
+import org.apache.plc4x.java.modbus.tcp.ModbusTcpDriver;
+import org.apache.plc4x.java.spi.Plc4xNettyWrapper;
+import org.apache.plc4x.java.spi.connection.ProtocolStackConfigurer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /**
  * PLC4X-backed Modbus TCP 适配器.
@@ -15,7 +29,10 @@ import java.util.List;
 @Slf4j
 public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<PlcConnection> {
 
-    private PlcConnection connection;
+    private volatile PlcConnection connection;
+    private volatile PlcConnection invalidConnection;
+    private volatile BooleanSupplier connectionPermit = () -> true;
+    private ConnectionResources connectionResources;
     private String connectionString;
 
     /**
@@ -29,11 +46,43 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
      * 执行当前业务逻辑。
      */
     @Override
-    protected void doConnect() throws Exception {
+    protected synchronized void doConnect() throws Exception {
+        // 失活后的重连也先释放旧对象，不能覆盖唯一的待清理引用。
+        doDisconnect();
+        requireConnectionPermit();
         connectionString = buildConnectionString();
-        connection = new DefaultPlcDriverManager().getConnection(connectionString);
-        if (connection != null && !connection.isConnected()) {
+        PlcDriver driver = new DefaultPlcDriverManager().getDriverForUrl(connectionString);
+        if (driver instanceof ModbusTcpDriver) {
+            ConnectionResources resources = new ConnectionResources();
+            connectionResources = resources;
+            driver = new ModbusTcpDriver() {
+                @Override
+                protected ProtocolStackConfigurer<ModbusTcpADU> getStackConfigurer() {
+                    ProtocolStackConfigurer<ModbusTcpADU> original = super.getStackConfigurer();
+                    return (configuration, pipeline, authentication, passive, listeners) -> {
+                        try {
+                            return original.configurePipeline(configuration, pipeline, authentication, passive, listeners);
+                        } finally {
+                            resources.bind(pipeline);
+                        }
+                    };
+                }
+            };
+        }
+        // DriverManager.getConnection 内部就会建连，失败时无法交还已创建的资源。
+        requireConnectionPermit();
+        connection = driver.getConnection(connectionString);
+        try {
+            requireConnectionPermit();
             connection.connect();
+            invalidConnection = null;
+        } catch (Exception error) {
+            try {
+                doDisconnect();
+            } catch (Exception cleanupError) {
+                error.addSuppressed(cleanupError);
+            }
+            throw error;
         }
         setConnectionParam("connectionString", connectionString);
         log.info("PLC4X Modbus TCP 连接 已创建:{}", connectionString);
@@ -43,13 +92,62 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
      * 执行当前业务逻辑。
      */
     @Override
-    protected void doDisconnect() throws Exception {
+    protected synchronized void doDisconnect() throws Exception {
+        PlcConnection current = connection;
+        if (current == null) {
+            return;
+        }
         try {
-            if (connection != null) {
-                connection.close();
+            current.close();
+        } catch (RejectedExecutionException error) {
+            // 远端已关闭且本连接资源已释放时，PLC4X 的迟到事件投递不再有目标。
+            if (connectionResources == null || !connectionResources.isReleased()) {
+                throw error;
             }
-        } finally {
-            connection = null;
+            log.debug("PLC4X Modbus 已释放连接的事件循环已关闭：{}", getDeviceId());
+        }
+        if (connectionResources != null && connectionResources.channel != null) {
+            connectionResources.released.get(resolveRequestTimeout(), TimeUnit.MILLISECONDS);
+        }
+        connection = null;
+        connectionResources = null;
+    }
+
+    /** 只捕获本次连接的公开生命周期对象，不访问或关闭共享定时器。 */
+    private static final class ConnectionResources {
+        private volatile Channel channel;
+        private final CompletableFuture<Void> released = new CompletableFuture<>();
+
+        private void bind(ChannelPipeline pipeline) {
+            Plc4xNettyWrapper<?> wrapper = pipeline.get(Plc4xNettyWrapper.class);
+            if (wrapper == null) {
+                return;
+            }
+            channel = pipeline.channel();
+            var context = pipeline.context(wrapper);
+            // 配置阶段早于 TCP 建连；失活和初始化失败不能绕过本 wrapper 的 close。
+            channel.closeFuture().addListener(closed -> {
+                ChannelPromise promise = context.newPromise();
+                try {
+                    wrapper.close(context, promise);
+                    promise.addListener(result -> {
+                        if (result.isSuccess()) {
+                            released.complete(null);
+                        } else {
+                            released.completeExceptionally(result.cause());
+                        }
+                    });
+                } catch (Exception error) {
+                    released.completeExceptionally(error);
+                }
+            });
+        }
+
+        private boolean isReleased() {
+            Channel captured = channel;
+            return captured != null && !captured.isOpen() && captured.closeFuture().isDone()
+                    && captured.eventLoop().isShuttingDown()
+                    && released.isDone() && !released.isCompletedExceptionally();
         }
     }
 
@@ -76,9 +174,50 @@ public class Plc4xModbusTcpConnectionAdapter extends AbstractConnectionAdapter<P
         return connection;
     }
 
+    /** 许可只读所有权/代次的 volatile 状态，不取得配置锁、CM I/O 锁或采集器 monitor。 */
+    public void setConnectionPermit(BooleanSupplier permit) {
+        connectionPermit = permit != null ? permit : () -> true;
+    }
+
+    private void requireConnectionPermit() {
+        if (!connectionPermit.getAsBoolean()) throw new CancellationException("原连接所有者已退役，拒绝建连");
+    }
+
+    /** 纯状态退役可位于源提交门内；物理清理必须在 guard/config 门外。 */
+    public synchronized boolean markClientInvalid(PlcConnection expected, Throwable failure) {
+        if (expected == null || connection != expected || invalidConnection == expected) {
+            return false;
+        }
+        invalidConnection = expected;
+        status = ConnectionStatus.ERROR;
+        metrics.setStatus(status);
+        metrics.setLastError(failure.toString());
+        metrics.setLastErrorTime(System.currentTimeMillis());
+        errors.incrementAndGet();
+        return true;
+    }
+
+    public synchronized void closeInvalidClient(PlcConnection expected) throws Exception {
+        if (expected != null && connection == expected && invalidConnection == expected) doDisconnect();
+    }
+
+    /** 保留既有比较关闭入口，旧请求清理不能关闭 CM 已换出的新 client。 */
+    public boolean invalidateClient(PlcConnection expected, Throwable failure) throws Exception {
+        boolean marked = markClientInvalid(expected, failure);
+        if (marked) closeInvalidClient(expected);
+        return marked;
+    }
+
+    /** 失败交接允许刚退役的原连接，但绝不能借用已替换的新 client。 */
+    public synchronized boolean ownsClient(PlcConnection expected) {
+        return expected != null && (connection == expected
+                || (connection == null && invalidConnection == expected));
+    }
+
     @Override
     public boolean isConnected() {
-        return super.isConnected() && connection != null && connection.isConnected();
+        PlcConnection current = connection;
+        return super.isConnected() && current != null && current != invalidConnection && current.isConnected();
     }
 
     public String getConnectionString() {

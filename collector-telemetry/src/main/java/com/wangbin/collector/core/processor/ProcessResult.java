@@ -3,12 +3,20 @@ package com.wangbin.collector.core.processor;
 import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.enums.QualityEnum;
 import lombok.Data;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+import lombok.EqualsAndHashCode;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.alibaba.fastjson2.annotation.JSONField;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * 数据处理结果
@@ -53,6 +61,31 @@ public class ProcessResult implements Serializable {
     //如果你想触发事件（比如采集逻辑发现某个错误），就可以在 ProcessResult 的 metadata
     // 里提前塞入 eventTriggered=true、eventType、eventMessage 等字段，shadowManager 会识别并生成事件上报
     private Map<String, Object> metadata = new HashMap<>();
+
+    /** 仅本次在途结果的最终源提交许可，绝不进入 DTO 属性、日志、相等判断或持久缓存。 */
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @JsonIgnore
+    @JSONField(serialize = false, deserialize = false)
+    private transient Predicate<Runnable> sourceCommitGuard;
+
+    public void bindSourceCommitGuard(Predicate<Runnable> guard) {
+        sourceCommitGuard = guard;
+    }
+
+    /** 许可须同步核对并执行 action；没有许可的协议保持原有提交行为。 */
+    public boolean commitIfSourceCurrent(Runnable action) {
+        Predicate<Runnable> guard = sourceCommitGuard;
+        if (guard != null) return guard.test(action);
+        action.run();
+        return true;
+    }
+
+    public void clearSourceCommitGuard() {
+        sourceCommitGuard = null;
+    }
 
     /**
      * 创建当前组件实例。
@@ -254,6 +287,7 @@ public class ProcessResult implements Serializable {
         copy.message = message;
         copy.error = error;
         copy.errorCode = errorCode;
+        copy.sourceCommitGuard = sourceCommitGuard;
         copy.metadata = metadata == null ? new LinkedHashMap<>() : new LinkedHashMap<>(metadata);
         return copy;
     }

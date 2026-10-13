@@ -187,7 +187,10 @@ public class TelemetryPostProcessPipeline {
                 context.deviceId(), context.generation(), context.point(), context.sampleAt())) {
             throw new CancellationException("旧样本不能覆盖更新事实");
         }
-        action.run();
+        // 已在 guard/config/receipt/point 门内；源许可必须覆盖 CACHE 的最终写入而非仅入口预检。
+        if (!context.processResult().commitIfSourceCurrent(action)) {
+            throw new CancellationException("原物理采样源已失效");
+        }
     }
 
     private CompletableFuture<Boolean> executeStage(TelemetryPostProcessStage stage, TelemetryPostProcessContext context) {

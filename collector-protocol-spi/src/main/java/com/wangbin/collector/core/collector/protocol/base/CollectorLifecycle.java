@@ -52,4 +52,9 @@ public interface CollectorLifecycle {
      * 处理组件生命周期。
      */
     void destroy();
+
+    /** 仅释放该采集器实际持有的连接；资源重试不得按设备别名清理新实例。 */
+    default void releaseManagedConnection() {
+        // 不使用公共连接管理器的采集器继续由自身生命周期释放资源。
+    }
 }

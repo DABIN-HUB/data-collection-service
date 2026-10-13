@@ -19,8 +19,6 @@ import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPro
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetReadPropertyResponse;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetRemoteDevice;
-import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovPropertyRequest;
-import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetSubscribeCovRequest;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetValue;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetDeviceSnapshot;
 import com.wangbin.collector.core.collector.protocol.bacnet.domain.BacnetWritePropertyRequest;
@@ -32,11 +30,15 @@ import com.wangbin.collector.core.collector.protocol.bacnet.service.BacnetWriteR
 import com.wangbin.collector.core.collector.protocol.bacnet.util.BacnetAddressParser;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.scheduler.ProtocolPointSelectionSupport;
+import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.connection.adapter.BacnetConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
@@ -51,7 +53,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -62,7 +71,9 @@ import java.util.stream.Collectors;
 public class BacnetIpCollector extends ConnectionBackedCollector implements ProtocolPointSelectionSupport {
 
     private final Map<String, BacnetAddress> configuredAddresses = new ConcurrentHashMap<>();
-    private final Map<String, BacnetSubscriptionService.SubscriptionBinding> subscriptionBindings = new ConcurrentHashMap<>();
+    private final Map<String, CovSubscriptionBinding> subscriptionBindings = new ConcurrentHashMap<>();
+    private final Object covOwnershipLock = new Object();
+    private volatile CovCallbackBinding covCallbackBinding;
     private final AtomicInteger invokeIdSequence = new AtomicInteger(1);
     private final AtomicInteger subscriberProcessSequence = new AtomicInteger(1000);
     private final AtomicLong readPropertyMultipleFallbackCount = new AtomicLong(0);
@@ -80,8 +91,97 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     private final BacnetValueMapper valueMapper = new BacnetValueMapper();
     private final BacnetSubscriptionService subscriptionService = new BacnetSubscriptionService();
 
-    private BacnetConnectionAdapter connectionAdapter;
+    private volatile BacnetConnectionAdapter connectionAdapter;
     private volatile int requestTimeoutMs = 5000;
+    private final CollectionTaskGuard covTaskGuard;
+    private final ScheduledExecutorService covScheduler;
+    private final Executor covExecutor;
+    private final AtomicLong covRenewalCount = new AtomicLong();
+    private final AtomicLong covRenewalFailureCount = new AtomicLong();
+    private final AtomicLong covDispatchRejectedCount = new AtomicLong();
+    private final ArrayBlockingQueue<CovWork> covQueue = new ArrayBlockingQueue<>(1000);
+    private final AtomicBoolean covDraining = new AtomicBoolean();
+
+    private record CovWork(CovCallbackBinding callback, BacnetCovNotification notification, long receivedAt,
+                           CovSubscriptionBinding acknowledgedBinding) {
+    }
+
+    public BacnetIpCollector() {
+        this(null, null, null);
+    }
+
+    @Autowired
+    public BacnetIpCollector(CollectionTaskGuard covTaskGuard,
+                             @Qualifier("timeSliceScheduler") ScheduledExecutorService covScheduler,
+                             @Qualifier("asyncCollectorExecutor") Executor covExecutor) {
+        this.covTaskGuard = covTaskGuard;
+        this.covScheduler = covScheduler;
+        this.covExecutor = covExecutor;
+    }
+
+    /** 回调只使用注册时的适配器、运行代次和配置版本。 */
+    private record CovCallbackBinding(BacnetConnectionAdapter adapter, Object session,
+                                      long generation, long configVersion) {
+    }
+
+    /** 点位及线上的订阅标识共同确定通知归属，不能仅按对象地址分发。 */
+    private record CovSubscriptionBinding(DataPoint point,
+                                          BacnetSubscriptionService.SubscriptionBinding subscription,
+                                          CovCallbackBinding callback,
+                                          int remoteDeviceInstance, CovLease lease) {
+    }
+
+    /** 每个绑定仅保存租约状态和一个共享调度器 Future，不创建点位线程。 */
+    private static final class CovLease {
+        private final int lifetimeSeconds;
+        private final Double increment;
+        private volatile boolean active = true;
+        private long confirmedAt;
+        private long expiresAt;
+        private long nextRenewAt;
+        private int renewalAttempts;
+        private String renewalFailureReason;
+        private ScheduledFuture<?> renewalTask;
+        private boolean inFlight;
+        private boolean awaitingFreshSample;
+        private long recoverySentAt;
+        private final java.util.ArrayDeque<CovWork> pendingNotifications = new java.util.ArrayDeque<>();
+
+        private CovLease(int lifetimeSeconds, Double increment) {
+            this.lifetimeSeconds = lifetimeSeconds;
+            this.increment = increment;
+        }
+    }
+
+    @Override
+    public void setRuntimeGeneration(long generation) {
+        synchronized (covOwnershipLock) {
+            if (runtimeGeneration != generation) {
+                clearCovOwnership();
+            }
+            super.setRuntimeGeneration(generation);
+        }
+    }
+
+    @Override
+    public void setRuntimeConfigurationVersion(long version) {
+        synchronized (covOwnershipLock) {
+            if (runtimeConfigVersion != version) {
+                clearCovOwnership();
+                configuredAddresses.clear();
+            }
+            super.setRuntimeConfigurationVersion(version);
+        }
+    }
+
+    /** 在基类取消订阅或跳过已断开分支前先禁止旧回调提交。 */
+    @Override
+    public void disconnect() throws CollectorException {
+        synchronized (covOwnershipLock) {
+            covCallbackBinding = null;
+        }
+        super.disconnect();
+    }
 
     @Override
     public String getCollectorType() {
@@ -98,17 +198,17 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     protected void doConnect() throws Exception {
+        long generation = runtimeGeneration;
+        long configVersion = runtimeConfigVersion;
         DeviceConnection desiredConfig = requireConnectionConfig();
-        this.connectionAdapter = createBacnetConnectionAdapter(desiredConfig);
-        this.connectionAdapter.setCovNotificationListener(this::handleCovNotification);
-        this.connectionAdapter.setReconnectListener(this::handleAdapterReconnect);
+        BacnetConnectionAdapter adapter = createBacnetConnectionAdapter(desiredConfig);
+        bindCovConnection(adapter, generation, configVersion);
         DeviceConnection currentConfig = getCurrentConnectionConfig();
         if (currentConfig == null) {
             currentConfig = desiredConfig;
         }
         requestTimeoutMs = resolveRequestTimeout(currentConfig);
         configuredAddresses.clear();
-        subscriptionBindings.clear();
         deviceSnapshotService.clear();
         reportMatchedDiscovery();
         log.info("{} 采集器 已连接, 设备={}, 超时毫秒={}", protocolDisplayName(), deviceInfo.getDeviceId(), requestTimeoutMs);
@@ -119,9 +219,11 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     protected void doDisconnect() {
+        synchronized (covOwnershipLock) {
+            clearCovOwnership();
+            connectionAdapter = null;
+        }
         removeManagedConnection(protocolDisplayName());
-        connectionAdapter = null;
-        subscriptionBindings.clear();
         configuredAddresses.clear();
         deviceSnapshotService.clear();
         log.info("{} 采集器 已断开, 设备={}", protocolDisplayName(), deviceInfo.getDeviceId());
@@ -132,18 +234,29 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
         long startTime = System.currentTimeMillis();
         try {
+            checkConnection();
+            validateReadPointOwnership(point);
+            if (shouldAutoSubscribePoint(point)) {
+                ProcessResult cached = cachedCovReadResult(point);
+                addInvocationProcessResult(point.getPointId(), cached);
+                covPollingBypassCount.incrementAndGet();
+                return cached.getFinalValue();
+            }
             BacnetAddress address = requireAddress(point);
             Object rawValue = doReadPoint(point);
-            ProcessResult processResult = buildScalarProcessResult(point, address, rawValue, "poll");
-            lastProcessResults.put(point.getPointId(), processResult);
+            ProcessResult processResult = buildScalarProcessResult(point, address, rawValue, "POLLING");
+            ProcessResult snapshot = completePollingReadResult(point, processResult, protocolRawValue(rawValue), startTime,
+                    protocolRawValue(rawValue) == null ? "NO_VALUE" : "QUALITY_BAD");
+            addInvocationProcessResult(point.getPointId(), snapshot);
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
-            return processResult.getFinalValue();
+            return snapshot.getFinalValue();
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, point);
@@ -151,6 +264,8 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
                     deviceInfo.getDeviceId(),
                     point != null ? point.getPointId() : null,
                     e);
+        } finally {
+            finishInvocationProcessResults();
         }
     }
 
@@ -159,51 +274,62 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
         long startTime = System.currentTimeMillis();
         Map<String, Object> results = new LinkedHashMap<>();
+        Map<String, ProcessResult> invocationResults = new LinkedHashMap<>();
         try {
+            checkConnection();
             List<DataPoint> validPoints = points == null
                     ? Collections.emptyList()
                     : points.stream().filter(point -> point != null && point.isEnabled()).collect(Collectors.toList());
-            if (validPoints.isEmpty()) {
-                return results;
+            List<DataPoint> readablePoints = new ArrayList<>();
+            for (DataPoint point : validPoints) {
+                try {
+                    validateReadPointOwnership(point);
+                    requireAddress(point);
+                    readablePoints.add(point);
+                } catch (Exception ex) {
+                    recordException(ex, point);
+                    if (point.getPointId() != null && !point.getPointId().isBlank()
+                            && deviceInfo != null && Objects.equals(deviceInfo.getDeviceId(), point.getDeviceId())) {
+                        ProcessResult failure = ProcessResult.error(null, "点位归属或地址配置无效", DataQuality.CONFIG_ERROR);
+                        invocationResults.put(point.getPointId(), completePollingReadResult(point, failure, null, startTime,
+                                "CONFIG_ERROR"));
+                        results.put(point.getPointId(), null);
+                    }
+                }
             }
-
-            List<DataPoint> pollPoints = filterPollingPoints(validPoints);
+            List<DataPoint> pollPoints = filterPollingPoints(readablePoints);
             Set<String> skippedPollingIds = new HashSet<>();
-            for (DataPoint point : validPoints) {
-                if (point != null && !pollPoints.contains(point)) {
-                    skippedPollingIds.add(point.getPointId());
-                }
+            for (DataPoint point : readablePoints) {
+                if (!pollPoints.contains(point)) skippedPollingIds.add(point.getPointId());
             }
-
             Map<String, Object> rawValues = pollPoints.isEmpty() ? Collections.emptyMap() : doReadPoints(pollPoints);
-            for (DataPoint point : validPoints) {
+            for (DataPoint point : readablePoints) {
                 String pointId = point.getPointId();
-                if (pointId == null) {
-                    continue;
-                }
                 if (skippedPollingIds.contains(pointId)) {
                     covPollingBypassCount.incrementAndGet();
-                    ProcessResult latest = lastProcessResults.get(pointId);
-                    results.put(pointId, latest != null ? latest.getFinalValue() : null);
+                    ProcessResult cached = cachedCovReadResult(point);
+                    invocationResults.put(pointId, cached);
+                    results.put(pointId, cached.getFinalValue());
                     continue;
                 }
                 try {
                     BacnetAddress address = requireAddress(point);
                     Object rawValue = rawValues.get(pointId);
-                    if (rawValue == null) {
-                        results.put(pointId, null);
-                        continue;
-                    }
-                    ProcessResult processResult = buildScalarProcessResult(point, address, rawValue, "poll");
-                    lastProcessResults.put(pointId, processResult);
-                    results.put(pointId, processResult.getFinalValue());
+                    ProcessResult processResult = rawValue instanceof ProcessResult failure ? failure
+                            : buildScalarProcessResult(point, address, rawValue, "POLLING");
+                    ProcessResult snapshot = completePollingReadResult(point, processResult,
+                            rawValue instanceof ProcessResult ? null : protocolRawValue(rawValue), startTime, "QUALITY_BAD");
+                    invocationResults.put(pointId, snapshot);
+                    results.put(pointId, snapshot.getFinalValue());
                 } catch (Exception ex) {
                     log.error("{} 批量 点位 处理失败, 设备={}, 点位={}", protocolDisplayName(),
                             deviceInfo.getDeviceId(), pointId, ex);
                     recordException(ex, point);
+                    ProcessResult failure = failedProtocolReadResult(ex);
+                    invocationResults.put(pointId, completePollingReadResult(point, failure, null, startTime, "PROCESS_ERROR"));
                     results.put(pointId, null);
                 }
             }
@@ -211,13 +337,56 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
             totalReadCount.addAndGet(pollPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
+            setInvocationProcessResults(invocationResults);
             return results;
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, null);
             throw new CollectorException(protocolDisplayName() + " batch point read failed", deviceInfo.getDeviceId(), null, e);
+        } finally {
+            finishInvocationProcessResults();
         }
+    }
+
+    /** 本轮失败的观察时间不能早于失败事实，否则核心提交门会把真实 BAD 结果当作旧样本丢弃。 */
+    private ProcessResult completePollingReadResult(DataPoint point, ProcessResult result, Object rawValue,
+                                                    long requestedAt, String failureReason) {
+        if (!result.isSuccess()) {
+            reportPointFailure(point, failureReason);
+            result = result.snapshot();
+            result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, System.currentTimeMillis());
+        }
+        return completeReadProcessResult(point, result, rawValue, requestedAt);
+    }
+
+    /** 缓存读取不重复转换或补采样时间，旧配置结果也不能借用当前版本。 */
+    private ProcessResult cachedCovReadResult(DataPoint point) {
+        synchronized (covOwnershipLock) {
+            ProcessResult previous = lastProcessResults.get(point.getPointId());
+            Object version = previous != null ? previous.getMetadata(ProcessResultMetadataKeys.CONFIG_VERSION) : null;
+            if (!(version instanceof Number number) || number.longValue() != runtimeConfigVersion
+                    || (configManager != null && configManager.getDeviceConfigVersion(deviceInfo.getDeviceId()) != runtimeConfigVersion)) {
+                previous = null;
+            }
+            ProcessResult cached = cachedReadResult(point, previous);
+            CovSubscriptionBinding binding = subscriptionBindings.get(point.getPointId());
+            if (binding != null && (isCovLeaseExpired(binding) || binding.lease().awaitingFreshSample)) {
+                cached.addMetadata("stale", true);
+                cached.addMetadata("covLeaseExpiresAt", binding.lease().expiresAt);
+                cached.addMetadata("covRenewalFailureReason", binding.lease().renewalFailureReason);
+                cached.setQualityDescription("STALE：COV 订阅租期已过期，保留最后观测值");
+            }
+            return cached;
+        }
+    }
+
+    /** 遥测原始值是协议解码值，响应包装及类型元数据仍由原映射器处理。 */
+    private Object protocolRawValue(Object value) {
+        if (value instanceof BacnetReadPropertyResponse response) return response.getValue();
+        if (value instanceof BacnetValue bacnetValue) return bacnetValue.getValue();
+        return value;
     }
 
     /**
@@ -267,9 +436,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
                         deviceInfo.getDeviceId(),
                         plan.getPointPlans() != null ? plan.getPointPlans().size() : 0,
                         ex.getMessage());
-                for (BacnetReadPointPlan pointPlan : plan.getPointPlans()) {
-                    values.put(pointPlan.getPoint().getPointId(), doReadPoint(pointPlan.getPoint()));
-                }
+                readSequentially(plan.getPointPlans(), values);
             }
         }
         return values;
@@ -351,15 +518,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
         if (points == null || points.isEmpty()) {
             return;
         }
-        ensureNotificationListenerRegistered();
-        unsubscribeIfAlreadyBound(points);
+        doSubscribe(points, ensureNotificationListenerRegistered());
+    }
+
+    /** 重连回调不可在版本变更后为新运行身份重新创建订阅。 */
+    private void doSubscribe(List<DataPoint> points, CovCallbackBinding callback) throws Exception {
+        unsubscribeIfAlreadyBound(points, callback);
         for (DataPoint point : points) {
             if (point == null) {
                 continue;
             }
             BacnetAddress address = requireAddress(point);
-            BacnetSubscriptionService.SubscriptionBinding binding = subscribePoint(point, address);
-            subscriptionBindings.put(resolvePointCacheKey(point), binding);
+            subscribePoint(point, address, callback);
             subscriptionRequestCount.incrementAndGet();
         }
     }
@@ -376,7 +546,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
             if (point == null) {
                 continue;
             }
-            BacnetSubscriptionService.SubscriptionBinding binding = subscriptionBindings.remove(resolvePointCacheKey(point));
+            CovSubscriptionBinding binding;
+            synchronized (covOwnershipLock) {
+                binding = subscriptionBindings.remove(resolvePointCacheKey(point));
+                if (binding != null) cancelCovRenewal(binding);
+                lastProcessResults.remove(point.getPointId());
+            }
             if (binding == null) {
                 continue;
             }
@@ -407,6 +582,10 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
         status.put(CommonMapKeys.CONNECTED, connectionAdapter != null && connectionAdapter.isConnected());
         status.put(CommonMapKeys.CONFIGURED_POINT_COUNT, configuredAddresses.size());
         status.put("activeSubscriptions", subscriptionBindings.size());
+        status.put("covSubscriptions", covLeaseSnapshots());
+        status.put("covRenewalCount", covRenewalCount.get());
+        status.put("covRenewalFailureCount", covRenewalFailureCount.get());
+        status.put("covDispatchRejectedCount", covDispatchRejectedCount.get());
         status.put("requestTimeoutMs", requestTimeoutMs);
         status.put("readPropertyMultipleFallbackCount", readPropertyMultipleFallbackCount.get());
         status.put("covNotificationCount", covNotificationCount.get());
@@ -475,22 +654,19 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     protected void buildReadPlans(String deviceId, List<DataPoint> points) {
-        if (points == null) {
+        synchronized (covOwnershipLock) {
+            clearCovOwnership();
             configuredAddresses.clear();
-            return;
-        }
-        for (DataPoint point : points) {
-            if (point == null) {
-                continue;
-            }
-            try {
-                configuredAddresses.put(resolvePointCacheKey(point), BacnetAddressParser.parse(point));
-            } catch (Exception ex) {
-                log.warn("缓存 BACnet address 失败, 设备={}, 点位={}, 地址={}, 错误={}",
-                        deviceInfo != null ? deviceInfo.getDeviceId() : null,
-                        point.getPointId(),
-                        point.getAddress(),
-                        ex.getMessage());
+            if (points == null) return;
+            for (DataPoint point : points) {
+                if (point == null) continue;
+                try {
+                    validateReadPointOwnership(point);
+                    configuredAddresses.put(resolvePointCacheKey(point), BacnetAddressParser.parse(point));
+                } catch (Exception ex) {
+                    log.warn("缓存 BACnet 地址失败, 设备={}, 点位={}, 错误={}",
+                            deviceInfo != null ? deviceInfo.getDeviceId() : null, point.getPointId(), ex.getMessage());
+                }
             }
         }
     }
@@ -519,39 +695,55 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
      */
     @Override
     protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
-        if (point == null) {
-            return null;
-        }
+        CovSubscriptionBinding binding = point != null ? subscriptionBindings.get(point.getPointId()) : null;
+        return ingestPushedValue(binding, rawValue, null);
+    }
+
+    /** 映射在提交锁外执行；最终副作用再次核对绑定，元数据在异步交接前完成。 */
+    private ProcessResult ingestPushedValue(CovSubscriptionBinding binding, Object rawValue,
+                                           BacnetCovNotification notification) {
+        return ingestPushedValue(binding, rawValue, notification, System.currentTimeMillis());
+    }
+
+    private ProcessResult ingestPushedValue(CovSubscriptionBinding binding, Object rawValue,
+                                           BacnetCovNotification notification, long collectTime) {
+        if (binding == null || !isCurrentCovCallback(binding.callback())) return null;
+        DataPoint point = binding.point();
         String resolvedDeviceId = point.getDeviceId();
-        if ((resolvedDeviceId == null || resolvedDeviceId.isBlank()) && deviceInfo != null) {
-            resolvedDeviceId = deviceInfo.getDeviceId();
-        }
+        ProcessResult processResult;
         try {
-            BacnetAddress address = requireAddress(point);
-            ProcessResult processResult = buildProcessResult(point, address, rawValue, "cov", resolvedDeviceId);
-            lastProcessResults.put(point.getPointId(), processResult);
-            if (!processResult.isSuccess()) {
-                log.warn("{} 推送数据质量检查失败 {}.{}, 原因:{}", protocolDisplayName(),
-                        resolvedDeviceId, point.getPointName(), processResult.getMessage());
-            }
-            lastActivityTime = System.currentTimeMillis();
-            if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, processResult);
-            }
-            return processResult;
+            validateReadPointOwnership(point);
+            processResult = valueMapper.map(dataQualityProcessor, point, binding.subscription().address(),
+                    rawValue, "PUSH", resolvedDeviceId, this::convertData,
+                    commit -> commitCovBinding(binding, collectTime, commit));
         } catch (Exception e) {
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, point);
-            ProcessResult error = ProcessResult.error(rawValue,
-                    protocolDisplayName() + " pushed telemetry process failed: " + e.getMessage(),
-                    DataQuality.PROCESS_ERROR);
-            lastProcessResults.put(point.getPointId(), error);
-            if (telemetryIngressService != null) {
-                telemetryIngressService.append(resolvedDeviceId, point, error);
-            }
-            return error;
+            processResult = ProcessResult.error(protocolRawValue(rawValue),
+                    protocolDisplayName() + " 推送数据处理失败", DataQuality.PROCESS_ERROR);
         }
+        processResult.setRawValue(protocolRawValue(rawValue));
+        enrichTelemetryMetadata(processResult, protocolRawValue(rawValue), processResult.getProcessedValue(), collectTime, "PUSH");
+        processResult.addMetadata(ProcessResultMetadataKeys.CONFIG_VERSION, binding.callback().configVersion());
+        if (notification != null) {
+            processResult.addMetadata("covSubscriberProcessIdentifier", notification.getSubscriberProcessIdentifier());
+            processResult.addMetadata("covTimeRemaining", notification.getTimeRemaining());
+        }
+        ProcessResult snapshot = processResult.snapshot();
+        if (!commitCovBinding(binding, collectTime, () -> {
+            lastProcessResults.put(point.getPointId(), snapshot.snapshot());
+            lastActivityTime = collectTime;
+            if (binding.lease().awaitingFreshSample) {
+                binding.lease().awaitingFreshSample = false;
+                reportEventLease(point, binding.callback().generation(), binding.lease().expiresAt);
+            }
+        })) return null;
+        // 已提交快照携带原版本和代次；异步入口及拒绝补偿不能持有 COV 或会话生命周期锁。
+        if (telemetryIngressService != null) {
+            telemetryIngressService.append(resolvedDeviceId, point, snapshot, binding.callback().generation());
+        }
+        return snapshot;
     }
 
     /**
@@ -572,6 +764,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
                                              Object rawValue,
                                              String source,
                                              String deviceId) {
+        if (protocolRawValue(rawValue) == null) {
+            ProcessResult empty = ProcessResult.error(null, "本轮协议未返回有效值", DataQuality.VALUE_INVALID);
+            empty.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
+            empty.addMetadata(CommonMapKeys.SOURCE, source);
+            return empty;
+        }
         ProcessResult processResult = valueMapper.map(
                 dataQualityProcessor,
                 point,
@@ -635,34 +833,6 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     private void exchange(BacnetWritePropertyMultipleRequest request) throws Exception {
         try {
             requireConnection().writePropertyMultiple(request, requestTimeoutMs);
-        } catch (Exception ex) {
-            if (shouldInvalidateConnection(ex)) {
-                invalidateConnection(ex);
-            }
-            throw ex;
-        }
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void exchange(BacnetSubscribeCovRequest request) throws Exception {
-        try {
-            requireConnection().subscribeCov(request, requestTimeoutMs);
-        } catch (Exception ex) {
-            if (shouldInvalidateConnection(ex)) {
-                invalidateConnection(ex);
-            }
-            throw ex;
-        }
-    }
-
-    /**
-     * 执行当前业务逻辑。
-     */
-    private void exchange(BacnetSubscribeCovPropertyRequest request) throws Exception {
-        try {
-            requireConnection().subscribeCovProperty(request, requestTimeoutMs);
         } catch (Exception ex) {
             if (shouldInvalidateConnection(ex)) {
                 invalidateConnection(ex);
@@ -738,9 +908,15 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     /**
      * 查询并返回业务数据。
      */
-    private void readSequentially(List<BacnetReadPointPlan> pointPlans, Map<String, Object> values) throws Exception {
+    private void readSequentially(List<BacnetReadPointPlan> pointPlans, Map<String, Object> values) {
         for (BacnetReadPointPlan pointPlan : pointPlans) {
-            values.put(pointPlan.getPoint().getPointId(), doReadPoint(pointPlan.getPoint()));
+            DataPoint point = pointPlan.getPoint();
+            try {
+                values.put(point.getPointId(), doReadPoint(point));
+            } catch (Exception ex) {
+                recordException(ex, point);
+                values.put(point.getPointId(), failedProtocolReadResult(ex));
+            }
         }
     }
 
@@ -772,13 +948,11 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
         BacnetReadPropertyMultipleResultIndex resultIndex = BacnetReadPropertyMultipleResultIndex.from(response);
         for (BacnetReadPointPlan pointPlan : plan.getPointPlans()) {
             BacnetReadPropertyMultipleResponse.PropertyValueResult propertyResult = resultIndex.get(pointPlan.getAddress());
-            if (propertyResult == null) {
-                throw new IllegalStateException("BACnet RPM response missing property result for address="
-                        + pointPlan.getAddress().getCanonicalAddress());
-            }
-            if (propertyResult.isError()) {
-                throw new IllegalStateException("BACnet RPM property read failed for address="
-                        + pointPlan.getAddress().getCanonicalAddress() + ", " + propertyResult.getErrorMessage());
+            if (propertyResult == null || propertyResult.isError()) {
+                // 单项错误只降级该点，已成功的 RPM 点位不被其失败替换。
+                readPropertyMultipleFallbackCount.incrementAndGet();
+                readSequentially(List.of(pointPlan), values);
+                continue;
             }
             values.put(pointPlan.getPoint().getPointId(), BacnetValue.builder()
                     .value(propertyResult.getValue())
@@ -848,8 +1022,12 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
                 deviceInfo != null ? deviceInfo.getDeviceId() : null,
                 cause != null ? cause.getMessage() : null);
         try {
-            BacnetConnectionAdapter adapter = connectionAdapter;
-            connectionAdapter = null;
+            BacnetConnectionAdapter adapter;
+            synchronized (covOwnershipLock) {
+                adapter = connectionAdapter;
+                clearCovOwnership();
+                connectionAdapter = null;
+            }
             if (adapter instanceof ConnectionAdapter<?> managedAdapter) {
                 managedAdapter.disconnect();
             }
@@ -866,58 +1044,458 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     /**
      * 维护注册或订阅关系。
      */
-    private BacnetSubscriptionService.SubscriptionBinding subscribePoint(DataPoint point, BacnetAddress address) throws Exception {
-        return subscriptionService.subscribe(
-                point,
-                address,
-                shouldUsePropertySubscription(point, address),
-                resolveConfirmedNotifications(point),
-                resolveCovLifetimeSeconds(point),
-                resolveCovIncrement(point),
-                this::nextSubscriberProcessIdentifier,
-                this::nextInvokeId,
-                requireRemoteDeviceInstance(),
-                this::exchange,
-                this::exchange
-        );
-    }
-
-    /**
-     * 维护注册或订阅关系。
-     */
-    private void unsubscribeBinding(BacnetSubscriptionService.SubscriptionBinding binding) throws Exception {
-        subscriptionService.unsubscribe(
-                binding,
-                this::nextInvokeId,
-                requireRemoteDeviceInstance(),
-                this::exchange,
-                this::exchange
-        );
-    }
-
-    /**
-     * 维护注册或订阅关系。
-     */
-    private void unsubscribeIfAlreadyBound(List<DataPoint> points) throws Exception {
-        List<DataPoint> existing = new ArrayList<>();
-        for (DataPoint point : points) {
-            if (point != null && subscriptionBindings.containsKey(resolvePointCacheKey(point))) {
-                existing.add(point);
-            }
+    private void subscribePoint(DataPoint point, BacnetAddress address, CovCallbackBinding callback) throws Exception {
+        validateReadPointOwnership(point);
+        boolean propertyLevel = shouldUsePropertySubscription(point, address);
+        boolean confirmed = resolveConfirmedNotifications(point);
+        int remoteDeviceInstance = requireRemoteDeviceInstance();
+        int processIdentifier = nextSubscriberProcessIdentifier();
+        int timeoutMs = requestTimeoutMs;
+        CovSubscriptionBinding binding = new CovSubscriptionBinding(point,
+                new BacnetSubscriptionService.SubscriptionBinding(processIdentifier, address, propertyLevel, confirmed),
+                callback, remoteDeviceInstance,
+                new CovLease(resolveCovLifetimeSeconds(point), resolveCovIncrement(point)));
+        if (binding.lease().lifetimeSeconds > 0 && callback.adapter() instanceof BacnetIpConnectionAdapter
+                && (covScheduler == null || covExecutor == null)) {
+            throw new IllegalStateException("有限 COV 租期需要共享调度器和 I/O 执行器");
         }
-        if (!existing.isEmpty()) {
-            doUnsubscribe(existing);
+        // 初始 COV 可能早于 Subscribe ACK；发送前登记，失败时只撤销本次绑定。
+        if (!runIfCurrentCovCallback(callback, () -> subscriptionBindings.put(resolvePointCacheKey(point), binding))) {
+            throw new IllegalStateException("BACnet 订阅回调身份已失效");
+        }
+        try {
+            completeCovSubscription(binding, false);
+        } catch (Exception ex) {
+            synchronized (covOwnershipLock) {
+                cancelCovRenewal(binding);
+                if (subscriptionBindings.remove(point.getPointId(), binding)) lastProcessResults.remove(point.getPointId());
+            }
+            if (shouldInvalidateConnection(ex) && isCurrentCovIdentity(callback)) invalidateConnection(ex);
+            throw ex;
+        }
+    }
+
+    /**
+     * 维护注册或订阅关系。
+     */
+    private void unsubscribeBinding(CovSubscriptionBinding binding) throws Exception {
+        int timeoutMs = requestTimeoutMs;
+        BacnetIpConnectionAdapter.SessionExchange cancel = () -> subscriptionService.unsubscribe(
+                binding.subscription(), this::nextInvokeId, binding.remoteDeviceInstance(),
+                request -> binding.callback().adapter().subscribeCov(request, timeoutMs),
+                request -> binding.callback().adapter().subscribeCovProperty(request, timeoutMs));
+        if (binding.callback().adapter() instanceof BacnetIpConnectionAdapter ipAdapter) {
+            ipAdapter.exchangeIfCurrentSession(binding.callback().session(), () -> true, cancel);
+        } else {
+            cancel.run();
+        }
+    }
+
+    /**
+     * 维护注册或订阅关系。
+     */
+    private void unsubscribeIfAlreadyBound(List<DataPoint> points, CovCallbackBinding callback) throws Exception {
+        List<CovSubscriptionBinding> existing = new ArrayList<>();
+        if (!runIfCurrentCovCallback(callback, () -> {
+            for (DataPoint point : points) {
+                if (point == null) continue;
+                String key = resolvePointCacheKey(point);
+                CovSubscriptionBinding binding = subscriptionBindings.get(key);
+                if (binding != null && binding.callback() == callback && subscriptionBindings.remove(key, binding)) {
+                    cancelCovRenewal(binding);
+                    lastProcessResults.remove(key);
+                    existing.add(binding);
+                }
+            }
+        })) throw new IllegalStateException("BACnet 重新订阅回调身份已失效");
+        for (CovSubscriptionBinding binding : existing) {
+            try {
+                unsubscribeBinding(binding);
+                subscriptionCancelCount.incrementAndGet();
+            } catch (Exception ex) {
+                log.warn("{} 取消旧订阅失败, 设备={}, 点位={}", protocolDisplayName(),
+                        deviceInfo.getDeviceId(), binding.point().getPointId(), ex);
+            }
         }
     }
 
     /**
      * 校验业务条件和参数边界。
      */
-    private void ensureNotificationListenerRegistered() {
-        if (connectionAdapter != null) {
-            connectionAdapter.setCovNotificationListener(this::handleCovNotification);
-            connectionAdapter.setReconnectListener(this::handleAdapterReconnect);
+    private CovCallbackBinding ensureNotificationListenerRegistered() {
+        synchronized (covOwnershipLock) {
+            BacnetConnectionAdapter adapter = requireConnection();
+            Object session = adapter instanceof BacnetIpConnectionAdapter ipAdapter
+                    ? ipAdapter.captureSessionIdentity() : null;
+            CovCallbackBinding binding = covCallbackBinding;
+            if (binding == null || binding.adapter() != adapter || binding.generation() != runtimeGeneration
+                    || binding.configVersion() != runtimeConfigVersion || binding.session() != session) {
+                binding = new CovCallbackBinding(adapter, session, runtimeGeneration, runtimeConfigVersion);
+                covCallbackBinding = binding;
+            }
+            CovCallbackBinding captured = binding;
+            adapter.setCovNotificationListener(notification -> dispatchCovNotification(captured, notification));
+            adapter.setReconnectListener(() -> handleAdapterReconnect(captured));
+            return captured;
         }
+    }
+
+    /** 失效建连只退役本次实例，不以设备键清理可能已经替换的管理项。 */
+    private CovCallbackBinding bindCovConnection(BacnetConnectionAdapter adapter,
+                                                 long generation, long configVersion) throws Exception {
+        try {
+            synchronized (covOwnershipLock) {
+                requireCovRuntimeIdentity(generation, configVersion);
+                clearCovOwnership();
+                connectionAdapter = adapter;
+                return ensureNotificationListenerRegistered();
+            }
+        } catch (Exception failure) {
+            if (adapter instanceof ConnectionAdapter<?> managedAdapter) {
+                try {
+                    managedAdapter.closeResources();
+                } catch (Exception closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+            throw failure;
+        }
+    }
+
+    /** 建连期间版本改变时，不能将旧配置连接的回调包装为当前版本。 */
+    private void requireCovRuntimeIdentity(long generation, long configVersion) {
+        if (runtimeGeneration != generation || runtimeConfigVersion != configVersion
+                || (configManager != null && configManager.getDeviceConfigVersion(deviceInfo.getDeviceId()) != configVersion)) {
+            throw new IllegalStateException("BACnet 建连所属运行代次或配置版本已失效");
+        }
+    }
+
+    /** 调用方持有提交锁；不进行网络清理，避免旧回调和替换连接交叉操作。 */
+    private void clearCovOwnership() {
+        covCallbackBinding = null;
+        subscriptionBindings.values().forEach(this::cancelCovRenewal);
+        subscriptionBindings.clear();
+        covQueue.clear();
+        lastProcessResults.clear();
+    }
+
+    /** 仅串行化身份核对及本地提交，不在锁内等待协议响应。 */
+    private boolean runIfCurrentCovCallback(CovCallbackBinding binding, Runnable action) {
+        boolean[] committed = {false};
+        Runnable guarded = () -> {
+            synchronized (covOwnershipLock) {
+                if (!isCurrentCovCallback(binding)) return;
+                Runnable configCommit = () -> committed[0] = configManager == null
+                        ? runCovAction(action)
+                        : configManager.runIfConfigurationCurrent(deviceInfo.getDeviceId(), binding.configVersion(), action);
+                if (binding.adapter() instanceof BacnetIpConnectionAdapter ipAdapter) {
+                    ipAdapter.runIfCurrentSession(binding.session(), configCommit);
+                } else {
+                    configCommit.run();
+                }
+            }
+        };
+        if (binding == null) return false;
+        if (covTaskGuard != null && binding.generation() > 0L) {
+            covTaskGuard.commitIfCurrent(deviceInfo.getDeviceId(), binding.generation(), guarded);
+        } else {
+            guarded.run();
+        }
+        return committed[0];
+    }
+
+    private boolean isCurrentCovCallback(CovCallbackBinding binding) {
+        return isCurrentCovIdentity(binding) && binding.adapter().isConnected();
+    }
+
+    private boolean runCovAction(Runnable action) {
+        action.run();
+        return true;
+    }
+
+    /** 锁序固定为设备代次门、绑定、会话、配置读锁；慢转换和遥测背压均在外。 */
+    private boolean commitCovBinding(CovSubscriptionBinding binding, long sampleAt, Runnable action) {
+        if (binding == null) return false;
+        boolean[] accepted = {false};
+        runIfCurrentCovCallback(binding.callback(), () -> {
+            CovLease lease = binding.lease();
+            if (!isCurrentCovBinding(binding) || lease.confirmedAt == 0L || isCovLeaseExpired(binding)
+                    || (lease.awaitingFreshSample && sampleAt < lease.recoverySentAt)) return;
+            action.run();
+            accepted[0] = true;
+        });
+        return accepted[0];
+    }
+
+    private boolean isCurrentCovBinding(CovSubscriptionBinding binding) {
+        return binding.lease().active && isCurrentCovCallback(binding.callback())
+                && subscriptionBindings.get(binding.point().getPointId()) == binding;
+    }
+
+    private boolean isCovLeaseExpired(CovSubscriptionBinding binding) {
+        return binding.lease().lifetimeSeconds > 0 && binding.lease().expiresAt > 0L
+                && System.currentTimeMillis() >= binding.lease().expiresAt;
+    }
+
+    private void cancelCovRenewal(CovSubscriptionBinding binding) {
+        CovLease lease = binding.lease();
+        lease.active = false;
+        if (lease.renewalTask != null) lease.renewalTask.cancel(false);
+        lease.renewalTask = null;
+        lease.nextRenewAt = 0L;
+        lease.inFlight = false;
+        lease.pendingNotifications.clear();
+    }
+
+    private long sendCovSubscription(CovSubscriptionBinding binding) throws Exception {
+        var subscription = binding.subscription();
+        CovLease lease = binding.lease();
+        int timeout = requestTimeoutMs;
+        long[] sentAt = {0L};
+        BacnetIpConnectionAdapter.SessionExchange exchange = () -> subscriptionService.subscribe(binding.point(),
+                subscription.address(), subscription.propertyLevel(), subscription.issueConfirmedNotifications(),
+                lease.lifetimeSeconds, lease.increment, subscription::processIdentifier, this::nextInvokeId,
+                binding.remoteDeviceInstance(),
+                request -> {
+                    if (binding.callback().adapter() instanceof BacnetIpConnectionAdapter ipAdapter) {
+                        ipAdapter.subscribeCov(request, timeout, time -> sentAt[0] = time);
+                    } else {
+                        sentAt[0] = System.currentTimeMillis();
+                        binding.callback().adapter().subscribeCov(request, timeout);
+                    }
+                },
+                request -> {
+                    if (binding.callback().adapter() instanceof BacnetIpConnectionAdapter ipAdapter) {
+                        ipAdapter.subscribeCovProperty(request, timeout, time -> sentAt[0] = time);
+                    } else {
+                        sentAt[0] = System.currentTimeMillis();
+                        binding.callback().adapter().subscribeCovProperty(request, timeout);
+                    }
+                });
+        if (binding.callback().adapter() instanceof BacnetIpConnectionAdapter ipAdapter) {
+            ipAdapter.exchangeIfCurrentSession(binding.callback().session(), () -> isCurrentCovBinding(binding), exchange);
+        } else {
+            if (!isCurrentCovBinding(binding)) throw new IllegalStateException("COV 订阅已退役");
+            exchange.run();
+        }
+        return sentAt[0];
+    }
+
+    /** 发送及半租期截止均为绝对时间，慢 ACK 不再额外延后续订。 */
+    private void confirmCovLease(CovSubscriptionBinding binding, long sentAt) {
+        CovLease lease = binding.lease();
+        if (!lease.awaitingFreshSample && isCovLeaseExpired(binding)) {
+            lease.awaitingFreshSample = true;
+            lease.recoverySentAt = sentAt;
+        }
+        lease.confirmedAt = System.currentTimeMillis();
+        lease.expiresAt = lease.lifetimeSeconds == 0 ? 0L : sentAt + lease.lifetimeSeconds * 1000L;
+        lease.renewalAttempts = 0;
+        lease.renewalFailureReason = null;
+        if (!lease.awaitingFreshSample) {
+            reportEventLease(binding.point(), binding.callback().generation(), lease.expiresAt);
+        }
+    }
+
+    /** 初次及过期续订的初始通知先暂存，ACK 后按原收包时间在提交锁外重放。 */
+    private void completeCovSubscription(CovSubscriptionBinding binding, boolean renewal) throws Exception {
+        boolean[] started = {false};
+        runIfCurrentCovCallback(binding.callback(), () -> {
+            if (!isCurrentCovBinding(binding) || binding.lease().inFlight) return;
+            binding.lease().inFlight = true;
+            binding.lease().pendingNotifications.clear();
+            started[0] = true;
+        });
+        if (!started[0]) throw new IllegalStateException("COV 订阅身份已失效或已有在途订阅");
+        try {
+            long sentAt = sendCovSubscription(binding);
+            List<CovWork> pending = new ArrayList<>();
+            boolean[] accepted = {false};
+            runIfCurrentCovCallback(binding.callback(), () -> {
+                if (!isCurrentCovBinding(binding)) return;
+                confirmCovLease(binding, sentAt);
+                pending.addAll(binding.lease().pendingNotifications);
+                binding.lease().pendingNotifications.clear();
+                binding.lease().inFlight = false;
+                if (renewal) covRenewalCount.incrementAndGet();
+                accepted[0] = true;
+            });
+            if (!accepted[0]) throw new IllegalStateException("BACnet 订阅完成时身份已失效");
+            replayCovNotifications(binding, pending);
+            runIfCurrentCovCallback(binding.callback(), () -> {
+                if (binding.lease().lifetimeSeconds > 0
+                        && binding.callback().adapter() instanceof BacnetIpConnectionAdapter) {
+                    scheduleCovRenewal(binding, Math.max(0L,
+                            sentAt + binding.lease().lifetimeSeconds * 500L - System.currentTimeMillis()));
+                }
+            });
+        } catch (Exception failure) {
+            List<CovWork> pending = new ArrayList<>();
+            synchronized (covOwnershipLock) {
+                // 续订失败不撤销尚有效的旧租约；只交接其预算内的真实通知。
+                if (isCurrentCovBinding(binding) && binding.lease().confirmedAt > 0L
+                        && !isCovLeaseExpired(binding)) {
+                    pending.addAll(binding.lease().pendingNotifications);
+                }
+                binding.lease().inFlight = false;
+                binding.lease().pendingNotifications.clear();
+            }
+            replayCovNotifications(binding, pending);
+            throw failure;
+        }
+    }
+
+    private void replayCovNotifications(CovSubscriptionBinding binding, List<CovWork> pending) {
+        for (CovWork work : pending) {
+            CovWork acknowledged = new CovWork(work.callback(), work.notification(), work.receivedAt(), binding);
+            if (covExecutor == null) {
+                handleCovNotification(acknowledged.callback(), acknowledged.notification(),
+                        acknowledged.receivedAt(), acknowledged.acknowledgedBinding());
+            } else if (!covQueue.offer(acknowledged)) {
+                covDispatchRejectedCount.incrementAndGet();
+            }
+        }
+        if (covExecutor != null && !pending.isEmpty()) drainCovQueue();
+    }
+
+    private boolean deferCovUntilAck(CovSubscriptionBinding binding, BacnetCovNotification notification,
+                                     long receivedAt) {
+        boolean[] deferred = {false};
+        runIfCurrentCovCallback(binding.callback(), () -> {
+            CovLease lease = binding.lease();
+            if (!isCurrentCovBinding(binding) || !lease.inFlight) return;
+            if (lease.pendingNotifications.size() < 128) {
+                lease.pendingNotifications.addLast(new CovWork(binding.callback(), notification, receivedAt, null));
+            } else {
+                covDispatchRejectedCount.incrementAndGet();
+            }
+            deferred[0] = true;
+        });
+        return deferred[0];
+    }
+
+    private void scheduleCovRenewal(CovSubscriptionBinding binding, long delayMs) {
+        CovLease lease = binding.lease();
+        if (!isCurrentCovBinding(binding)) return;
+        if (lease.renewalTask != null) lease.renewalTask.cancel(false);
+        lease.nextRenewAt = System.currentTimeMillis() + delayMs;
+        try {
+            lease.renewalTask = covScheduler.schedule(() -> {
+                if (!isCurrentCovBinding(binding)) return;
+                try {
+                    covExecutor.execute(() -> renewCovLease(binding));
+                } catch (RejectedExecutionException rejected) {
+                    covDispatchRejectedCount.incrementAndGet();
+                    recordCovRenewalFailure(binding, rejected);
+                }
+            }, delayMs, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException rejected) {
+            lease.renewalFailureReason = "COV 续订调度被拒绝";
+            lease.renewalTask = null;
+            lease.nextRenewAt = 0L;
+            covDispatchRejectedCount.incrementAndGet();
+            log.warn("COV 续订调度被拒绝: 设备={}, 点位={}", binding.point().getDeviceId(),
+                    binding.point().getPointId(), rejected);
+        }
+    }
+
+    private void renewCovLease(CovSubscriptionBinding binding) {
+        try {
+            completeCovSubscription(binding, true);
+        } catch (Exception failure) {
+            recordCovRenewalFailure(binding, failure);
+        }
+    }
+
+    private void recordCovRenewalFailure(CovSubscriptionBinding binding, Exception failure) {
+        if (!runIfCurrentCovCallback(binding.callback(), () -> {
+            if (!isCurrentCovBinding(binding)) return;
+            CovLease lease = binding.lease();
+            lease.renewalAttempts = Math.min(lease.renewalAttempts + 1, 30);
+            lease.renewalFailureReason = failure.getClass().getSimpleName();
+            covRenewalFailureCount.incrementAndGet();
+            long cap = Math.max(1000L, Math.min(30_000L, lease.lifetimeSeconds * 500L));
+            long backoff = Math.min(cap, 500L << Math.min(lease.renewalAttempts - 1, 6));
+            scheduleCovRenewal(binding, backoff);
+        })) {
+            synchronized (covOwnershipLock) {
+                cancelCovRenewal(binding);
+            }
+        }
+    }
+
+    private Map<String, Object> covLeaseSnapshots() {
+        synchronized (covOwnershipLock) {
+            Map<String, Object> snapshots = new LinkedHashMap<>();
+            subscriptionBindings.forEach((pointId, binding) -> {
+                CovLease lease = binding.lease();
+                Map<String, Object> state = new LinkedHashMap<>();
+                state.put("subscriberProcessIdentifier", binding.subscription().processIdentifier());
+                state.put("requestedLifetime", lease.lifetimeSeconds);
+                state.put("confirmedAt", lease.confirmedAt);
+                state.put("expiresAt", lease.expiresAt);
+                state.put("nextRenewAt", lease.nextRenewAt);
+                state.put("renewalAttempts", lease.renewalAttempts);
+                state.put("renewalFailureReason", lease.renewalFailureReason);
+                state.put("subscriptionStatus", !isCurrentCovBinding(binding) ? "RETIRED"
+                        : isCovLeaseExpired(binding) || lease.awaitingFreshSample ? "STALE"
+                        : lease.confirmedAt == 0L ? "SUBSCRIBING" : lease.lifetimeSeconds == 0 ? "PERMANENT" : "ACTIVE");
+                snapshots.put(pointId, state);
+            });
+            return snapshots;
+        }
+    }
+
+    /** UDP 接收线程只交接捕获身份；执行器拒绝计数，不使用 CallerRuns 补偿。 */
+    private void dispatchCovNotification(CovCallbackBinding callback, BacnetCovNotification notification) {
+        long receivedAt = System.currentTimeMillis();
+        Object session = callback.adapter() instanceof BacnetIpConnectionAdapter ipAdapter
+                ? ipAdapter.captureSessionIdentity() : null;
+        if (session != callback.session()) return;
+        if (covExecutor == null) {
+            handleCovNotification(callback, notification, receivedAt);
+            return;
+        }
+        if (!covQueue.offer(new CovWork(callback, notification, receivedAt, null))) {
+            covDispatchRejectedCount.incrementAndGet();
+            log.warn("COV 通知队列已满: 设备={}", deviceInfo.getDeviceId());
+            return;
+        }
+        drainCovQueue();
+    }
+
+    /** 同设备按收包顺序处理，复用 AbortPolicy 执行器而不是 I/O 池的 CallerRunsPolicy。 */
+    private void drainCovQueue() {
+        if (!covDraining.compareAndSet(false, true)) return;
+        try {
+            covExecutor.execute(() -> {
+                try {
+                    CovWork work;
+                    while ((work = covQueue.poll()) != null) {
+                        handleCovNotification(work.callback(), work.notification(), work.receivedAt(),
+                                work.acknowledgedBinding());
+                    }
+                } finally {
+                    covDraining.set(false);
+                    if (!covQueue.isEmpty()) drainCovQueue();
+                }
+            });
+        } catch (RejectedExecutionException rejected) {
+            covDraining.set(false);
+            covQueue.clear();
+            covDispatchRejectedCount.incrementAndGet();
+            log.warn("COV 通知交接被拒绝: 设备={}", deviceInfo.getDeviceId(), rejected);
+        }
+    }
+
+    /** 传输失败的资源清理核对身份而非健康状态，已关闭 Socket 仍需清理。 */
+    private boolean isCurrentCovIdentity(CovCallbackBinding binding) {
+        return binding != null && covCallbackBinding == binding && connectionAdapter == binding.adapter()
+                && runtimeGeneration == binding.generation() && runtimeConfigVersion == binding.configVersion()
+                && (covTaskGuard == null || binding.generation() == 0L
+                    || covTaskGuard.isCurrent(deviceInfo.getDeviceId(), binding.generation()))
+                && (configManager == null || (deviceInfo != null
+                && configManager.getDeviceConfigVersion(deviceInfo.getDeviceId()) == binding.configVersion()));
     }
 
     /**
@@ -937,35 +1515,40 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     /**
      * 处理当前业务流程。
      */
-    private void handleCovNotification(BacnetCovNotification notification) {
+    private void handleCovNotification(CovCallbackBinding callback, BacnetCovNotification notification) {
+        handleCovNotification(callback, notification, System.currentTimeMillis());
+    }
+
+    private void handleCovNotification(CovCallbackBinding callback, BacnetCovNotification notification, long receivedAt) {
+        handleCovNotification(callback, notification, receivedAt, null);
+    }
+
+    private void handleCovNotification(CovCallbackBinding callback, BacnetCovNotification notification, long receivedAt,
+                                       CovSubscriptionBinding acknowledgedBinding) {
+        if (!isCurrentCovCallback(callback) || notification == null || notification.getPropertyValues() == null
+                || notification.getPropertyValues().isEmpty()) return;
         covNotificationCount.incrementAndGet();
-        if (notification != null && notification.isConfirmed()) {
-            covConfirmedNotificationCount.incrementAndGet();
-        }
-        if (notification == null || notification.getPropertyValues() == null || notification.getPropertyValues().isEmpty()) {
-            return;
-        }
-        List<DataPoint> points = new ArrayList<>(subscribedPointMap.values());
-        if (points.isEmpty()) {
-            return;
-        }
+        if (notification.isConfirmed()) covConfirmedNotificationCount.incrementAndGet();
+        List<CovSubscriptionBinding> bindings = new ArrayList<>(subscriptionBindings.values());
         for (BacnetCovNotification.PropertyValue propertyValue : notification.getPropertyValues()) {
-            for (DataPoint point : points) {
+            if (propertyValue == null) continue;
+            for (CovSubscriptionBinding binding : bindings) {
+                if (binding.callback() != callback
+                        || binding.subscription().processIdentifier() != notification.getSubscriberProcessIdentifier()
+                        || binding.remoteDeviceInstance() != notification.getInitiatingDeviceInstance()) continue;
                 try {
-                    BacnetAddress address = requireAddress(point);
-                    if (!matchesNotification(notification, propertyValue, address)) {
-                        continue;
-                    }
-                    ProcessResult processResult = ingestPushedValue(point, propertyValue.getValue());
-                    if (processResult != null) {
-                        processResult.addMetadata("covSubscriberProcessIdentifier", notification.getSubscriberProcessIdentifier());
-                        processResult.addMetadata("covTimeRemaining", notification.getTimeRemaining());
-                    }
+                    if (!matchesNotification(notification, propertyValue, binding.subscription().address())) continue;
+                    // 原绑定已接受 ACK 的通知，不因下一续订抢先启动而再次暂存。
+                    if (acknowledgedBinding != binding && deferCovUntilAck(binding, notification, receivedAt)) continue;
+                    BacnetValue rawValue = BacnetValue.builder()
+                            .value(propertyValue.getValue()).valueType(propertyValue.getValueType())
+                            .kind(valueMapper.inferKind(propertyValue.getValue()))
+                            .metadata(propertyValue.getValueMetadata() != null
+                                    ? propertyValue.getValueMetadata() : Collections.emptyMap()).build();
+                    ingestPushedValue(binding, rawValue, notification, receivedAt);
                 } catch (Exception ex) {
-                    log.warn("{} COV 通知 分发 失败, 设备={}, 点位={}", protocolDisplayName(),
-                            deviceInfo != null ? deviceInfo.getDeviceId() : null,
-                            point != null ? point.getPointId() : null,
-                            ex);
+                    log.warn("{} COV 通知分发失败, 设备={}, 点位={}", protocolDisplayName(),
+                            deviceInfo != null ? deviceInfo.getDeviceId() : null, binding.point().getPointId(), ex);
                 }
             }
         }
@@ -1138,18 +1721,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
             return false;
         }
         try {
+            long generation = runtimeGeneration;
+            long configVersion = runtimeConfigVersion;
             DeviceConnection desiredConfig = currentOrRequiredConnectionConfig();
             BacnetConnectionAdapter newAdapter = createBacnetConnectionAdapter(desiredConfig);
-            newAdapter.setCovNotificationListener(this::handleCovNotification);
-            newAdapter.setReconnectListener(this::handleAdapterReconnect);
-            connectionAdapter = newAdapter;
+            CovCallbackBinding callback = bindCovConnection(newAdapter, generation, configVersion);
             requestTimeoutMs = resolveRequestTimeout(desiredConfig);
             connected = true;
             connectionStatus = "CONNECTED";
             lastConnectTime = System.currentTimeMillis();
             lastActivityTime = System.currentTimeMillis();
             reportMatchedDiscovery();
-            handleAdapterReconnect();
+            handleAdapterReconnect(callback);
             return true;
         } catch (Exception ex) {
             lastError = ex.getMessage();
@@ -1161,8 +1744,18 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
     /**
      * 处理当前业务流程。
      */
-    private void handleAdapterReconnect() {
-        if (!shouldResubscribeOnReconnect() || subscribedPointMap.isEmpty() || !isCovEnabled()) {
+    private void handleAdapterReconnect(CovCallbackBinding callback) {
+        synchronized (covOwnershipLock) {
+            if (!isCurrentCovIdentity(callback)) return;
+            Object session = callback.adapter() instanceof BacnetIpConnectionAdapter ipAdapter
+                    ? ipAdapter.captureSessionIdentity() : null;
+            if (session != callback.session()) {
+                clearCovOwnership();
+                callback = ensureNotificationListenerRegistered();
+            }
+        }
+        if (!isCurrentCovCallback(callback)
+                || !shouldResubscribeOnReconnect() || subscribedPointMap.isEmpty() || !isCovEnabled()) {
             return;
         }
         List<DataPoint> points = filterAutoSubscriptionPoints(new ArrayList<>(subscribedPointMap.values()));
@@ -1170,7 +1763,7 @@ public class BacnetIpCollector extends ConnectionBackedCollector implements Prot
             return;
         }
         try {
-            doSubscribe(points);
+            doSubscribe(points, callback);
             covResubscribeCount.incrementAndGet();
         } catch (Exception ex) {
             covResubscribeFailureCount.incrementAndGet();

@@ -106,7 +106,7 @@ public class CollectionManager {
                     try {
                         collector.destroy();
                     } finally {
-                        cleanupConnection(deviceId);
+                        collector.releaseManagedConnection();
                     }
                     throw new CollectorException("采集器管理器已关闭，取消登记", deviceId, null);
                 }
@@ -196,6 +196,24 @@ public class CollectionManager {
 
     public void reconnectDevice(String deviceId) throws CollectorException {
         operateOwnedCollector(deviceId, 0L, true);
+    }
+
+    /** 自动任务只操作排队时捕获的实例；人工 connect/reconnect 保持原契约。 */
+    public boolean reconnectDeviceAutomatically(String deviceId, long generation, ProtocolCollector expected) {
+        return withOwnedCollector(deviceId, generation, collector -> {
+            if (collector != expected || !expected.isAutomaticReconnectAllowed()) return false;
+            if (collector.isConnected()) collector.disconnect();
+            CollectorOwnership ownership = collectorOwnerships.get(deviceId);
+            if (ownership == null) return false;
+            synchronized (ownership) {
+                if (ownership.retired || ownership.collector != expected
+                        || ownership.generation != generation || collectors.get(deviceId) != expected
+                        || (collectionTaskGuard != null && !collectionTaskGuard.isCurrent(deviceId, generation))) {
+                    return false;
+                }
+            }
+            return expected.isAutomaticReconnectAllowed() && expected.reconnectAutomatically();
+        });
     }
 
     /**
@@ -434,8 +452,7 @@ public class CollectionManager {
             failure = e;
         }
         try {
-            // 同设备的新实例尚不允许登记，旧采集器的别名清理不会触及新连接。
-            cleanupConnection(deviceId);
+            ownership.collector.releaseManagedConnection();
         } catch (Exception e) {
             if (failure == null) failure = e;
             else failure.addSuppressed(e);
@@ -451,13 +468,4 @@ public class CollectionManager {
         collectorOwnerships.remove(deviceId, ownership);
     }
 
-    private void cleanupConnection(String deviceId) {
-        try {
-            if (connectionManager != null) {
-                connectionManager.removeConnection(deviceId);
-            }
-        } catch (Exception e) {
-            throw new CollectorException("清理设备连接失败", deviceId, null, e);
-        }
-    }
 }

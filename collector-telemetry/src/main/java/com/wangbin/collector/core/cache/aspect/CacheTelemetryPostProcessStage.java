@@ -77,6 +77,8 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
     public void process(TelemetryPostProcessContext context) {
         DataPoint point = context.point();
         ProcessResult cachedResult = context.processResult().snapshot();
+        // 在途上下文保留最终门；长期缓存和增量跟踪不保留旧 collector/client 的引用。
+        cachedResult.clearSourceCommitGuard();
         cachedResult.addMetadata(ProcessResultMetadataKeys.SOURCE_GENERATION, context.generation());
         cachedResult.addMetadata(ProcessResultMetadataKeys.RUNTIME_ID, context.guard().runtimeId());
         java.util.Map<String, Object> identity = new java.util.LinkedHashMap<>();

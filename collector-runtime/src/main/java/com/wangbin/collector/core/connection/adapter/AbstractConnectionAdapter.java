@@ -132,6 +132,14 @@ public abstract class AbstractConnectionAdapter<C> implements ConnectionAdapter<
         }
     }
 
+    /** 最终退役也清理未建连或已断线实例的构造期资源，不受断开状态短路影响。 */
+    @Override
+    public void closeResources() throws Exception {
+        doDisconnect();
+        status = ConnectionStatus.DISCONNECTED;
+        metrics.setStatus(status);
+    }
+
     /**
      * 处理连接生命周期。
      */

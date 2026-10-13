@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.cache.aspect;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import com.wangbin.collector.core.collector.protocol.base.BaseCollector;
 import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,10 +45,7 @@ public class CollectorDataCacheAspect {
     @AfterReturning(pointcut = "readPointPointcut()", returning = "result")
     public void afterReadPoint(JoinPoint joinPoint, Object result) {
         try {
-            if (result == null) {
-                return;
-            }
-
+            Map<String, ProcessResult> invocationResults = takeInvocationResults(joinPoint);
             DataPoint point = (DataPoint) joinPoint.getArgs()[0];
             if (point == null) {
                 return;
@@ -58,11 +56,10 @@ public class CollectorDataCacheAspect {
                 return;
             }
 
-            InvocationProcessResultSource resultSource = joinPoint.getTarget() instanceof InvocationProcessResultSource
-                    ? (InvocationProcessResultSource) joinPoint.getTarget() : null;
-            Map<String, ProcessResult> invocationResults = resultSource != null
-                    ? resultSource.takeInvocationProcessResults() : Map.of();
             ProcessResult processResult = invocationResults.get(point.getPointId());
+            if (result == null && processResult == null) {
+                return;
+            }
             Object cacheValue = processResult != null ? processResult : result;
 
             dataPostProcessor.savePointAsync(deviceId, point, cacheValue);
@@ -77,6 +74,7 @@ public class CollectorDataCacheAspect {
     @AfterReturning(pointcut = "readPointsPointcut()", returning = "result")
     public void afterReadPoints(JoinPoint joinPoint, Map<String, Object> result) {
         try {
+            Map<String, ProcessResult> invocationResults = takeInvocationResults(joinPoint);
             if (result == null || result.isEmpty()) {
                 return;
             }
@@ -86,7 +84,9 @@ public class CollectorDataCacheAspect {
                 return;
             }
 
-            String deviceId = points.stream()
+            // 批读以采集器所属设备为准，不能被参数中的首个外设备点位改变归属。
+            String deviceId = joinPoint.getTarget() instanceof BaseCollector collector
+                    && collector.getDeviceInfo() != null ? collector.getDeviceInfo().getDeviceId() : points.stream()
                     .filter(point -> point != null && point.getDeviceId() != null)
                     .map(DataPoint::getDeviceId)
                     .findFirst()
@@ -95,14 +95,15 @@ public class CollectorDataCacheAspect {
                 return;
             }
 
-            InvocationProcessResultSource resultSource = joinPoint.getTarget() instanceof InvocationProcessResultSource
-                    ? (InvocationProcessResultSource) joinPoint.getTarget() : null;
-            Map<String, ProcessResult> invocationResults = resultSource != null
-                    ? resultSource.takeInvocationProcessResults() : Map.of();
-
             dataPostProcessor.saveBatchAsync(deviceId, points, result, invocationResults);
         } catch (Exception e) {
             log.error("准备异步批量缓存失败", e);
         }
+    }
+
+    /** 即使读取无值或参数无效，也必须消费并释放当前调用快照。 */
+    private Map<String, ProcessResult> takeInvocationResults(JoinPoint joinPoint) {
+        return joinPoint.getTarget() instanceof InvocationProcessResultSource source
+                ? source.takeInvocationProcessResults() : Map.of();
     }
 }

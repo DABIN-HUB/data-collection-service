@@ -14,6 +14,12 @@ import java.util.Map;
 @Data
 public class ProcessContext {
 
+    /** 当前质量处理调用的副作用提交门，仅由可选守护入口临时设置。 */
+    public static final String QUALITY_SIDE_EFFECT_GUARD = "qualitySideEffectGuard";
+
+    /** 已在提交门内接受、待门外发布的本次调用告警通知。 */
+    public static final String QUALITY_DEFERRED_ALERTS = "qualityDeferredAlerts";
+
     // 设备信息
     private DeviceInfo deviceInfo;
 

@@ -15,7 +15,9 @@ import com.wangbin.collector.core.port.AlertPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * 校验采集数据质量，并为异常数据补充可上报的告警元数据。
@@ -43,6 +45,36 @@ public class DataQualityProcessor extends AbstractDataProcessor {
     }
 
     /**
+     * 在调用方提交门内评估并保存告警状态、接受事件；通知发布在门外执行。
+     * 提交门必须同步执行接受的操作，拒绝时不执行；传入空门保持普通处理行为。
+     */
+    public ProcessResult processWithSideEffectGuard(ProcessContext context, DataPoint point,
+                                                    Object rawValue, Predicate<Runnable> commitGuard) {
+        if (commitGuard == null) {
+            return super.process(context, point, rawValue);
+        }
+        ProcessContext guardedContext = context != null ? context : new ProcessContext();
+        List<AlertNotification> notifications = new ArrayList<>();
+        guardedContext.addAttribute(ProcessContext.QUALITY_SIDE_EFFECT_GUARD, commitGuard);
+        guardedContext.addAttribute(ProcessContext.QUALITY_DEFERRED_ALERTS, notifications);
+        try {
+            return super.process(guardedContext, point, rawValue);
+        } finally {
+            guardedContext.getAttributes().remove(ProcessContext.QUALITY_SIDE_EFFECT_GUARD);
+            guardedContext.getAttributes().remove(ProcessContext.QUALITY_DEFERRED_ALERTS);
+            // 通知已在原身份的提交门内接受，后续失效不能撤销该线性化结果。
+            for (AlertNotification notification : notifications) {
+                try {
+                    alertPublisher.notifyAlert(notification, false);
+                } catch (Exception exception) {
+                    log.error("发布已接受的告警通知失败：设备={}, 点位={}",
+                            notification.getDeviceId(), notification.getPointId(), exception);
+                }
+            }
+        }
+    }
+
+    /**
      * 执行当前业务逻辑。
      */
     @Override
@@ -56,48 +88,72 @@ public class DataQualityProcessor extends AbstractDataProcessor {
     @Override
     protected ProcessResult doProcess(ProcessContext context, DataPoint point, Object rawValue) throws Exception {
         if (rawValue == null) {
-            return buildQualityError(point, null, "数值为空", DataQuality.BAD);
+            return buildQualityError(point, null, "数值为空", DataQuality.BAD, context);
         }
 
         try {
             String rangeIssue = validateRange(point, rawValue);
             if (rangeIssue != null) {
-                return buildQualityError(point, rawValue, rangeIssue, DataQuality.VALUE_INVALID);
+                return buildQualityError(point, rawValue, rangeIssue, DataQuality.VALUE_INVALID, context);
             }
 
-            AlarmEvent alarmEvent = null;
-            if (point.getAlarmEnabled() != null && point.getAlarmEnabled() == 1) {
-                alarmEvent = checkAlarmRules(point, rawValue, context);
+            List<AlarmRule> rules = point.getAlarmEnabled() != null && point.getAlarmEnabled() == 1
+                    ? point.getAlarmRule() : null;
+            double doubleValue = rules != null && !rules.isEmpty() ? convertToDouble(rawValue) : Double.NaN;
+            if (sideEffectGuard(context) != null && rules != null && !Double.isNaN(doubleValue)) {
+                for (AlarmRule rule : rules) {
+                    if (rule != null && (rule.getEnabled() == null || rule.getEnabled())) {
+                        alarmStateTracker.prepareState(point.getDeviceId(), point.getPointId(), rule);
+                    }
+                }
             }
 
             ProcessResult result = ProcessResult.success(rawValue, rawValue, "质量检查通过");
-            if (alarmEvent != null) {
-                if (ALARM_EVENT_TYPE.equals(alarmEvent.type)) {
-                    result.setQuality(QualityEnum.WARNING.getCode());
-                    result.setQualityDescription(QualityEnum.WARNING.getText());
+            boolean accepted = commitSideEffects(context, () -> {
+                AlarmEvent alarmEvent = checkAlarmRules(point, rules, doubleValue, context);
+                if (alarmEvent != null) {
+                    if (ALARM_EVENT_TYPE.equals(alarmEvent.type)) {
+                        result.setQuality(QualityEnum.WARNING.getCode());
+                        result.setQualityDescription(QualityEnum.WARNING.getText());
+                    }
+                    applyAlarmMetadata(result, point, alarmEvent, context, rawValue);
                 }
-                applyAlarmMetadata(result, point, alarmEvent, context, rawValue);
-            }
-            return result;
+            });
+            return accepted ? result : ProcessResult.skip(rawValue, "副作用提交门已拒绝");
 
         } catch (Exception e) {
             log.error("质量检查错误：点位={}, 值={}", point.getPointName(), rawValue, e);
             ProcessResult error = ProcessResult.error(rawValue,
                     "质量检查异常：" + e.getMessage(), DataQuality.PROCESS_ERROR);
-            applyAlarmMetadata(error, point,
-                    new AlarmEvent(QUALITY_EVENT_TYPE, "ERROR", "质量检查异常", null, null), context, rawValue);
-            return error;
+            boolean accepted = commitSideEffects(context, () -> applyAlarmMetadata(error, point,
+                    new AlarmEvent(QUALITY_EVENT_TYPE, "ERROR", "质量检查异常", null, null), context, rawValue));
+            return accepted ? error : ProcessResult.skip(rawValue, "副作用提交门已拒绝");
         }
     }
 
     /**
      * 创建并返回业务对象。
      */
-    private ProcessResult buildQualityError(DataPoint point, Object rawValue, String message, DataQuality quality) {
+    private ProcessResult buildQualityError(DataPoint point, Object rawValue, String message,
+                                            DataQuality quality, ProcessContext context) {
         ProcessResult result = ProcessResult.error(rawValue, message, quality);
-        applyAlarmMetadata(result, point,
-                new AlarmEvent(QUALITY_EVENT_TYPE, quality.getDescription(), message, null, null), null, rawValue);
-        return result;
+        ProcessContext alertContext = sideEffectGuard(context) != null ? context : null;
+        boolean accepted = commitSideEffects(context, () -> applyAlarmMetadata(result, point,
+                new AlarmEvent(QUALITY_EVENT_TYPE, quality.getDescription(), message, null, null), alertContext, rawValue));
+        return accepted ? result : ProcessResult.skip(rawValue, "副作用提交门已拒绝");
+    }
+
+    private Predicate<Runnable> sideEffectGuard(ProcessContext context) {
+        return context != null ? context.getAttribute(ProcessContext.QUALITY_SIDE_EFFECT_GUARD) : null;
+    }
+
+    private boolean commitSideEffects(ProcessContext context, Runnable action) {
+        Predicate<Runnable> guard = sideEffectGuard(context);
+        if (guard != null) {
+            return guard.test(action);
+        }
+        action.run();
+        return true;
     }
 
     /**
@@ -131,14 +187,9 @@ public class DataQualityProcessor extends AbstractDataProcessor {
     /**
      * 校验业务条件和参数边界。
      */
-    private AlarmEvent checkAlarmRules(DataPoint point, Object value, ProcessContext context) {
-        List<AlarmRule> rules = point.getAlarmRule();
-        if (rules == null || rules.isEmpty()) {
-            return null;
-        }
-
-        double doubleValue = convertToDouble(value);
-        if (Double.isNaN(doubleValue)) {
+    private AlarmEvent checkAlarmRules(DataPoint point, List<AlarmRule> rules,
+                                       double doubleValue, ProcessContext context) {
+        if (rules == null || rules.isEmpty() || Double.isNaN(doubleValue)) {
             return null;
         }
 
@@ -258,7 +309,13 @@ public class DataQualityProcessor extends AbstractDataProcessor {
                         .unit(point != null ? point.getUnit() : null)
                         .timestamp(context != null ? context.getProcessTime() : System.currentTimeMillis())
                         .build();
-        alertPublisher.notifyAlert(notification, false);
+        List<AlertNotification> deferred = context != null
+                ? context.getAttribute(ProcessContext.QUALITY_DEFERRED_ALERTS) : null;
+        if (deferred != null) {
+            deferred.add(notification);
+        } else {
+            alertPublisher.notifyAlert(notification, false);
+        }
     }
 
     /**

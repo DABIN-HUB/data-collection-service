@@ -74,7 +74,10 @@ public class RuntimeStateCoordinator {
                 long freshnessMs = pollPoint ? Math.max(MIN_FRESHNESS_MS, add(multiply(interval, 3L), readTimeout))
                         : point.getCacheDuration() != null && point.getCacheDuration() > 0
                         ? multiply(point.getCacheDuration().longValue(), 1_000L) : Long.MAX_VALUE;
-                boolean outdated = valueAt > 0L && (now - valueAt > freshnessMs || !runtime.running());
+                long leaseExpiresAt = acquisitionRuntimeTracker.eventLeaseExpiresAt(deviceId,
+                        runtime.generation(), point.getPointId());
+                boolean outdated = valueAt > 0L && (now - valueAt > freshnessMs || !runtime.running()
+                        || (eventPoint && leaseExpiresAt > 0L && now >= leaseExpiresAt));
                 long pointDeadlineAt = runtime.startedAt() <= 0L ? 0L
                         : add(runtime.startedAt(), Math.max(MIN_FIRST_VALUE_TIMEOUT_MS, freshnessMs));
                 if (included && pollPoint) firstValueDeadlineAt = Math.max(firstValueDeadlineAt, pointDeadlineAt);
