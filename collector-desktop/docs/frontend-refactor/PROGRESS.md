@@ -2,21 +2,21 @@
 
 ## 最新范围：设备管理保真修正、Noto Sans SC 与认证 Header 只读复核（2026-10-14）
 
-用户明确要求“设备管理页面没有按照设计图实现，需要监工修改；字体改成 Noto Sans SC；认证失败时通过标准请求 Header 读取真实设备”。当前状态为 `IMPLEMENTED / AUTHENTICATED_READONLY_RECAPTURED / CONDITIONAL_PIXEL_REVIEW_PENDING`。本轮沿用已批准的 `designs/collector-workbench/`，只修前端呈现层和既有 HTTP Header 的大小写表达，保持真实 API、Store、Schema、请求归属、生命周期、默认模式和业务写入边界；不创建、修改或运行测试，不伪造设备数据或认证成功。Header 由浏览器 Axios 的当前令牌和 Electron 主进程凭据存储统一注入为 `x-collector-token: [REDACTED]`，不把凭据硬编码到源码。认证后的真实 renderer 只读回读得到 31 台设备；独立像素复审指出的操作层级、配置点位摘要和标题上下文已在最新候选中修正，但当前候选的独立视觉复审调用因上游栈溢出失败，因此不宣称最终无条件视觉 PASS。
+用户明确要求“设备管理页面没有按照设计图实现，需要监工修改；字体改成 Noto Sans SC；认证失败时通过标准请求 Header 读取真实设备”。当前状态为 `IMPLEMENTED / AUTHENTICATED_READONLY_RECAPTURED / DEPLOYED_9090 / CONDITIONAL_PIXEL_REVIEW_PENDING`。本轮沿用已批准的 `designs/collector-workbench/`，只修前端呈现层和既有 HTTP Header 的大小写表达，保持真实 API、Store、Schema、请求归属、生命周期、默认模式和业务写入边界；不创建、修改或运行测试，不伪造设备数据或认证成功。Header 由浏览器 Axios 的当前令牌和 Electron 主进程凭据存储统一注入为 `x-collector-token: [REDACTED]`，不把凭据硬编码到源码。认证后的真实 renderer 只读回读得到 31 台设备；独立像素复审指出的操作层级、配置点位摘要和标题上下文已在最新候选中修正，但当前候选的独立视觉复审调用因上游栈溢出失败，因此不宣称最终无条件视觉 PASS。
 
 ### 本轮实际修正与部署记录
 
 - 设备页新增与批准稿一致的紧凑设备汇总轨道，真实列表未成功读取时显示 `—` 和“尚无成功读取结果”；成功空列表仍可显示真实的 0。桌面操作顺序调整为“刷新列表 → 配置导出/导入组合 → 新增本地设备”，1280px 使用 202px 窄桌面侧栏，390px 使用明确的双列网格；失败态只保留真实错误和“运维令牌与连接 → 保存令牌 → 刷新列表”的恢复路径。不改变请求、payload、handler 或默认视图。
 - 复审指出的 P2 错误文案重复已在呈现层收口：对 401/未授权/令牌无效类真实错误统一显示单一恢复提示，保留原始 Store 错误、请求和认证状态不变；非认证错误继续按原始错误展示。
 - 全站前端字体变量切换为本地 `Noto Sans SC` 可变字体 `NotoSansSC-VF.ttf`，并保留 `@font-face`、Element Plus 变量和弹层内联字体覆盖；旧 LXGW 资源不再进入 renderer。字体资源 SHA-256 为 `763146584cf0710223441356b4395e279021b0806c196614377a7a0174ae074a`。
-- `lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际 exit 0；Vite 仅保留既有第三方 PURE 注释和大 chunk warning。renderer 与 Boot 静态目录共 61 个文件，路径/字节 SHA-256 全部一致；入口为 `index-BjOeEuDj.js`。
-- 使用 Java 17/Maven 3.6.3 和 `-Dmaven.test.skip=true` 完成全 reactor `clean package`，17 个模块均 SUCCESS，未编译或运行测试。最新 JAR 为 111502827 bytes，SHA-256 为 `ae81f046594fb3913538bb7a503ed25fd14eebb50702f3d8b80d32852ab4ffea`，已嵌入 Noto 字体并与静态目录字节一致。
-- 已停止旧 9090 服务并重新启动最新 JAR；当前 9090 实际 listener 为最新 Java 17 JAR 进程，入口 HTML 和本地字体 HTTP 200。`/collector/actuator/health` HTTP 200 但业务状态为 `DOWN`，该健康结果与视觉交付分开记录。
-- P2 收口后已重新采集 `device-management-final-noto/` 下 wide/medium/narrow 三种视口，入口 expected/actual 均为 `index-BjOeEuDj.js`，Noto Sans SC `document.fonts.check()` 和 FontFace status 均成功，页面级横向溢出为 0、pageerror 为 0；设备接口自然返回 401，故成功设备卡片态仍未观察，未注入示例数据。独立复审结论为桌面与窄屏当前可观察错误态无 P0/P1，成功卡片态和 390px 参考图仍保留证据边界。
+- `lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际 exit 0；Vite 仅保留既有第三方 PURE 注释和大 chunk warning。renderer 与 Boot 静态目录共 61 个文件，路径/字节 SHA-256 全部一致；入口为 `index-BXY-uzQS.js`。
+- 使用 Java 17/Maven 3.6.3 和 `-Dmaven.test.skip=true` 从提交 `b259b511` 的隔离 worktree 完成全 reactor `package`，17 个模块均 SUCCESS，未编译或运行测试。最新 JAR 为 111503465 bytes，SHA-256 为 `7b653c21e1cc549cbd0a1f9e6d329df08ee903d2664f46d2dcf088492b356db5`，已嵌入 Noto 字体和完整桌面静态资源。
+- 用户授权重启后已停止旧 9090 服务并重新启动最新 JAR；当前 9090 实际 listener 为 Java 17 JAR 进程，入口 HTML HTTP 200，受保护的 `/collector/api/config/devices` 与 `/collector/api/device/runtime` 只读请求均 HTTP 200。部署 JAR 与隔离构建产物 SHA-256 一致。
+- 最新 9090 认证只读采集已完成 `wide`/`medium`/`narrow` 三种视口：真实设备 31 台，1600px/1280px/390px 分别为三列/两列/单列，标题上下文、操作顺序、配置点位摘要均符合候选；三视口页面级/root/登记册横向溢出均为 0，Noto Sans SC 已加载，浏览器错误为 0。采集报告中的 Header 值已脱敏为 `[REDACTED]`，未执行任何业务写操作。
 - 按用户提供的临时凭据通过现有标准 Header 注入路径执行只读回读：`/api/config/devices` 与 `/api/device/runtime` 均 HTTP 200；认证后的 renderer 读取到真实 31 台设备，1600px 为三列、1280px 为两列、390px 为单列，三视口均无横向溢出、Noto Sans SC 已加载且浏览器错误为 0。凭据未写入源码、进度文档或截图报告，未执行任何业务写操作。
 - 最新候选增加 `配置 / 设备管理` 页面上下文、将配置导入/导出收束为同一操作组、恢复真实 `配置点位` 摘要位，并把窄屏顺序固定为“刷新列表 → 配置导入/导出 → 新增本地设备”；卡片对长真实 ID 做两行视觉限高但保留原值 tooltip，连接地址、来源、点位和周期继续来自真实设备字段。前端 `lint`、`stylelint`、`typecheck`、`build`、`build:web` 重新实际 exit 0；最新认证候选 Header 名集合包含 `x-collector-token`，四个只读 API 请求成功，三视口截图的页面级/root/登记册横向溢出均为 0。配置点位在本次真实响应中不可得时显示 `—`，未用批准稿示例数字填充。
 - 最终候选又修正了卡片网格的隐式行高：设备卡片按内容自动扩展，不再让地址、点位、健康统计和底部操作溢出 99px 固定行；协议、长真实 ID、连接地址和状态统计保持可见。重新采集的 1600/1280/390 认证成功态仍为 31 台、三列/两列/单列、页面级/root/登记册横向溢出均为 0。
-- 本轮 `build:web` 已将 renderer 与 Boot 静态目录同步为 61/61 文件且逐文件 SHA-256 一致。尝试在现有 9090 服务运行期间执行 Maven 无测试打包时，Spring Boot repackage 因 PID 53176 锁定目标 JAR 而失败；随后在隔离 scratch reactor 中无测试打包成功并确认产物含 `BOOT-INF`、嵌入式桌面静态资源和 Noto Sans SC，但未停止旧服务或宣称 9090 已切换到该候选。
+- 本轮 `build:web` 已将 renderer 与 Boot 静态目录同步为 61/61 文件且逐文件 SHA-256 一致。首次 Maven 无测试打包受 PID 53176 锁定旧目标 JAR 影响；在用户授权重启后停止该旧服务，从提交 `b259b511` 的隔离 worktree 完成无测试打包，安装并启动最新可执行 JAR，9090 入口和认证只读 API 均已实际读回验证。
 
 ## 最新范围：批准稿精密工业工作台实施与真实 renderer 验收（2026-10-13）
 
