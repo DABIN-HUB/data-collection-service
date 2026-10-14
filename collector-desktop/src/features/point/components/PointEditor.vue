@@ -847,7 +847,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-lg);
   background: var(--console-code-bg);
-  font-family: Consolas, monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.6;
   resize: vertical;

@@ -567,7 +567,7 @@
   border-radius: 0 0 8px 8px;
   color: var(--app-code-text);
   background: var(--app-code-bg);
-  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;

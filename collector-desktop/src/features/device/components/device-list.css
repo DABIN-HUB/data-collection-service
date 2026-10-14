@@ -22,7 +22,7 @@
   overflow: hidden;
   color: var(--device-text);
   background: var(--device-bg);
-  font: 13px/1.55 "Bahnschrift", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font: 13px/1.55 var(--app-font-family);
   color-scheme: light;
 }
 
@@ -37,6 +37,20 @@
 
 .device-title-block {
   min-width: 0;
+}
+
+.device-breadcrumb {
+  display: flex;
+  margin-bottom: 6px;
+  align-items: center;
+  gap: 7px;
+  color: var(--device-muted);
+  font-size: 11px;
+}
+
+.device-breadcrumb strong {
+  color: var(--device-text);
+  font-weight: 500;
 }
 
 .device-title-line {
@@ -78,6 +92,27 @@
   padding-top: 2px;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.device-transfer-actions {
+  display: inline-flex;
+  padding: 3px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--device-line);
+  border-radius: 7px;
+  background: var(--console-bg-soft);
+}
+
+.device-transfer-label {
+  padding: 0 5px 0 7px;
+  color: var(--device-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.device-transfer-actions .device-button {
+  border-color: transparent;
 }
 
 /* 浅层页面根 + 原生按钮类负责覆盖 AppShell 的 scoped deep 默认按钮。 */
@@ -163,6 +198,44 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.device-summary {
+  display: flex;
+  min-width: 0;
+  padding: 0 0 2px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+  color: var(--device-muted);
+  font-size: 11.5px;
+}
+
+.device-summary-item {
+  display: inline-flex;
+  min-height: 24px;
+  padding: 0 20px;
+  align-items: baseline;
+  gap: 7px;
+  border-right: 1px solid var(--device-line);
+  white-space: nowrap;
+}
+
+.device-summary-item:first-child {
+  padding-left: 0;
+}
+
+.device-summary-item strong {
+  color: var(--device-text);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-summary-note {
+  padding-left: 20px;
+  color: var(--device-muted);
+  font-size: 11px;
 }
 
 .device-filters {
@@ -353,7 +426,7 @@
 }
 
 .device-mono {
-  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--app-font-family);
   font-variant-numeric: tabular-nums;
 }
 
@@ -390,6 +463,17 @@
   font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.device-config-source {
+  margin-top: 9px;
+  color: var(--device-muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.device-config-source span {
+  color: var(--console-text-primary);
 }
 
 .device-address {
@@ -728,7 +812,7 @@
   max-height: calc(100vh - 32px);
   overflow: auto;
   color: var(--console-text-primary);
-  font: 13px/1.55 "Bahnschrift", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font: 13px/1.55 var(--app-font-family);
   color-scheme: light;
   scrollbar-color: var(--console-scrollbar-thumb) var(--console-bg-soft);
 }
@@ -1061,6 +1145,7 @@
 .device-view-cards .device-register-body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: max-content;
   gap: 16px;
   align-content: start;
 }
@@ -1100,6 +1185,22 @@
   border-bottom: 0;
 }
 
+.device-view-cards .device-identity h2 {
+  display: -webkit-box;
+  max-height: 3em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.device-view-cards .device-id {
+  display: -webkit-box;
+  max-height: 2.9em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .device-view-cards .device-equipment {
   position: absolute;
   top: 1px;
@@ -1123,12 +1224,80 @@
   display: flex;
   flex-wrap: wrap;
   gap: 3px 12px;
+  margin-top: 4px;
+  font-size: 10.5px;
+}
+
+.device-view-cards .device-transport > span:last-child {
+  padding: 2px 7px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--device-line);
+  border-radius: 4px;
+  background: var(--console-bg-soft);
 }
 
 .device-view-cards .device-connection,
 .device-view-cards .device-quality {
   padding-top: 13px;
   border-top: 1px solid var(--device-line);
+}
+
+.device-view-cards .device-connection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 3px 12px;
+}
+
+.device-view-cards .device-connection .device-cell-label,
+.device-view-cards .device-connection .device-address {
+  grid-column: 1 / -1;
+}
+
+.device-view-cards .device-connection .device-cell-label {
+  display: none;
+  margin-bottom: 2px;
+}
+
+.device-view-cards .device-connection .device-config-source,
+.device-view-cards .device-connection .device-configured-points,
+.device-view-cards .device-connection .device-interval {
+  min-width: 0;
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-view-cards .device-connection .device-config-source {
+  display: none;
+}
+
+.device-view-cards .device-counts {
+  margin: 3px 0 4px;
+  flex-wrap: nowrap;
+  gap: 0 6px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.device-view-cards .device-counts > span,
+.device-view-cards .device-last-valid {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-view-cards .device-quality .device-counts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 6px;
+}
+
+.device-view-cards .device-quality .device-last-valid {
+  display: block;
+  margin-top: 3px;
 }
 
 .device-view-cards .device-cell-label {
@@ -1206,11 +1375,60 @@
   }
 
   .device-heading-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
   }
 
+  .device-heading-actions > .device-button:first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .device-transfer-actions {
+    width: 100%;
+    grid-column: 2;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-transfer-label {
+    grid-column: 1 / -1;
+    padding: 2px 4px 0;
+    text-align: center;
+  }
+
+  .device-heading-actions > .device-button.primary {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .exact-page.device-list-view .device-heading-actions button.device-button {
+    width: 100%;
     font-size: 11px;
+  }
+
+  .device-summary {
+    padding: 9px 0 5px;
+    border-top: 1px solid var(--device-line);
+    border-bottom: 1px solid var(--device-line);
+  }
+
+  .device-summary-item {
+    width: 33.333%;
+    padding: 0 10px 7px 0;
+    border-right: 0;
+  }
+
+  .device-summary-item strong {
+    font-size: 15px;
+  }
+
+  .device-summary-note {
+    width: 100%;
+    padding: 0;
   }
 
   .device-filters,
@@ -1233,6 +1451,15 @@
     padding: 16px;
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
+  }
+
+  .device-view-cards .device-connection {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .device-view-cards .device-connection .device-cell-label,
+  .device-view-cards .device-connection .device-address {
+    grid-column: 1 / -1;
   }
 
   .device-identity {

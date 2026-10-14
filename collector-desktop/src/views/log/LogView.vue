@@ -65,7 +65,6 @@
             </div>
           </div>
         </details>
-        <p class="log-filter-note">级别、记录器、关键字和数量用于查询；设备与线程只筛选当前返回结果。</p>
         <div class="log-secondary-actions">
           <div class="log-action-group" role="group" aria-label="异常定位">
             <button type="button" @click="showErrorLogs">错误日志快速定位</button>
@@ -76,8 +75,12 @@
             <button type="button" :disabled="!canExportLogs" aria-describedby="log-export-note" @click="downloadLogs('json')">导出 JSON</button>
           </div>
         </div>
-        <p id="log-export-note" class="log-export-note">{{ logExportNote }}</p>
+        <div class="log-query-notes">
+          <p class="log-filter-note">级别、记录器、关键字和数量用于查询；设备与线程只筛选当前返回结果。</p>
+          <p id="log-export-note" class="log-export-note">{{ logExportNote }}</p>
+        </div>
       </section>
+      <div class="log-source-block">
       <el-alert v-if="logReadStatusText" class="log-read-status" :title="logReadStatusText" :type="logReadStatusType" :closable="false" show-icon>
         <div class="log-recovery-actions">
           <button v-if="hasCurrentLogError" type="button" :disabled="logQueryDisabled" @click="refreshLogs">重试读取</button>
@@ -86,12 +89,14 @@
         </div>
       </el-alert>
       <OperationSourceStatus
+        class="log-source-status"
         :state="logSourceState"
         :source="logSourceText"
         :last-attempt-at="logDisplayedLastAttemptAt"
         :last-success-at="hasLogLastGoodForCurrentServerContext ? logLastSuccessAt : null"
         :detail="logSourceDetail"
       />
+      </div>
 
       <div class="exact-diagnostic-cards log-summary-cards" :class="{ 'is-unknown': !hasLogLastGoodForCurrentServerContext }" aria-label="当前条件的可见日志摘要">
         <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.total : '未知' }}</strong></div>

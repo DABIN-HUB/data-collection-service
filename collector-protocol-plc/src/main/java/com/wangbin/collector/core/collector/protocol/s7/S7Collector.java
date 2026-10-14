@@ -53,6 +53,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
@@ -96,6 +97,104 @@ public class S7Collector extends ConnectionBackedCollector {
     private final AtomicLong subscriptionEventErrorCount = new AtomicLong();
 
     private volatile S7ConnectionAdapter connectionAdapter;
+    private Object readEpoch = new Object();
+    private final ThreadLocal<ReadScope> readScope = new ThreadLocal<>();
+
+    /** 一次读取的原始身份；失败退役不允许将迟到样本归入重建后的连接。 */
+    private static final class ReadScope {
+        final S7ConnectionAdapter adapter;
+        final org.apache.plc4x.java.api.PlcConnection client;
+        final Object epoch;
+        final long generation;
+        final Long version;
+        boolean retiredByFailure;
+        Throwable failure;
+
+        ReadScope(S7ConnectionAdapter adapter, Object epoch, long generation, Long version) {
+            this.adapter = adapter;
+            this.client = adapter != null ? adapter.getClient() : null;
+            this.epoch = epoch;
+            this.generation = generation;
+            this.version = version;
+        }
+    }
+
+    private ReadScope captureReadScope() {
+        synchronized (subscriptionLifecycleLock) {
+            return new ReadScope(connectionAdapter, readEpoch, runtimeGeneration, runtimeConfigVersion);
+        }
+    }
+
+    private boolean commitIfReadSourceCurrent(ReadScope scope, boolean sample, Runnable action) {
+        synchronized (subscriptionLifecycleLock) {
+            if (scope == null || scope.epoch != readEpoch || scope.generation != runtimeGeneration
+                    || !java.util.Objects.equals(scope.version, runtimeConfigVersion)) return false;
+            if (!sample && scope.retiredByFailure && connectionAdapter == null) {
+                // 本次失败事实可在退役后提交；新连接、STOP或新代次立即撤销此许可。
+                if (connectionManager != null && connectionManager.getConnection(deviceInfo.getDeviceId()) != null) return false;
+            } else if (scope.adapter == null || scope.client == null || connectionAdapter != scope.adapter
+                    || scope.adapter.getClient() != scope.client || !scope.adapter.isConnected()
+                    || (connectionManager != null && connectionManager.getConnection(deviceInfo.getDeviceId()) != scope.adapter)) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
+    }
+
+    @Override
+    protected void enrichTelemetryMetadata(ProcessResult result, Object rawValue, Object processedValue,
+                                           long collectTime, String source) {
+        super.enrichTelemetryMetadata(result, rawValue, processedValue, collectTime, source);
+        ReadScope scope = readScope.get();
+        if (scope != null) {
+            if (rawValue != null && !commitIfReadSourceCurrent(scope, true, () -> { })) {
+                throw new CancellationException("S7读取物理会话已失效");
+            }
+            if (scope.version != null) result.addMetadata("configVersion", scope.version);
+            result.bindSourceCommitGuard(action -> commitIfReadSourceCurrent(scope, rawValue != null, action));
+        }
+    }
+
+    /** S7 原生通信异常不是 IOException，必须在协议层保留设备错误语义。 */
+    @Override
+    protected ProcessResult failedProtocolReadResult(Throwable failure) {
+        DataQuality explicitQuality = null;
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof TimeoutException) {
+                ProcessResult result = ProcessResult.error(null, "本轮协议读取失败: TIMEOUT", DataQuality.TIMEOUT);
+                result.setErrorCode("TIMEOUT");
+                return result;
+            }
+            if (cause instanceof PlcConnectionException || cause instanceof PlcIoException
+                    || cause instanceof IOException) {
+                ProcessResult result = ProcessResult.error(null, "本轮协议读取失败: COMMUNICATION_ERROR",
+                        DataQuality.DEVICE_ERROR);
+                result.setErrorCode("COMMUNICATION_ERROR");
+                return result;
+            }
+            if (cause instanceof IllegalArgumentException) {
+                ProcessResult result = ProcessResult.error(null, "本轮协议读取失败: CONFIG_ERROR",
+                        DataQuality.CONFIG_ERROR);
+                result.setErrorCode("CONFIG_ERROR");
+                return result;
+            }
+            if (cause instanceof CollectorException collectorException
+                    && collectorException.getDataQuality() != null
+                    && collectorException.getDataQuality() != DataQuality.BAD
+                    && collectorException.getDataQuality() != DataQuality.VALUE_INVALID) {
+                explicitQuality = collectorException.getDataQuality();
+            }
+        }
+        if (explicitQuality != null) {
+            String errorCode = explicitQuality.name();
+            ProcessResult result = ProcessResult.error(null, "本轮协议读取失败: " + errorCode, explicitQuality);
+            result.setErrorCode(errorCode);
+            return result;
+        }
+        return super.failedProtocolReadResult(failure);
+    }
+
     private volatile List<S7ReadPlan> configuredReadPlans = Collections.emptyList();
     private int timeout = 5000;
     private int maxFieldsPerRequest = 64;
@@ -130,8 +229,36 @@ public class S7Collector extends ConnectionBackedCollector {
         if (configuredMaxFields <= 0) {
             throw new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
         }
+        final Object connectEpoch;
+        final long connectGeneration;
+        final Long connectConfigVersion;
         synchronized (subscriptionLifecycleLock) {
-            this.connectionAdapter = createAndConnectAdapter(desiredConfig, S7ConnectionAdapter.class, "S7");
+            connectEpoch = new Object();
+            readEpoch = connectEpoch;
+            connectGeneration = runtimeGeneration;
+            connectConfigVersion = runtimeConfigVersion;
+        }
+
+        S7ConnectionAdapter connectedAdapter = null;
+        try {
+            // 建连和 ConnectionManager 登记必须在生命周期锁外执行，避免登记提交门反向等待本锁。
+            connectedAdapter = createAndConnectAdapter(desiredConfig, S7ConnectionAdapter.class, "S7");
+            synchronized (subscriptionLifecycleLock) {
+                if (!isConnectReservationCurrent(connectEpoch, connectGeneration, connectConfigVersion,
+                        connectedAdapter)) {
+                    throw new CancellationException("S7连接预留已失效");
+                }
+                this.connectionAdapter = connectedAdapter;
+            }
+        } catch (Exception failure) {
+            if (connectedAdapter != null) {
+                try {
+                    releaseOwnedAdapter(connectedAdapter);
+                } catch (Exception cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
         }
 
         DeviceConnection currentConfig = getCurrentConnectionConfig();
@@ -145,15 +272,42 @@ public class S7Collector extends ConnectionBackedCollector {
         this.timeout = configuredTimeout != null && configuredTimeout > 0 ? configuredTimeout : 5000;
         this.maxFieldsPerRequest = currentConfig.getInt("maxFieldsPerRequest", 64);
         if (this.maxFieldsPerRequest <= 0) {
-            removeManagedConnection("S7");
-            connectionAdapter = null;
-            throw new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
+            synchronized (subscriptionLifecycleLock) {
+                if (connectionAdapter == connectedAdapter) {
+                    connectionAdapter = null;
+                    readEpoch = new Object();
+                }
+            }
+            IllegalArgumentException failure = new IllegalArgumentException("S7 maxFieldsPerRequest must be positive");
+            try {
+                releaseOwnedAdapter(connectedAdapter);
+            } catch (Exception cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
         }
         this.subscriptionSupported = currentConfig.getBool("subscriptionEnabled",
-                requireConnection().getClient().getMetadata().isSubscribeSupported());
+                connectedAdapter.getClient().getMetadata().isSubscribeSupported());
         resetProtocolMetrics();
         log.info("PLC4X S7 采集器 已连接, 设备={}, 超时={}, 单次最大字段数={}",
                 deviceInfo.getDeviceId(), timeout, maxFieldsPerRequest);
+    }
+
+    private boolean isConnectReservationCurrent(Object expectedEpoch, long expectedGeneration,
+                                                 Long expectedConfigVersion, S7ConnectionAdapter adapter) {
+        return readEpoch == expectedEpoch
+                && runtimeGeneration == expectedGeneration
+                && java.util.Objects.equals(runtimeConfigVersion, expectedConfigVersion)
+                && connectionAdapter == null
+                && adapter != null
+                && connectionManager != null
+                && connectionManager.getConnection(deviceInfo.getDeviceId()) == adapter;
+    }
+
+    private void releaseOwnedAdapter(S7ConnectionAdapter adapter) {
+        if (adapter != null && connectionManager != null && deviceInfo != null) {
+            connectionManager.removeConnectionIfOwned(deviceInfo.getDeviceId(), adapter);
+        }
     }
 
     /**
@@ -162,6 +316,7 @@ public class S7Collector extends ConnectionBackedCollector {
     @Override
     protected void doDisconnect() {
         synchronized (subscriptionLifecycleLock) {
+            readEpoch = new Object();
             subscriptionTokens.clear();
             subscriptionHandles.clear();
             connectionAdapter = null;
@@ -182,6 +337,33 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
+        ReadScope previous = readScope.get();
+        ReadScope scope = previous != null ? previous : captureReadScope();
+        readScope.set(scope);
+        resetInvocationProcessResults();
+        try {
+            validateReadPointOwnership(point);
+            return readPointInScope(point);
+        } catch (Exception failure) {
+            Throwable protocolFailure = scope.failure != null ? scope.failure : failure;
+            if (point != null && point.getPointId() != null && !point.getPointId().isBlank()
+                    && deviceInfo.getDeviceId().equals(point.getDeviceId())) {
+                publishReadFailure(point, failedProtocolReadResult(protocolFailure));
+            }
+            clearInvocationProcessResults();
+            CollectorException reported = new CollectorException("S7点位读取失败", deviceInfo.getDeviceId(),
+                    point != null ? point.getPointId() : null,
+                    DataQuality.fromCode(failedProtocolReadResult(protocolFailure).getQuality()));
+            reported.initCause(protocolFailure);
+            throw reported;
+        } finally {
+            if (previous != null) readScope.set(previous);
+            else readScope.remove();
+            finishInvocationProcessResults();
+        }
+    }
+
+    private Object readPointInScope(DataPoint point) throws CollectorException {
         checkConnection();
         resetInvocationProcessResults();
         if (isSubscriptionPoint(point)) {
@@ -225,6 +407,25 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
+        ReadScope previous = readScope.get();
+        readScope.set(previous != null ? previous : captureReadScope());
+        resetInvocationProcessResults();
+        try {
+            List<DataPoint> readablePoints = points == null ? Collections.emptyList()
+                    : points.stream().filter(point -> point != null && point.isEnabled()).toList();
+            for (DataPoint point : readablePoints) validateReadPointOwnership(point);
+            return readPointsInScope(readablePoints);
+        } catch (Exception failure) {
+            clearInvocationProcessResults();
+            throw failure;
+        } finally {
+            if (previous != null) readScope.set(previous);
+            else readScope.remove();
+            finishInvocationProcessResults();
+        }
+    }
+
+    private Map<String, Object> readPointsInScope(List<DataPoint> points) throws CollectorException {
         checkConnection();
         if (!containsSubscriptionPoint(points) && !containsArrayPoint(points)) {
             return super.readPoints(points);
@@ -359,11 +560,12 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     @Override
     protected Object doReadPoint(DataPoint point) throws Exception {
-        S7Address address = requireAddress(point);
-        String fieldName = resolvePointTagName(point);
-
-        S7ConnectionAdapter session = requireConnection();
+        ReadScope scope = readScope.get();
+        S7ConnectionAdapter session = null;
         try {
+            S7Address address = requireAddress(point);
+            String fieldName = resolvePointTagName(point);
+            session = requireConnection();
             PlcReadResponse response = await(session.getClient()
                     .readRequestBuilder()
                     .addTagAddress(fieldName, address.getPlc4xAddress())
@@ -373,7 +575,10 @@ public class S7Collector extends ConnectionBackedCollector {
             ensureResponseOk(response, fieldName, "read");
             return extractValue(response, fieldName, point, address);
         } catch (Exception ex) {
-            if (isTransportFailure(ex)) {
+            if (scope != null && scope.failure == null) {
+                scope.failure = ex;
+            }
+            if (session != null && isTransportFailure(ex)) {
                 invalidateTransport(session);
             }
             throw ex;
@@ -391,6 +596,7 @@ public class S7Collector extends ConnectionBackedCollector {
         }
 
         Map<String, DataQuality> failureQualities = new HashMap<>();
+        Map<String, Throwable> failureCauses = new HashMap<>();
         for (S7ReadPlan readPlan : readPlanBuilder.buildIsolatingInvalidPoints(points, maxFieldsPerRequest, point -> {
             if (point.getPointId() != null) {
                 results.put(point.getPointId(), null);
@@ -399,12 +605,13 @@ public class S7Collector extends ConnectionBackedCollector {
             recordFailureSnapshot("read", point, point.getAddress(), "INVALID_ADDRESS");
             log.warn("PLC4X S7 点位规划失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), point.getPointId());
         })) {
-            executeReadPlan(readPlan, results, failureQualities);
+            executeReadPlan(readPlan, results, failureQualities, failureCauses);
         }
         for (DataPoint point : points) {
             if (point != null && point.getPointId() != null && results.containsKey(point.getPointId())
                     && results.get(point.getPointId()) == null) {
-                publishReadFailure(point, failureQualities.getOrDefault(point.getPointId(), DataQuality.BAD));
+                publishReadFailure(point, failureCauses.get(point.getPointId()),
+                        failureQualities.getOrDefault(point.getPointId(), DataQuality.BAD));
             }
         }
         return results;
@@ -414,10 +621,30 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private void publishReadFailure(DataPoint point, DataQuality quality) {
         ProcessResult failure = ProcessResult.error(null, "S7 read failed", quality);
+        publishReadFailure(point, failure);
+    }
+
+    private void publishReadFailure(DataPoint point, Throwable cause, DataQuality fallbackQuality) {
+        if (cause == null) {
+            publishReadFailure(point, fallbackQuality);
+            return;
+        }
+        ProcessResult failure = failedProtocolReadResult(cause);
+        if (failure.getQuality() == DataQuality.VALUE_INVALID.getCode()
+                && fallbackQuality != DataQuality.VALUE_INVALID) {
+            failure.setQuality(fallbackQuality.getCode());
+            failure.setQualityDescription(fallbackQuality.getDescription());
+            failure.setErrorCode(fallbackQuality.name());
+        }
+        publishReadFailure(point, failure);
+    }
+
+    private void publishReadFailure(DataPoint point, ProcessResult failure) {
         enrichTelemetryMetadata(failure, null, null, System.currentTimeMillis(), "POLLING");
-        lastProcessResults.put(point.getPointId(), failure);
-        if (telemetryIngressService != null) {
-            telemetryIngressService.append(deviceInfo.getDeviceId(), point, failure, runtimeGeneration);
+        ReadScope scope = readScope.get();
+        if (commitIfReadSourceCurrent(scope, false, () -> lastProcessResults.put(point.getPointId(), failure))
+                && telemetryIngressService != null) {
+            telemetryIngressService.append(deviceInfo.getDeviceId(), point, failure, scope.generation);
         }
     }
 
@@ -1034,7 +1261,8 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private void executeReadPlan(S7ReadPlan readPlan,
                                  Map<String, Object> results,
-                                 Map<String, DataQuality> failureQualities) {
+                                 Map<String, DataQuality> failureQualities,
+                                 Map<String, Throwable> failureCauses) {
         List<DataPoint> points = readPlan != null ? readPlan.getPoints() : Collections.emptyList();
         if (points.isEmpty()) {
             return;
@@ -1044,6 +1272,8 @@ public class S7Collector extends ConnectionBackedCollector {
                 if (point != null && point.getPointId() != null) {
                     results.put(point.getPointId(), null);
                     failureQualities.put(point.getPointId(), DataQuality.DEVICE_ERROR);
+                    failureCauses.putIfAbsent(point.getPointId(),
+                            new IllegalStateException("S7 connection is not active"));
                 }
             }
             return;
@@ -1072,11 +1302,12 @@ public class S7Collector extends ConnectionBackedCollector {
                             deviceInfo.getDeviceId(), readPlan.getSegmentKey(), readPlan.getBlockReadAddress(), ex.getMessage());
                 }
             }
-            populateTagBatchReadResults(readPlan, results, failureQualities, executeTagBatchReadPlanRequest(readPlan));
+            populateTagBatchReadResults(readPlan, results, failureQualities, failureCauses,
+                    executeTagBatchReadPlanRequest(readPlan));
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             planFailureQuality = DataQuality.DEVICE_ERROR;
-            recordPlanReadFailure(readPlan, points, ex);
+            recordPlanReadFailure(readPlan, points, ex, failureCauses);
         } catch (Exception ex) {
             planFailureQuality = isTimeout(ex) ? DataQuality.TIMEOUT : DataQuality.DEVICE_ERROR;
             boolean transportFailure = isTransportFailure(ex);
@@ -1094,6 +1325,7 @@ public class S7Collector extends ConnectionBackedCollector {
                             results.put(point.getPointId(), null);
                             failureQualities.put(point.getPointId(), isTimeout(pointFailure)
                                     ? DataQuality.TIMEOUT : DataQuality.DEVICE_ERROR);
+                            failureCauses.putIfAbsent(point.getPointId(), pointFailure);
                             if (isTransportFailure(pointFailure) || isTimeout(pointFailure)) {
                                 break;
                             }
@@ -1101,7 +1333,7 @@ public class S7Collector extends ConnectionBackedCollector {
                     }
                 }
             }
-            recordPlanReadFailure(readPlan, points, ex);
+            recordPlanReadFailure(readPlan, points, ex, failureCauses);
         }
         for (DataPoint point : points) {
             if (point != null && point.getPointId() != null) {
@@ -1126,6 +1358,7 @@ public class S7Collector extends ConnectionBackedCollector {
     private void populateTagBatchReadResults(S7ReadPlan readPlan,
                                              Map<String, Object> results,
                                              Map<String, DataQuality> failureQualities,
+                                             Map<String, Throwable> failureCauses,
                                              PlcReadResponse response) {
         for (DataPoint point : readPlan.getPoints()) {
             if (point == null || point.getPointId() == null) {
@@ -1146,6 +1379,7 @@ public class S7Collector extends ConnectionBackedCollector {
                 recordFailureSnapshot("read", point, point.getAddress(), "DECODE_ERROR");
                 results.put(point.getPointId(), null);
                 failureQualities.put(point.getPointId(), DataQuality.VALUE_INVALID);
+                failureCauses.putIfAbsent(point.getPointId(), ex);
                 log.warn("PLC4X S7 batch point decode failed, device={}, point={}",
                         deviceInfo.getDeviceId(), point.getPointId(), ex);
             }
@@ -1291,8 +1525,14 @@ public class S7Collector extends ConnectionBackedCollector {
     /**
      * 记录或统计业务状态。
      */
-    private void recordPlanReadFailure(S7ReadPlan readPlan, List<DataPoint> points, Exception ex) {
+    private void recordPlanReadFailure(S7ReadPlan readPlan, List<DataPoint> points, Exception ex,
+                                       Map<String, Throwable> failureCauses) {
         String segmentKey = readPlan != null ? readPlan.getSegmentKey() : "UNKNOWN";
+        for (DataPoint point : points) {
+            if (point != null && point.getPointId() != null) {
+                failureCauses.putIfAbsent(point.getPointId(), ex);
+            }
+        }
         recordFailureSnapshot("read", points.isEmpty() ? null : points.get(0), segmentKey, "EXCEPTION");
         log.error("PLC4X S7 planned 批量 读取 失败, 设备={}, 分段键={}, 批量数量={}",
                 deviceInfo.getDeviceId(), segmentKey, points.size(), ex);
@@ -1317,10 +1557,8 @@ public class S7Collector extends ConnectionBackedCollector {
             ensureResponseOk(response, READ_PLAN_BLOCK_FIELD_NAME, "read");
             PlcValue plcValue = response.getPlcValue(READ_PLAN_BLOCK_FIELD_NAME);
             return plcValue == null || plcValue.isNull() ? null : plcValue.getRaw();
-        } catch (TimeoutException ex) {
-            batchTimeoutCount.incrementAndGet();
-            throw ex;
         } catch (Exception ex) {
+            if (isTimeout(ex)) batchTimeoutCount.incrementAndGet();
             if (isTransportFailure(ex)) {
                 invalidateTransport(session);
             }
@@ -1346,10 +1584,8 @@ public class S7Collector extends ConnectionBackedCollector {
                 }
             }
             return await(builder.build().execute(), session);
-        } catch (TimeoutException ex) {
-            batchTimeoutCount.incrementAndGet();
-            throw ex;
         } catch (Exception ex) {
+            if (isTimeout(ex)) batchTimeoutCount.incrementAndGet();
             if (isTransportFailure(ex)) {
                 invalidateTransport(session);
             }
@@ -1840,18 +2076,31 @@ public class S7Collector extends ConnectionBackedCollector {
      */
     private <T> T await(CompletableFuture<? extends T> future, S7ConnectionAdapter session) throws Exception {
         try {
-            return future.get(timeout, TimeUnit.MILLISECONDS);
+            T result = future.get(timeout, TimeUnit.MILLISECONDS);
+            synchronized (subscriptionLifecycleLock) {
+                if (session == null || connectionAdapter != session || !session.isConnected()) {
+                    throw new CancellationException("S7请求原会话已失效");
+                }
+            }
+            return result;
         } catch (InterruptedException ex) {
             future.cancel(false);
+            ReadScope scope = readScope.get();
+            if (scope != null) scope.failure = ex;
             Thread.currentThread().interrupt();
             throw ex;
         } catch (TimeoutException ex) {
             // 取消 Future 不保证撤销已发出的请求，超时会话不再复用；写请求也不自动重放。
             future.cancel(false);
+            ReadScope scope = readScope.get();
+            if (scope != null) scope.failure = ex;
             invalidateTransport(session);
             throw ex;
         } catch (Exception ex) {
-            if (isTransportFailure(ex)) {
+            ReadScope scope = readScope.get();
+            if (scope != null) scope.failure = ex;
+            if (isTimeout(ex) || isTransportFailure(ex)) {
+                future.cancel(false);
                 invalidateTransport(session);
             }
             throw ex;
@@ -1868,7 +2117,9 @@ public class S7Collector extends ConnectionBackedCollector {
     }
 
     private boolean isTransportFailure(Throwable failure) {
-        if (connectionAdapter != null && !connectionAdapter.isConnected()) {
+        ReadScope scope = readScope.get();
+        S7ConnectionAdapter session = scope != null ? scope.adapter : connectionAdapter;
+        if (session != null && !session.isConnected()) {
             return true;
         }
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
@@ -1884,6 +2135,8 @@ public class S7Collector extends ConnectionBackedCollector {
             if (session == null || connectionAdapter != session) {
                 return;
             }
+            ReadScope scope = readScope.get();
+            if (scope != null && scope.adapter == session && scope.epoch == readEpoch) scope.retiredByFailure = true;
             subscriptionTokens.clear();
             subscriptionHandles.clear();
             connectionAdapter = null;
@@ -1981,10 +2234,15 @@ public class S7Collector extends ConnectionBackedCollector {
      * 校验业务条件和参数边界。
      */
     private S7ConnectionAdapter requireConnection() {
-        if (connectionAdapter == null) {
+        ReadScope scope = readScope.get();
+        S7ConnectionAdapter session = scope != null ? scope.adapter : connectionAdapter;
+        if (session == null) {
             throw new IllegalStateException("PLC4X S7 connection has not been established");
         }
-        return connectionAdapter;
+        if (scope != null && !commitIfReadSourceCurrent(scope, true, () -> { })) {
+            throw new CancellationException("S7读取会话已替换或退役");
+        }
+        return session;
     }
 
     /**

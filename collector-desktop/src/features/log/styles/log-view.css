@@ -374,7 +374,7 @@
 .log-view .modao-log-row {
   min-height: 36px;
   color: var(--app-color-text-primary);
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--app-font-family);
   font-size: 13px;
   line-height: 1.7;
 }

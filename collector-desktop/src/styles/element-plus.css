@@ -1,5 +1,6 @@
 /* Element Plus 全局覆盖：统一控件、Teleport 弹层和跨页面组件视觉，不承载页面布局。 */
 :root {
+  --el-font-family: var(--app-font-family);
   --el-color-primary: var(--app-color-primary);
   --el-color-primary-light-3: #5a9b9b;
   --el-color-primary-light-5: #89b7b7;

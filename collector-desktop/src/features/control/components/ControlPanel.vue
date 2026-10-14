@@ -1,10 +1,19 @@
 <template>
   <div class="control-workbench">
+    <section class="control-risk" aria-label="设备控制风险" role="note">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2L12 3Zm0 5v6m0 3v1" /></svg>
+      <div>
+        <strong>写入与命令会影响真实设备，不等于查询</strong>
+        <p v-if="activeMode === 'single'">写入会改变设备值。写入成功与读回成功分别展示。</p>
+        <p v-else-if="activeMode === 'batch'">批量写入可能部分成功，请以各字段的返回结果为准。</p>
+        <p v-else>命令能力取决于当前协议。模板仅提供结构，不代表设备支持该命令。</p>
+      </div>
+    </section>
     <div class="control-grid">
       <section class="operation-panel">
+        <header class="operation-head"><h3>控制操作</h3><span class="control-badge" :class="{ 'tone-warning': !canControl }">{{ canControl ? '可执行' : '不可执行' }}</span></header>
         <nav class="operation-tabs" aria-label="控制操作类型">
           <button v-for="mode in operationModes" :key="mode.key" type="button" :class="{ active: activeMode === mode.key }" :aria-pressed="activeMode === mode.key" @click="activeMode = mode.key">{{ mode.label }}</button>
-          <span class="control-badge" :class="{ 'tone-warning': !canControl }">{{ canControl ? '可执行' : '不可执行' }}</span>
         </nav>
 
         <div v-show="activeMode === 'single'" class="mode-pane">
@@ -12,7 +21,7 @@
             <div><h3>单点写入</h3><p>填写点位引用、数据类型和目标值。</p></div>
             <span class="control-badge">单次操作</span>
           </div>
-          <div class="warning-strip">写入会改变设备值。写入成功与读回成功分别展示。</div>
+
           <div class="single-form">
             <label>点位引用<input v-model="singlePointRef" type="text" placeholder="填写点位编码或点位 ID" /></label>
             <label>数据类型
@@ -30,7 +39,7 @@
             <div><h3>批量写点位</h3><p>填写点位引用和目标值，提交前逐项核对。</p></div>
             <button type="button" class="secondary compact" @click="fillBatchTemplate">套用模板</button>
           </div>
-          <div class="warning-strip">批量写入可能部分成功，请以各字段的返回结果为准。</div>
+
           <div class="editor-head"><label for="control-batch-json">写入内容 · JSON</label><button type="button" class="text-button" @click="formatJsonDraft('batch')">格式化</button></div>
           <textarea id="control-batch-json" v-model="batchPayload" class="json-editor" spellcheck="false"></textarea>
           <div class="preview-table">
@@ -56,7 +65,7 @@
             <div><h3>执行协议命令</h3><p>填写命令名称和参数。</p></div>
             <button type="button" class="secondary compact" @click="fillCommandTemplate">套用模板</button>
           </div>
-          <div class="warning-strip">命令能力取决于当前协议。模板仅提供结构，不代表设备支持该命令。</div>
+
           <div class="editor-head"><label for="control-command-json">命令与参数 · JSON</label><button type="button" class="text-button" @click="formatJsonDraft('command')">格式化</button></div>
           <textarea id="control-command-json" v-model="commandPayload" class="json-editor command-editor" spellcheck="false"></textarea>
           <div class="code-hint"><span>使用实际协议要求的 command 和 params</span><span :class="commandJsonError ? 'tone-warning' : 'muted'">{{ commandJsonError || '提交前核对命令能力' }}</span></div>
@@ -72,7 +81,7 @@
 
       <aside class="result-panel" aria-label="执行结果">
         <header class="result-head"><h3>执行结果</h3><span class="control-badge" :class="`tone-${resultStatus.tone}`">{{ resultStatus.label }}</span></header>
-        <div class="result-body">
+        <div class="result-body" :class="{ 'has-result': actionResult || pendingTargets.length }">
           <div v-if="pendingTargets.length" class="pending-notice" role="status">
             <strong>正在执行，等待返回</strong>
             <div v-for="target in pendingTargets" :key="target.action" class="pending-target"><span>{{ actionLabel(target.action) }}</span><code>{{ target.deviceId || target.target }}</code><small>提交于 {{ formatActionTime(target.submittedAt) }}</small></div>
@@ -131,7 +140,16 @@
             <details v-if="actionResult.target.payloadSummary" class="raw-result"><summary>提交摘要</summary><p class="payload-summary">{{ actionResult.target.payloadSummary }}</p></details>
             <details class="raw-result"><summary>查看原始返回内容</summary><pre class="raw-json">{{ completedResultText }}</pre></details>
           </template>
-          <div v-else class="result-empty"><svg class="empty-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8m-8 4h8" /></svg><strong>{{ pendingTargets.length ? '等待设备返回' : '等待执行结果' }}</strong><p>提交后查看实际返回内容。<br />请求完成不等于写入成功。</p></div>
+          <div v-else class="result-empty">
+            <svg class="empty-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8m-8 4h8" /></svg>
+            <strong>{{ pendingTargets.length ? '等待设备返回' : '尚未提交控制操作' }}</strong>
+            <p>提交后查看实际返回内容。<br />请求完成不等于写入成功。</p>
+            <dl class="idle-context">
+              <div><dt>当前设备</dt><dd><code :title="deviceId">{{ deviceId || '未选择设备' }}</code></dd></div>
+              <div><dt>当前操作</dt><dd>{{ activeMode === 'single' ? '单点写入' : activeMode === 'batch' ? '批量写点位' : '协议命令' }}</dd></div>
+              <div><dt>执行结果</dt><dd>未知 / 无实际返回</dd></div>
+            </dl>
+          </div>
         </div>
       </aside>
     </div>
@@ -523,6 +541,41 @@ watch(() => props.deviceId, () => {
   gap: 18px;
 }
 
+.control-risk {
+  display: flex;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--console-warning-text);
+  border: 1px solid color-mix(in srgb, var(--console-warning) 42%, var(--console-border-soft));
+  border-radius: var(--console-radius-md);
+  background: color-mix(in srgb, var(--console-warning) 9%, var(--console-panel));
+  line-height: 1.6;
+}
+
+.control-risk svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.control-risk strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.control-risk p {
+  margin: 3px 0 0;
+  font-size: 11px;
+}
+
 .operation-panel,
 .result-panel {
   min-width: 0;
@@ -534,7 +587,7 @@ watch(() => props.deviceId, () => {
 
 .operation-tabs {
   display: flex;
-  min-height: 54px;
+  min-height: 46px;
   padding: 0 20px;
   align-items: center;
   gap: 24px;
@@ -543,7 +596,7 @@ watch(() => props.deviceId, () => {
 
 .control-workbench .operation-tabs button {
   position: relative;
-  height: 54px;
+  height: 46px;
   padding: 0;
   flex-shrink: 0;
   color: var(--console-text-muted);
@@ -572,9 +625,6 @@ watch(() => props.deviceId, () => {
   background: transparent;
 }
 
-.operation-tabs > .control-badge {
-  margin-left: auto;
-}
 
 .control-badge {
   display: inline-flex;
@@ -589,12 +639,12 @@ watch(() => props.deviceId, () => {
 }
 
 .mode-pane {
-  min-height: 439px;
-  padding: 18px 20px 16px;
+  padding: 16px 20px;
   box-sizing: border-box;
 }
 
 .mode-heading,
+.operation-head,
 .result-head,
 .field-results-head {
   display: flex;
@@ -604,10 +654,11 @@ watch(() => props.deviceId, () => {
 }
 
 .mode-heading {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .mode-heading h3,
+.operation-head h3,
 .result-head h3,
 .field-results-head h4 {
   margin: 0;
@@ -622,20 +673,10 @@ watch(() => props.deviceId, () => {
   font-size: 11px;
 }
 
-.warning-strip {
-  margin-bottom: 16px;
-  padding: 9px 12px;
-  color: var(--console-warning-text);
-  border-left: 2px solid var(--console-warning);
-  border-radius: 0 var(--console-radius-sm) var(--console-radius-sm) 0;
-  background: color-mix(in srgb, var(--console-warning) 10%, var(--console-panel));
-  font-size: 11px;
-  line-height: 1.6;
-}
 
 .single-form {
   display: grid;
-  margin: 22px 0;
+  margin: 16px 0;
   grid-template-columns: minmax(0, 1fr) 170px;
   gap: 17px;
 }
@@ -667,8 +708,8 @@ watch(() => props.deviceId, () => {
 }
 
 .single-help {
-  margin: 26px 0 0;
-  padding-top: 16px;
+  margin: 18px 0 0;
+  padding-top: 12px;
   color: var(--console-text-muted);
   border-top: 1px solid var(--console-border-soft);
   font-size: 11px;
@@ -692,23 +733,24 @@ watch(() => props.deviceId, () => {
 .control-workbench textarea.json-editor {
   display: block;
   width: 100%;
-  min-height: 185px;
-  height: 185px;
+  min-height: 140px;
+  height: 160px;
   padding: 9px 12px;
   box-sizing: border-box;
   color: var(--console-code-text);
   border: 1px solid var(--console-input-border);
   border-radius: 0 0 var(--console-radius-sm) var(--console-radius-sm);
   background: var(--console-code-bg);
-  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.9;
-  resize: none;
+  overflow: auto;
+  resize: vertical;
   tab-size: 2;
 }
 
 .control-workbench textarea.command-editor {
-  height: 244px;
+  height: 190px;
 }
 
 .preview-table {
@@ -874,17 +916,40 @@ watch(() => props.deviceId, () => {
   outline-offset: 2px;
 }
 
+.operation-head,
 .result-head {
-  min-height: 54px;
+  min-height: 48px;
   padding: 0 18px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--console-border-soft);
 }
 
 .result-body {
-  min-height: 452px;
   padding: 18px;
   box-sizing: border-box;
+}
+
+.result-body.has-result {
+  max-height: min(620px, 70vh);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.idle-context {
+  display: grid;
+  width: 100%;
+  margin: 3px 0 0;
+  padding-top: 12px;
+  gap: 9px;
+  border-top: 1px solid var(--console-border-soft);
+  font-size: 11px;
+}
+
+.idle-context > div {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .result-target,
@@ -930,7 +995,6 @@ watch(() => props.deviceId, () => {
 
 .result-summary {
   display: flex;
-  min-height: 118px;
   padding: 14px 0;
   box-sizing: border-box;
   flex-direction: column;
@@ -960,7 +1024,6 @@ watch(() => props.deviceId, () => {
 
 .result-empty {
   display: flex;
-  min-height: 240px;
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
@@ -1118,7 +1181,7 @@ watch(() => props.deviceId, () => {
   padding: 0 11px 12px;
   overflow: auto;
   color: var(--console-code-text);
-  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--app-font-family);
   font-size: 11px;
   line-height: 1.8;
   overflow-wrap: anywhere;
@@ -1159,17 +1222,9 @@ watch(() => props.deviceId, () => {
   color: var(--console-danger-text);
 }
 
-@container (max-width: 900px) {
+@container (max-width: 780px) {
   .control-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .result-body {
-    min-height: 0;
-  }
-
-  .result-empty {
-    min-height: 160px;
   }
 }
 
@@ -1179,9 +1234,6 @@ watch(() => props.deviceId, () => {
     gap: 17px;
   }
 
-  .operation-tabs > .control-badge {
-    display: none;
-  }
 
   .mode-pane {
     min-height: 0;

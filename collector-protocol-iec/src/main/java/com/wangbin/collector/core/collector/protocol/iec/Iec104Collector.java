@@ -4,12 +4,15 @@ package com.wangbin.collector.core.collector.protocol.iec;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.enums.DataQuality;
+import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.iec.base.AbstractIce104Collector;
 import com.wangbin.collector.core.collector.protocol.iec.domain.Iec104Address;
 import com.wangbin.collector.core.collector.protocol.iec.domain.Iec104Type;
 import com.wangbin.collector.core.collector.protocol.iec.util.Iec104Utils;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.adapter.Iec104ConnectionAdapter;
+import com.wangbin.collector.core.processor.ProcessResult;
 import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.*;
 import org.openmuc.j60870.ie.*;
@@ -27,16 +30,148 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class Iec104Collector extends AbstractIce104Collector {
     private final ThreadLocal<Map<String, CacheEntry>> cachedReadSamples = ThreadLocal.withInitial(HashMap::new);
+    private final ThreadLocal<Set<String>> wireReadPoints = ThreadLocal.withInitial(HashSet::new);
+    private final ThreadLocal<Map<String, Throwable>> readFailures = ThreadLocal.withInitial(HashMap::new);
+    private final ThreadLocal<ReadScope> readScope = new ThreadLocal<>();
+    private final ThreadLocal<CacheEntry> telemetrySample = new ThreadLocal<>();
+    private final ThreadLocal<List<PushSample>> pendingPushSamples = ThreadLocal.withInitial(ArrayList::new);
+    private final Object protocolStateLock = new Object();
+    private volatile Iec104ConnectionAdapter currentAdapter;
+    private volatile boolean readSessionExpired;
+    private Connection readyConnection;
+
+    private record ReadScope(Iec104ConnectionAdapter adapter, Connection client, long generation, long version) {}
+    private record PushSample(DataPoint point, CacheEntry sample, ReadScope scope) {}
+
+    private ReadScope captureReadScope() {
+        synchronized (protocolStateLock) {
+            return new ReadScope(currentAdapter, connection, runtimeGeneration, runtimeConfigVersion);
+        }
+    }
+
+    private boolean commitIfSourceCurrent(ReadScope scope, Runnable action) {
+        synchronized (protocolStateLock) {
+            if (scope == null || scope.adapter() == null || scope.client() == null
+                    || currentAdapter != scope.adapter() || connection != scope.client()
+                    || scope.adapter().getClient() != scope.client() || scope.client().isClosed()
+                    || runtimeGeneration != scope.generation() || runtimeConfigVersion != scope.version()
+                    || (connectionManager != null && connectionManager.getConnection(getDeviceId()) != scope.adapter())) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
+    }
+
+    @Override
+    public boolean isConnected() {
+        Connection client = connection;
+        return super.isConnected() && !readSessionExpired && client != null && !client.isClosed()
+                && !client.isStopped();
+    }
+
+    @Override
+    public Object readPoint(DataPoint point) throws CollectorException {
+        resetInvocationProcessResults();
+        readFailures.get().clear();
+        cachedReadSamples.get().clear();
+        wireReadPoints.get().clear();
+        readScope.set(captureReadScope());
+        try {
+            validateReadPointOwnership(point);
+            return super.readPoint(point);
+        } catch (Exception failure) {
+            Throwable protocolFailure = point != null ? readFailures.get().getOrDefault(point.getPointId(), failure) : failure;
+            telemetrySample.remove();
+            ProcessResult result = failedProtocolReadResult(protocolFailure);
+            enrichTelemetryMetadata(result, null, null, System.currentTimeMillis(), "POLLING");
+            if (point != null && Objects.equals(getDeviceId(), point.getDeviceId()) && telemetryIngressService != null) {
+                telemetryIngressService.append(getDeviceId(), point, result, runtimeGeneration);
+            }
+            clearInvocationProcessResults();
+            throw failure;
+        } finally {
+            readScope.remove();
+            cachedReadSamples.remove();
+            wireReadPoints.remove();
+            telemetrySample.remove();
+            readFailures.remove();
+            finishInvocationProcessResults();
+        }
+    }
+
+    @Override
+    public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
+        resetInvocationProcessResults();
+        readFailures.get().clear();
+        wireReadPoints.get().clear();
+        cachedReadSamples.get().clear();
+        readScope.set(captureReadScope());
+        try {
+            List<DataPoint> readablePoints = points == null ? Collections.emptyList()
+                    : points.stream().filter(point -> point != null && point.isEnabled()).toList();
+            for (DataPoint point : readablePoints) validateReadPointOwnership(point);
+            Map<String, Object> values = super.readPoints(readablePoints);
+            Map<String, ProcessResult> invocation = new LinkedHashMap<>(takeInvocationProcessResults());
+            for (DataPoint point : readablePoints) {
+                Throwable failure = readFailures.get().get(point.getPointId());
+                if (failure != null) {
+                    telemetrySample.remove();
+                    ProcessResult result = failedProtocolReadResult(failure);
+                    enrichTelemetryMetadata(result, null, null, System.currentTimeMillis(), "POLLING");
+                    lastProcessResults.put(point.getPointId(), result);
+                    invocation.put(point.getPointId(), result.snapshot());
+                }
+            }
+            setInvocationProcessResults(invocation);
+            return values;
+        } catch (Exception failure) {
+            clearInvocationProcessResults();
+            throw failure;
+        } finally {
+            readScope.remove();
+            readFailures.remove();
+            wireReadPoints.remove();
+            cachedReadSamples.remove();
+            telemetrySample.remove();
+            finishInvocationProcessResults();
+        }
+    }
+
+    @Override
+    protected void enrichTelemetryMetadata(ProcessResult result, Object rawValue, Object processedValue,
+                                           long collectTime, String source) {
+        super.enrichTelemetryMetadata(result, rawValue, processedValue, collectTime, source);
+        ReadScope scope = readScope.get();
+        result.bindSourceCommitGuard(action -> commitIfSourceCurrent(scope, action));
+        if (scope != null) result.addMetadata("configVersion", scope.version());
+        CacheEntry sample = telemetrySample.get();
+        if (sample != null) {
+            result.addMetadata("iec104QualityBits", sample.qualityBits());
+            result.addMetadata("iec104TypeId", sample.rawTypeId());
+            result.addMetadata("iec104ObservedAt", sample.observedAt());
+            result.addMetadata("iec104TimeOrigin", sample.sourceTime() != null ? "CP56_SOURCE" : "LOCAL_RECEIVE");
+            if (sample.sourceTime() != null) result.addMetadata("iec104SourceTime", sample.sourceTime());
+            if (sample.qualityBits() != 0) {
+                result.setSuccess(false);
+                result.setQuality(Math.min(result.getQuality(), DataQuality.BAD.getCode()));
+                result.setErrorCode("IEC104_WIRE_QUALITY");
+                result.setMessage("IEC104 测量质量标志不可用");
+            }
+        }
+    }
 
     @Override
     protected long readSampleAt(DataPoint point, long requestedAt) {
         CacheEntry cached = cachedReadSamples.get().get(point.getPointId());
+        telemetrySample.set(cached);
         return cached != null ? cached.timestamp() : requestedAt;
     }
 
     @Override
     protected String readSampleSource(DataPoint point) {
-        return cachedReadSamples.get().containsKey(point.getPointId()) ? "CACHE_READ" : "POLLING";
+        return cachedReadSamples.get().containsKey(point.getPointId())
+                && !wireReadPoints.get().contains(point.getPointId()) ? "CACHE_READ" : "POLLING";
     }
 
     private final Map<Iec104Key, DataPoint> 突发上送PointIndex = new ConcurrentHashMap<>();
@@ -57,22 +192,36 @@ public class Iec104Collector extends AbstractIce104Collector {
     @Override
     protected void doConnect() throws Exception {
         log.info("正在连接 IEC 104 设备:{}", getDeviceId());
-        initIec104Config(deviceInfo);
         DeviceConnection connectionConfig = requireConnectionConfig();
+        if (readSessionExpired) removeConnectionSilently();
+        synchronized (protocolStateLock) {
+            clearProtocolState();
+            readSessionExpired = false;
+            readyConnection = null;
+        }
+        initIec104Config(deviceInfo);
         try {
             ConnectionAdapter<?> adapter = createManagedConnection(connectionConfig);
             Iec104ConnectionAdapter iec104Adapter = requireAdapterType(
                     adapter,
                     Iec104ConnectionAdapter.class,
                     "IEC104");
+            synchronized (protocolStateLock) {
+                currentAdapter = iec104Adapter;
+            }
             iec104Adapter.setConnectionEventListener(createConnectionEventListener(iec104Adapter));
             connectManagedConnection();
-            this.connection = iec104Adapter.getClient();
-            if (!dataTransferStopped) {
-                onConnectionReady();
+            synchronized (protocolStateLock) {
+                this.connection = iec104Adapter.getClient();
+                dataTransferStopped = connection == null || connection.isStopped();
             }
+            initializeReadyConnection(iec104Adapter.getClient(), iec104Adapter);
         } catch (Exception e) {
-            removeConnectionSilently();
+            try {
+                removeConnectionSilently();
+            } catch (Exception cleanupFailure) {
+                e.addSuppressed(cleanupFailure);
+            }
             throw e;
         }
     }
@@ -82,9 +231,13 @@ public class Iec104Collector extends AbstractIce104Collector {
      */
     @Override
     public void doDisconnect() {
+        synchronized (protocolStateLock) {
+            currentAdapter = null;
+            connection = null;
+            readyConnection = null;
+            clearProtocolState();
+        }
         removeConnectionSilently();
-        connection = null;
-        clearProtocolState();
         突发上送PointIndex.clear();
         log.info("IEC104 连接 已关闭");
     }
@@ -99,14 +252,18 @@ public class Iec104Collector extends AbstractIce104Collector {
              */
             @Override
             public void newASdu(Connection conn, ASdu asdu) {
-                if (!isCurrentConnection(conn, adapter)) {
-                    return;
-                }
+                pendingPushSamples.get().clear();
                 try {
-                    handleResponse(conn, asdu);
-                    lastActivityTime = System.currentTimeMillis();
+                    synchronized (protocolStateLock) {
+                        if (!bindCurrentConnection(conn, adapter) || readSessionExpired) return;
+                        handleResponse(conn, asdu);
+                        lastActivityTime = System.currentTimeMillis();
+                    }
+                    for (PushSample push : pendingPushSamples.get()) publishPushSample(push);
                 } catch (Exception e) {
                     handleError("ASDU handling failed", e);
+                } finally {
+                    pendingPushSamples.remove();
                 }
             }
 
@@ -115,8 +272,8 @@ public class Iec104Collector extends AbstractIce104Collector {
              */
             @Override
             public void connectionClosed(Connection conn, IOException e) {
-                if (isCurrentConnection(conn, adapter)) {
-                    handleConnectionClosed(e);
+                synchronized (protocolStateLock) {
+                    if (isCurrentConnection(conn, adapter)) handleConnectionClosed(e);
                 }
             }
 
@@ -125,30 +282,48 @@ public class Iec104Collector extends AbstractIce104Collector {
              */
             @Override
             public void dataTransferStateChanged(Connection conn, boolean stopped) {
-                if (!isCurrentConnection(conn, adapter)) {
-                    return;
-                }
-                boolean wasStopped = dataTransferStopped;
-                dataTransferStopped = stopped;
-                if (stopped) {
-                    connectionStatus = "CONNECTED_STOPPED";
-                    log.warn("IEC104 数据传输已停止：{}", conn.getRemoteInetAddress());
-                } else {
-                    connectionStatus = connected ? "CONNECTED" : connectionStatus;
-                    log.info("IEC104 数据传输已启动：{}", conn.getRemoteInetAddress());
-                    reportProtocolReady();
-                    if (wasStopped && connection != null) {
-                        onConnectionReady();
+                synchronized (protocolStateLock) {
+                    if (!bindCurrentConnection(conn, adapter)) return;
+                    dataTransferStopped = stopped;
+                    if (stopped) {
+                        readyConnection = null;
+                        connectionStatus = "CONNECTED_STOPPED";
+                    } else {
+                        connectionStatus = connected ? "CONNECTED" : connectionStatus;
+                        reportProtocolReady();
                     }
                 }
+                if (!stopped && connection == conn) initializeReadyConnection(conn, adapter);
             }
         };
     }
 
     private boolean isCurrentConnection(Connection candidate, Iec104ConnectionAdapter adapter) {
         return candidate != null
+                && currentAdapter == adapter
                 && candidate == adapter.getClient()
+                && (connectionManager == null || connectionManager.getConnection(getDeviceId()) == adapter)
                 && (connection == null || candidate == connection);
+    }
+
+    /**
+     * j60870 可能在 Collector 写入 connection 字段之前回调真实 ASDU；在协议锁内绑定该回调的真实客户端。
+     */
+    private boolean bindCurrentConnection(Connection candidate, Iec104ConnectionAdapter adapter) {
+        if (!isCurrentConnection(candidate, adapter)) return false;
+        if (connection == null) {
+            connection = candidate;
+        }
+        return true;
+    }
+
+    private void initializeReadyConnection(Connection client, Iec104ConnectionAdapter adapter) {
+        synchronized (protocolStateLock) {
+            if (!isCurrentConnection(client, adapter) || dataTransferStopped || readyConnection == client) return;
+            readyConnection = client;
+        }
+        // 网络发送不占协议状态锁，STARTDT回调和赋值后初始化共享一次性身份。
+        onConnectionReady();
     }
 
     /**
@@ -169,15 +344,43 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
 
         CompletableFuture<Object> future = registerPendingRequest(ca, typeId, ioa);
-
-        if (!maybeTriggerSingleInterrogation(point, address)) {
-            connection.readCommand(ca, toWireIoa(ioa));
-        }
-
         try {
-            return normalizeValue(future.get(timeout, TimeUnit.MILLISECONDS));
-        } catch (TimeoutException e) {
-            throw new IOException("IEC104 read timeout, ioa=" + ioa);
+            if (!maybeTriggerSingleInterrogation(point, address)) {
+                readScope.get().client().readCommand(ca, toWireIoa(ioa));
+            }
+            return acceptReadSample(point, future.get(timeout, TimeUnit.MILLISECONDS));
+        } catch (Exception failure) {
+            readFailures.get().put(point.getPointId(), failure);
+            markReadTimeout(readScope.get(), failure);
+            throw failure;
+        } finally {
+            future.cancel(false);
+        }
+    }
+
+    private Object acceptReadSample(DataPoint point, Object response) {
+        if (!(response instanceof CacheEntry sample)) throw new IllegalStateException("IEC104 未返回真实测量样本");
+        cachedReadSamples.get().put(point.getPointId(), sample);
+        wireReadPoints.get().add(point.getPointId());
+        return sample.value();
+    }
+
+    private void markReadTimeout(ReadScope scope, Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof TimeoutException) {
+                // Read Command没有事务号；超时后必须新建会话，不能让迟到响应完成下次请求。
+                synchronized (protocolStateLock) {
+                    if (scope == null || !isCurrentConnection(scope.client(), scope.adapter())
+                            || currentAdapter != scope.adapter()
+                            || runtimeGeneration != scope.generation()
+                            || runtimeConfigVersion != scope.version()) {
+                        return;
+                    }
+                    readSessionExpired = true;
+                    connectionStatus = "ERROR";
+                }
+                return;
+            }
         }
     }
 
@@ -192,38 +395,41 @@ public class Iec104Collector extends AbstractIce104Collector {
         Map<Iec104Key, PendingRead> deduplicatedRequests = new LinkedHashMap<>();
 
         for (DataPoint point : points) {
-            Iec104Address address = resolveReadAddress(point);
-            Integer typeId = resolvePointTypeId(point, address);
-            CacheEntry cached = getCachedSample(address.getCommonAddress(), typeId, address.getIoAddress());
-            if (cached != null) {
-                cachedReadSamples.get().put(point.getPointId(), cached);
-                results.put(point.getPointId(), cached.value());
-                continue;
+            try {
+                Iec104Address address = resolveReadAddress(point);
+                Integer typeId = resolvePointTypeId(point, address);
+                CacheEntry cached = getCachedSample(address.getCommonAddress(), typeId, address.getIoAddress());
+                if (cached != null) {
+                    cachedReadSamples.get().put(point.getPointId(), cached);
+                    results.put(point.getPointId(), cached.value());
+                    continue;
+                }
+                PendingRead pendingRead = new PendingRead(point, address,
+                        registerPendingRequest(address.getCommonAddress(), typeId, address.getIoAddress()));
+                pendingReads.put(point.getPointId(), pendingRead);
+                deduplicatedRequests.putIfAbsent(resolvePointKey(point, address), pendingRead);
+            } catch (Exception failure) {
+                results.put(point.getPointId(), null);
+                readFailures.get().put(point.getPointId(), failure);
             }
-
-            PendingRead pendingRead = new PendingRead(
-                    point,
-                    address,
-                    registerPendingRequest(address.getCommonAddress(), typeId, address.getIoAddress()));
-            pendingReads.put(point.getPointId(), pendingRead);
-
-            Iec104Key key = resolvePointKey(point, address);
-            deduplicatedRequests.putIfAbsent(key, pendingRead);
         }
 
         Set<InterrogationKey> triggeredQualifiers = new HashSet<>();
         for (Map.Entry<Iec104Key, PendingRead> entry : deduplicatedRequests.entrySet()) {
             Iec104Key key = entry.getKey();
             PendingRead pendingRead = entry.getValue();
-            boolean triggered = maybeTriggerSingleInterrogation(
-                    pendingRead.point(),
-                    pendingRead.address(),
-                    triggeredQualifiers);
-            if (!triggered) {
-                try {
-                    connection.readCommand(key.commonAddress(), toWireIoa(key.ioAddress()));
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+            try {
+                boolean triggered = maybeTriggerSingleInterrogation(pendingRead.point(),
+                        pendingRead.address(), triggeredQualifiers);
+                if (!triggered) {
+                    readScope.get().client().readCommand(key.commonAddress(), toWireIoa(key.ioAddress()));
+                }
+            } catch (Exception failure) {
+                // 同一地址可能绑定多个点；仅使这次发送关联的Future失败。
+                for (PendingRead waiting : pendingReads.values()) {
+                    if (resolvePointKey(waiting.point(), waiting.address()).equals(key)) {
+                        waiting.future().completeExceptionally(failure);
+                    }
                 }
             }
         }
@@ -231,9 +437,14 @@ public class Iec104Collector extends AbstractIce104Collector {
         for (Map.Entry<String, PendingRead> entry : pendingReads.entrySet()) {
             try {
                 Object value = entry.getValue().future().get(timeout, TimeUnit.MILLISECONDS);
-                results.put(entry.getKey(), normalizeValue(value));
+                results.put(entry.getKey(), acceptReadSample(entry.getValue().point(), value));
             } catch (Exception e) {
                 results.put(entry.getKey(), null);
+                readFailures.get().put(entry.getKey(), e);
+                markReadTimeout(readScope.get(), e);
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            } finally {
+                entry.getValue().future().cancel(false);
             }
         }
 
@@ -450,7 +661,35 @@ public class Iec104Collector extends AbstractIce104Collector {
         log.debug("IEC104 测量映射：CA={}，ASDU={}，逻辑IOA={}，点位={}，匹配={}",
                 commonAddress, type, ioa, point != null ? point.getPointId() : null, point != null);
         if (point != null) {
-            ingestPushedValue(point, value);
+            CacheEntry sample = valueCache.get(new Iec104Key(commonAddress, typeId, ioa));
+            if (sample != null) pendingPushSamples.get().add(new PushSample(point, sample, captureReadScope()));
+        }
+    }
+
+    /** 映射在收包状态锁内完成，遥测提交在锁外执行并携带原物理源许可。 */
+    private void publishPushSample(PushSample push) {
+        ProcessResult[] accepted = new ProcessResult[1];
+        readScope.set(push.scope());
+        telemetrySample.set(push.sample());
+        try {
+            Runnable process = () -> commitIfSourceCurrent(push.scope(), () -> {
+                Object raw = push.sample().value();
+                Object converted = convertData(push.point(), raw);
+                com.wangbin.collector.core.processor.ProcessContext context = new com.wangbin.collector.core.processor.ProcessContext();
+                context.addAttribute(CommonMapKeys.DEVICE_ID, getDeviceId());
+                ProcessResult result = dataQualityProcessor.process(context, push.point(), converted);
+                enrichTelemetryMetadata(result, raw, converted, push.sample().timestamp(), "PUSH");
+                lastProcessResults.put(push.point().getPointId(), result);
+                accepted[0] = result;
+            });
+            if (configManager != null) configManager.runIfConfigurationCurrent(getDeviceId(), push.scope().version(), process);
+            else process.run();
+            if (accepted[0] != null && telemetryIngressService != null) {
+                telemetryIngressService.append(getDeviceId(), push.point(), accepted[0], push.scope().generation());
+            }
+        } finally {
+            readScope.remove();
+            telemetrySample.remove();
         }
     }
 
@@ -462,6 +701,8 @@ public class Iec104Collector extends AbstractIce104Collector {
         connectionStatus = "DISCONNECTED";
         lastDisconnectTime = System.currentTimeMillis();
         connection = null;
+        currentAdapter = null;
+        readyConnection = null;
         clearProtocolState();
 
         if (e != null) {

@@ -1,11 +1,16 @@
 <template>
   <section class="page-root exact-page network-view">
     <div class="section-heading network-heading">
+      <div class="network-title-context">
       <div class="heading-title-line">
         <h1>网络检测</h1>
         <span class="heading-online" :class="{ 'is-pending': !networkResult, 'is-read-error': networkResult && isNetworkReadFailure(networkResult) }"><i aria-hidden="true"></i>{{ networkResult ? networkConclusion(networkResult) : '尚未执行' }}</span>
       </div>
       <p>检测本机、白名单目标或设备配置地址；仅在点击开始检测后执行。</p>
+      </div>
+      <div class="network-heading-actions">
+        <button type="button" :disabled="networkHistory.length === 0" class="network-export" aria-describedby="network-export-note" @click="downloadNetworkReport">导出检测结果</button>
+      </div>
     </div>
 
     <div class="exact-page-body network-body">
@@ -15,9 +20,6 @@
           <span>端口仅用于 TCP 检测</span>
         </div>
         <div class="network-condition-fields">
-          <fieldset class="network-condition-group network-target-group">
-            <legend>目标地址</legend>
-            <div class="network-group-fields">
               <label class="network-field network-device-field" for="network-device">
                 <span>目标设备</span>
                 <select id="network-device" v-model="networkDeviceId" @change="applyNetworkDevice">
@@ -31,11 +33,6 @@
                 <span>目标地址</span>
                 <input id="network-target" v-model="networkTarget" type="text" placeholder="从设备配置自动带入 host" />
               </label>
-            </div>
-          </fieldset>
-          <fieldset class="network-condition-group network-parameter-group">
-            <legend>检测参数</legend>
-            <div class="network-group-fields">
               <label class="network-field network-mode-field" for="network-type">
                 <span>检测方式</span>
                 <select id="network-type" v-model="networkType" @change="syncNetworkMode">
@@ -53,36 +50,17 @@
                   <span id="network-timeout-unit" class="network-unit">ms</span>
                 </span>
               </label>
-            </div>
-          </fieldset>
+          <button type="button" :disabled="networkOperating" class="primary network-run" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button>
         </div>
         <div class="network-toolbar-footer">
           <div class="network-device-actions">
             <button type="button" @click="fillNetworkFromSelectedDevice">从设备配置带入</button>
             <span id="network-port-note">PING / TRACE 不使用端口</span>
           </div>
-          <div class="network-toolbar-actions">
-            <button type="button" :disabled="networkOperating" class="primary" @click="runNetwork">{{ networkOperating ? '检测中' : '开始检测' }}</button>
-            <button type="button" :disabled="networkHistory.length === 0" class="network-export" aria-describedby="network-export-note" @click="downloadNetworkReport">导出检测结果</button>
-          </div>
-          <p id="network-export-note" class="network-export-note">{{ networkHistory.length === 0 ? '当前会话暂无检测结果，导出不可用。' : '导出当前会话保留的检测历史，最多 10 条。' }}</p>
         </div>
       </section>
 
-      <OperationSourceStatus
-        :state="networkSourceState"
-        source="网络检测接口 · 仅由用户提交"
-        :last-attempt-at="networkLastAttemptAt"
-        :last-success-at="networkLastSuccessAt"
-        :detail="networkSourceDetail"
-      />
-      <div class="exact-diagnostic-cards network-summary-cards" :class="{ 'is-pending': !networkResult }" aria-label="检测摘要">
-        <div class="exact-diagnostic-card"><span>{{ networkResult ? '结果方式' : '当前配置方式' }}</span><strong>{{ networkResult ? networkResult.type : networkType }}</strong></div>
-        <div class="exact-diagnostic-card"><span>检测结论</span><strong>{{ networkResult ? networkConclusion(networkResult) : '尚未执行' }}</strong></div>
-        <div class="exact-diagnostic-card network-reason-summary"><span>原因说明</span><strong>{{ networkResult ? networkReason(networkResult) : '检测后显示' }}</strong></div>
-        <div class="exact-diagnostic-card"><span>当前会话历史</span><strong>{{ networkHistory.length }}</strong></div>
-      </div>
-
+      <div class="network-workbench">
       <section class="exact-surface network-result-panel" :class="{ 'is-pending': !networkResult }">
         <div class="exact-surface-head network-panel-head">
           <h2>检测结果</h2>
@@ -94,7 +72,13 @@
             <strong>{{ row.value }}</strong>
           </div>
         </div>
-        <p v-if="!networkResult" class="network-pending-note" role="status">尚未执行网络检测。确认当前参数后，点击“开始检测”查看真实结果。</p>
+        <div v-if="!networkResult" class="network-pending-note" role="status">
+          <span class="network-empty-symbol" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="3" width="6" height="5" rx="1" /><rect x="3" y="16" width="6" height="5" rx="1" /><rect x="15" y="16" width="6" height="5" rx="1" /><path d="M12 8v4M6 16v-4h12v4" /></svg>
+          </span>
+          <h3>尚未执行网络检测</h3>
+          <p>确认目标、方式与超时后，点击“开始检测”查看真实结果。未执行时不显示耗时或可达状态。</p>
+        </div>
         <div v-else class="network-json-section">
           <h3 id="network-json-title">结果 JSON</h3>
           <pre class="json-view" tabindex="0" aria-labelledby="network-json-title">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre>
@@ -104,13 +88,45 @@
           <code v-for="(line, index) in networkResult.details" :key="`${index}-${line}`">{{ line }}</code>
         </div>
       </section>
+      <aside class="exact-surface network-context-panel" aria-labelledby="network-context-title">
+        <div class="exact-surface-head network-panel-head">
+          <h2 id="network-context-title">本次操作上下文</h2>
+        </div>
+        <div class="network-context-body">
+          <h3>当前表单参数 · 尚未提交的修改不改变已有结果</h3>
+          <dl class="network-context-list">
+            <div><dt>触发方式</dt><dd>手动提交</dd></div>
+            <div><dt>目标来源</dt><dd>{{ selectedNetworkDevice ? (selectedNetworkDevice.displayName || selectedNetworkDevice.normalizedId) : (networkDeviceId || '本机 / 白名单目标') }}</dd></div>
+            <div><dt>当前配置方式</dt><dd>{{ networkType }}</dd></div>
+            <div><dt>目标地址</dt><dd>{{ networkTarget || '未填写' }}</dd></div>
+            <div><dt>TCP 端口</dt><dd>{{ networkType === 'TCP' ? (networkPort || '未填写') : '当前方式不使用' }}</dd></div>
+            <div><dt>检测超时</dt><dd>{{ networkTimeout }} ms</dd></div>
+            <div><dt>当前会话历史</dt><dd>{{ networkHistory.length }} 条本地记录</dd></div>
+          </dl>
+          <dl v-if="networkResult" class="network-context-list network-submitted-context">
+            <div><dt>结果方式</dt><dd>{{ networkResult.type }}</dd></div>
+            <div><dt>检测结论</dt><dd>{{ networkConclusion(networkResult) }}</dd></div>
+            <div><dt>原因说明</dt><dd>{{ networkReason(networkResult) }}</dd></div>
+          </dl>
+          <OperationSourceStatus
+            class="network-source-status"
+            :state="networkSourceState"
+            source="网络检测接口 · 仅由用户提交"
+            :last-attempt-at="networkLastAttemptAt"
+            :last-success-at="networkLastSuccessAt"
+            :detail="networkSourceDetail"
+          />
+          <p id="network-export-note" class="network-export-note">{{ networkHistory.length === 0 ? '当前会话暂无检测结果，导出不可用。' : '导出当前会话保留的检测历史，最多 10 条。' }}</p>
+        </div>
+      </aside>
+      </div>
 
       <section class="exact-table-card network-history-table">
         <div class="exact-table-title network-panel-head">
           <h2 id="network-history-title">检测历史记录</h2>
           <span>最多保留 10 条</span>
         </div>
-        <div class="network-history-scroll" tabindex="0" role="region" aria-labelledby="network-history-title">
+        <div v-if="networkHistory.length" class="network-history-scroll" tabindex="0" role="region" aria-labelledby="network-history-title">
           <table>
             <colgroup>
               <col class="network-history-time" />
@@ -145,7 +161,11 @@
             </tbody>
           </table>
         </div>
-        <p v-if="networkHistory.length === 0" class="network-history-empty" role="status">当前会话暂无检测历史</p>
+        <div v-if="networkHistory.length === 0" class="network-history-empty" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v14c0 4 14 4 14 0V5M5 10c0 4 14 4 14 0M5 15c0 4 14 4 14 0" /></svg>
+          <strong>当前会话暂无检测历史</strong>
+          <p>尚未产生检测记录；本地计数为 {{ networkHistory.length }}，不代表接口成功读取。</p>
+        </div>
       </section>
 
       <details class="network-telemetry-tools">

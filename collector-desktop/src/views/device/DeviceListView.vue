@@ -2,16 +2,20 @@
   <section class="exact-page device-list-view">
     <header class="device-page-heading">
       <div class="device-title-block">
+        <nav class="device-breadcrumb" aria-label="当前位置"><span>配置</span><span aria-hidden="true">/</span><strong>设备管理</strong></nav>
         <div class="device-title-line">
           <h1>设备管理</h1>
           <span class="device-count" aria-live="polite">{{ deviceInventoryLabel }}</span>
         </div>
-        <p class="device-heading-sub">管理本地临时设备与远端同步配置</p>
+        <p class="device-heading-sub">管理采集对象、配置来源与运行状态；业务动作围绕设备展开。</p>
       </div>
       <div class="device-heading-actions">
         <button type="button" class="device-button" @click="refreshDeviceListContext"><DeviceListIcon name="refresh" />刷新列表</button>
-        <button type="button" class="device-button" :disabled="configFileExporting" @click="exportDeviceConfigData"><DeviceListIcon name="download" />导出配置数据</button>
-        <button type="button" class="device-button" :disabled="configFileImporting" @click="openConfigImportFile"><DeviceListIcon name="upload" />导入配置数据</button>
+        <div class="device-transfer-actions" aria-label="配置导入与导出">
+          <span class="device-transfer-label">配置导入 / 导出</span>
+          <button type="button" class="device-button" aria-label="导出配置数据" :disabled="configFileExporting" @click="exportDeviceConfigData"><DeviceListIcon name="download" />导出</button>
+          <button type="button" class="device-button" aria-label="导入配置数据" :disabled="configFileImporting" @click="openConfigImportFile"><DeviceListIcon name="upload" />导入</button>
+        </div>
         <button type="button" class="device-button primary" @click="openLocalEditor"><DeviceListIcon name="plus" />新增本地设备</button>
       </div>
     </header>
@@ -20,7 +24,7 @@
       <div class="device-filters">
         <label class="device-search">
           <DeviceListIcon name="search" />
-          <input v-model="deviceKeyword" type="search" aria-label="搜索设备名称、标识或地址" placeholder="搜索设备名称、标识或地址" />
+          <input v-model="deviceKeyword" type="search" aria-label="搜索设备名称、ID 或地址" placeholder="搜索设备名称、ID 或地址" />
         </label>
         <select v-model="protocolFilter" class="device-protocol-filter" aria-label="协议筛选">
           <option value="">全部协议</option>
@@ -47,8 +51,15 @@
       </div>
     </div>
 
-    <div v-if="detailError || deviceStore.error || deviceStore.syncError" class="device-error-banner" role="alert">
-      <DeviceListIcon name="alert" /><span>{{ detailError || deviceStore.error || deviceStore.syncError }}</span>
+    <div class="device-summary" aria-label="设备汇总">
+      <div v-for="item in deviceSummaryItems" :key="item.label" class="device-summary-item">
+        <span>{{ item.label }}</span><strong>{{ item.value }}</strong>
+      </div>
+      <span class="device-summary-note">{{ deviceSummaryNote }}</span>
+    </div>
+
+    <div v-if="deviceErrorMessage" class="device-error-banner" role="alert">
+      <DeviceListIcon name="alert" /><span>{{ deviceErrorMessage }}</span>
     </div>
     <div class="device-register" :class="`device-view-${deviceView}`" :role="deviceView === 'table' ? 'table' : undefined" aria-label="设备清单">
       <div class="device-register-body" :role="deviceView === 'table' ? 'rowgroup' : undefined" @scroll="closeDeviceMenu">
@@ -64,7 +75,8 @@
         <div v-else-if="filteredDevices.length === 0" class="device-empty">
           <div class="device-empty-illustration"><DeviceListIcon :name="deviceStore.error ? 'alert' : hasDeviceFilters ? 'search' : 'box'" /></div>
           <h2>{{ deviceEmptyTitle }}</h2>
-          <p v-if="deviceListEmptyText !== deviceEmptyTitle">{{ deviceListEmptyText }}</p>
+          <p v-if="deviceStore.error">请打开导航中的“运维令牌与连接”保存令牌后，点击“刷新列表”。</p>
+          <p v-else-if="deviceListEmptyText !== deviceEmptyTitle">{{ deviceListEmptyText }}</p>
           <p v-if="!deviceStore.error && hasDeviceFilters">请调整上方关键词、协议或状态筛选。</p>
         </div>
         <article
@@ -92,6 +104,7 @@
             <span class="device-cell-label">连接与采集</span>
             <strong class="device-protocol-name">{{ device.displayProtocol || '-' }}</strong>
             <span class="device-address device-mono" :title="deviceAddress(device)">{{ deviceAddress(device) }}</span>
+            <div class="device-config-source">配置来源 <span>{{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</span></div>
             <div class="device-configured-points">配置点位 <span class="device-mono">{{ typeof device.pointCount === 'number' && Number.isFinite(device.pointCount) && device.pointCount >= 0 ? device.pointCount : Array.isArray(device.points) ? device.points.length : '未知' }}</span></div>
             <div class="device-interval">采集周期 <span class="device-mono">{{ device.collectionInterval ?? '-' }}</span> ms</div>
           </div>
@@ -221,6 +234,14 @@ const deviceListEmptyText = computed(() => buildDeviceListEmptyText({
   errorMessage: deviceStore.error,
   hasFilters: Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value)
 }));
+const deviceErrorMessage = computed(() => {
+  const message = [detailError.value, deviceStore.error, deviceStore.syncError].find(Boolean) || "";
+  if (!message) return "";
+  if (/(401|unauthorized|forbidden|token|令牌|expired|过期|invalid|无效)/i.test(message)) {
+    return "设备配置读取失败：访问未获授权，请在“运维令牌与连接”中更新令牌后刷新列表。";
+  }
+  return message;
+});
 
 onMounted(async () => {
   await appStore.initialize();
@@ -508,11 +529,38 @@ const deviceConfirmationStyle = {
   "--app-overlay-bg": "#1a273a",
   "--app-overlay-border": "#506786",
   "--app-overlay-shadow": "0 20px 70px #02091699",
-  fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+  fontFamily: "var(--app-font-family)"
 };
 const activeMenuDeviceId = ref("");
 const hasDeviceFilters = computed(() => Boolean(deviceKeyword.value.trim() || protocolFilter.value || statusFilter.value));
 const hasLoadedDeviceList = computed(() => deviceStore.lastUpdatedAt > 0 || deviceStore.devices.length > 0);
+const deviceSummaryItems = computed(() => {
+  if (!hasLoadedDeviceList.value) {
+    return ["全部设备", "在线", "采集告警", "离线", "未知", "配置点位"].map((label) => ({ label, value: "—" }));
+  }
+  const statusCount = (status: string) => deviceStore.devices.filter((device) => deviceFilterStatus(device) === status).length;
+  const unknownCount = deviceStore.devices.filter((device) => ["UNKNOWN", "STALE"].includes(deviceFilterStatus(device))).length;
+  const pointCounts = deviceStore.devices.map((device) => {
+    if (typeof device.pointCount === "number" && Number.isFinite(device.pointCount) && device.pointCount >= 0) return device.pointCount;
+    if (Array.isArray(device.points)) return device.points.length;
+    return undefined;
+  });
+  const totalPoints = pointCounts.every((count) => count !== undefined)
+    ? pointCounts.reduce((total, count) => total + (count || 0), 0)
+    : "—";
+  return [
+    { label: "全部设备", value: deviceStore.devices.length },
+    { label: "在线", value: statusCount("ONLINE") },
+    { label: "采集告警", value: statusCount("ERROR") },
+    { label: "离线", value: statusCount("OFFLINE") },
+    { label: "未知", value: unknownCount },
+    { label: "配置点位", value: totalPoints }
+  ];
+});
+const deviceSummaryNote = computed(() => {
+  if (!hasLoadedDeviceList.value) return "尚无成功读取结果";
+  return deviceStore.error ? "显示上次成功读取结果" : "来自当前设备清单";
+});
 const deviceInventoryLabel = computed(() => {
   if (!hasLoadedDeviceList.value) return deviceStore.error ? "数量未知" : deviceStore.loading ? "加载中" : "数量未知";
   return `${filteredDevices.value.length} 台设备`;
@@ -522,7 +570,7 @@ const deviceResultLabel = computed(() => {
   const retained = deviceStore.loading || deviceStore.error ? "（上次加载结果）" : "";
   return `显示 ${filteredDevices.value.length} 台设备${retained}`;
 });
-const deviceEmptyTitle = computed(() => deviceStore.error ? "设备配置加载失败" : hasDeviceFilters.value ? "没有符合筛选条件的设备" : "当前没有设备配置");
+const deviceEmptyTitle = computed(() => deviceStore.error ? "设备配置暂不可用" : hasDeviceFilters.value ? "没有符合筛选条件的设备" : "当前没有设备配置");
 const devicePresentations = computed(() => new Map(filteredDevices.value.map((device) => [device.normalizedId, deviceListPresentation(device)])));
 const deviceMenuPopoverStyle = {
   "--app-overlay-bg": "#1d2a3d",
@@ -530,7 +578,7 @@ const deviceMenuPopoverStyle = {
   "--app-overlay-shadow": "0 18px 48px #050e1d99",
   padding: "5px",
   borderRadius: "8px",
-  fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", sans-serif'
+  fontFamily: "var(--app-font-family)"
 };
 
 function devicePresentation(device: DeviceViewModel) {

@@ -8,7 +8,7 @@
 }
 
 .local-device-panel {
-  --editor-bg: var(--console-bg);
+  --editor-bg: var(--console-panel);
   --editor-surface: var(--console-panel);
   --editor-input: var(--console-input-bg);
   --panel-line: var(--console-border-soft);
@@ -71,7 +71,7 @@
 
 .local-title-line h3 {
   color: var(--panel-text);
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 600;
   line-height: 1.4;
 }
@@ -90,7 +90,7 @@
 
 .local-title-copy p {
   margin-top: 3px;
-  padding-left: 47px;
+  padding-left: 0;
   color: var(--panel-muted);
   font-size: 12px;
 }
@@ -169,14 +169,15 @@
   padding: 0 24px;
   flex: none;
   gap: 24px;
+  overflow-x: auto;
   border-bottom: 1px solid var(--panel-line);
   background: var(--console-panel);
 }
 
 .local-device-panel .local-editor-tab {
   display: flex;
-  min-height: 49px;
-  padding: 12px 0;
+  min-height: 44px;
+  padding: 11px 0;
   align-items: center;
   gap: 10px;
   color: var(--console-text-muted);
@@ -198,9 +199,13 @@
   font-weight: 500;
 }
 
-.local-tab-copy small {
-  color: var(--console-text-muted);
-  font-size: 10px;
+.device-symbol,
+.local-title-line > .pill,
+.local-editor-stats,
+.local-editor-tab :deep(svg),
+.local-tab-copy small,
+.local-tab-count {
+  display: none;
 }
 
 .local-device-panel .local-editor-tab.is-active {
@@ -249,7 +254,20 @@
 }
 
 .step-grid-setup {
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 275px;
+  gap: 20px;
+}
+
+.step-grid-points {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.step-grid-points > .detail-stack {
+  grid-row: 1;
+}
+
+.step-grid-points > .points-overview {
+  grid-row: 2;
 }
 
 .step-grid-master-detail {
@@ -257,11 +275,28 @@
 }
 
 .step-grid-cloud {
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 275px;
+  gap: 20px;
 }
 
 .step-grid-json {
-  grid-template-columns: minmax(0, 1fr) 330px;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 20px;
+}
+
+.step-grid-json > .json-editor-card {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.step-grid-json > .schema-card {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.step-grid-json > .json-sections {
+  grid-column: 1;
+  grid-row: 2;
 }
 
 .local-setup-stable-column,
@@ -362,58 +397,26 @@
 }
 
 .step-grid-setup > :deep(.progress-rail) {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 8px 18px;
-  padding: 0 0 14px;
-  border-bottom: 1px solid var(--panel-line);
+  padding: 16px;
+  border: 1px solid var(--panel-line);
+  border-radius: 7px;
+  background: var(--console-bg-soft);
 }
 
 .step-grid-setup :deep(.progress-rail > .editor-section-header) {
-  margin: 0;
+  margin: 0 0 14px;
   padding: 0;
   border: 0;
 }
 
 .step-grid-setup :deep(.local-checklist) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 18px;
+  display: grid;
+  gap: 10px;
 }
 
 .step-grid-setup :deep(.progress-rail > .rail-note) {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.step-grid-json > .overview-card {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-}
-
-.step-grid-json > .overview-card :deep(.editor-section-header) {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.step-grid-json > .overview-card .json-nav-item {
-  width: auto;
-}
-
-.step-grid-json > .overview-card .json-nav-note {
-  flex-basis: 100%;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  margin: 16px 0 0;
+  padding: 12px 0 0;
 }
 
 .local-device-panel :deep(.is-ok .status-dot)::before {
@@ -528,8 +531,30 @@
 }
 
 .local-device-panel .setup-identity-grid {
-  margin: 0 16px 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 22px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 18px 24px;
+}
+
+.identity-protocol-field {
+  width: min(285px, 100%);
+  grid-column: 1 / -1;
+}
+
+.setup-adaptive-group {
+  padding-top: 18px;
+  border-top: 1px solid var(--panel-line);
+}
+
+.setup-adaptive-group > h3 {
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.local-device-panel .setup-adaptive-grid {
+  grid-template-columns: repeat(4, minmax(0, 152px));
+  gap: 16px 24px;
 }
 
 .form-grid label,
@@ -546,16 +571,8 @@
   grid-column: 1 / -1;
 }
 
-.setup-identity-grid > .wide-field {
-  width: min(340px, 100%);
-}
-
-.setup-identity-grid > .adaptive-field {
-  width: 145px;
-}
-
-.setup-identity-grid > .adaptive-field:nth-child(4) {
-  margin-top: 2px;
+.setup-adaptive-grid > .adaptive-field {
+  width: 100%;
 }
 
 .local-device-panel input,
@@ -596,7 +613,7 @@
 .native-unit-control {
   position: relative;
   display: block;
-  width: 145px;
+  width: 100%;
   max-width: 100%;
 }
 
@@ -627,7 +644,7 @@
 
 .local-connection-body {
   min-width: 0;
-  padding: 0 16px 16px;
+  padding: 0 0 18px;
 }
 
 .local-connection-body .dynamic-form {
@@ -849,7 +866,7 @@
 
 .local-device-panel :deep(.editor-object-meta) {
   flex-basis: 100%;
-  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-family: var(--app-font-family);
 }
 
 .local-device-panel :deep(.pill),
@@ -949,7 +966,7 @@
 .protocol-point-note code {
   margin-left: 6px;
   color: var(--console-primary);
-  font-family: Consolas, monospace;
+  font-family: var(--app-font-family);
 }
 
 .readonly-grid {
@@ -1123,7 +1140,7 @@
   overflow: auto;
   color: var(--console-code-text);
   background: var(--console-code-bg);
-  font: 12px/1.8 Consolas, "Microsoft YaHei UI", monospace;
+  font: 12px/1.8 var(--app-font-family);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -1196,7 +1213,7 @@
   border: 0;
   border-radius: 0;
   background: var(--console-code-bg);
-  font: 12px/1.8 Consolas, "Microsoft YaHei UI", monospace;
+  font: 12px/1.8 var(--app-font-family);
   tab-size: 2;
   resize: vertical;
 }
@@ -1326,14 +1343,14 @@
 
 .schema-table td:first-child {
   color: var(--console-primary);
-  font-family: Consolas, monospace;
+  font-family: var(--app-font-family);
 }
 
 .schema-table small {
   display: block;
   margin-top: 3px;
   color: var(--panel-muted);
-  font: 12px/1.7 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font: 12px/1.7 var(--app-font-family);
 }
 
 .schema-card > :deep(.field-group) {
@@ -1468,7 +1485,7 @@
 
 @media (max-width: 1300px) {
   .step-grid-setup {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 275px;
   }
 
   .local-device-panel .setup-identity-grid {
@@ -1481,7 +1498,7 @@
   }
 
   .step-grid-cloud {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 275px;
   }
 
   .cloud-bottom-grid {
@@ -1625,6 +1642,27 @@
   .step-grid-json {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .step-grid-setup > .local-setup-stable-column,
+  .step-grid-points > .detail-stack,
+  .step-grid-master-detail > .detail-stack,
+  .step-grid-cloud > .detail-stack,
+  .step-grid-json > .json-editor-card {
+    order: 1;
+  }
+
+  .step-grid-setup > :deep(.progress-rail),
+  .step-grid-points > .points-overview,
+  .step-grid-master-detail > .overview-card,
+  .step-grid-cloud > .overview-card,
+  .step-grid-json > .schema-card,
+  .step-grid-json > .json-sections {
+    order: 2;
+  }
+
+  .step-grid-json > .json-sections {
+    order: 3;
   }
 
   .step-grid-setup > .local-connection-card,

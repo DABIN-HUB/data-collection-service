@@ -9,7 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.openmuc.j60870.ClientConnectionBuilder;
 import org.openmuc.j60870.Connection;
 import org.openmuc.j60870.ConnectionEventListener;
+import org.openmuc.j60870.ASdu;
 
+import java.io.IOException;
 import java.net.InetAddress;
 
 /**
@@ -18,7 +20,7 @@ import java.net.InetAddress;
 @Slf4j
 public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connection> {
 
-    private Connection connection;
+    private volatile Connection connection;
     @Setter
     private ConnectionEventListener connectionEventListener;
 
@@ -52,7 +54,26 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
                 .setIoaFieldLength(ioaFieldLength)
                 .setConnectionTimeout(timeout);
         if (connectionEventListener != null) {
-            builder.setConnectionEventListener(connectionEventListener);
+            ConnectionEventListener delegate = connectionEventListener;
+            builder.setConnectionEventListener(new ConnectionEventListener() {
+                @Override
+                public void newASdu(Connection callbackConnection, ASdu asdu) {
+                    publishCallbackConnection(callbackConnection);
+                    delegate.newASdu(callbackConnection, asdu);
+                }
+
+                @Override
+                public void connectionClosed(Connection callbackConnection, IOException failure) {
+                    publishCallbackConnection(callbackConnection);
+                    delegate.connectionClosed(callbackConnection, failure);
+                }
+
+                @Override
+                public void dataTransferStateChanged(Connection callbackConnection, boolean stopped) {
+                    publishCallbackConnection(callbackConnection);
+                    delegate.dataTransferStateChanged(callbackConnection, stopped);
+                }
+            });
         }
         connection = builder.build();
         connectionParams.put(CommonMapKeys.HOST, host);
@@ -61,7 +82,21 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
         connectionParams.put("cotFieldLength", cotFieldLength);
         connectionParams.put("commonAddressFieldLength", commonAddressFieldLength);
         connectionParams.put("ioaFieldLength", ioaFieldLength);
-        connection.startDataTransfer();
+        try {
+            connection.startDataTransfer();
+        } catch (Exception failure) {
+            Connection failed = connection;
+            connection = null;
+            if (failed != null) failed.close();
+            throw failure;
+        }
+    }
+
+    /** build() 返回前 reader 可能已经回调；先发布回调携带的真实连接身份，再交给 Collector 校验。 */
+    private void publishCallbackConnection(Connection callbackConnection) {
+        if (callbackConnection != null && (connection == null || connection == callbackConnection)) {
+            connection = callbackConnection;
+        }
     }
 
     /**
@@ -69,18 +104,22 @@ public class Iec104ConnectionAdapter extends AbstractConnectionAdapter<Connectio
      */
     @Override
     protected void doDisconnect() throws Exception {
-        if (connection == null) {
+        Connection closing = connection;
+        if (closing == null) {
             return;
         }
         try {
-            if (!connection.isStopped()) {
-                connection.stopDataTransfer();
+            if (!closing.isClosed() && !closing.isStopped()) {
+                closing.stopDataTransfer();
             }
+        } catch (IOException stopFailure) {
+            // STOPDT为尽力通知；TCP断开时仍必须完成本次物理连接的资源释放。
+            log.debug("IEC104停止数据传输未确认，继续关闭本次连接，设备:{}", getDeviceId());
         } finally {
             try {
-                connection.close();
+                closing.close();
             } finally {
-                connection = null;
+                if (connection == closing) connection = null;
             }
         }
     }

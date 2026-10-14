@@ -43,6 +43,10 @@
             <span>条数</span>
             <input v-model.number="limit" type="number" min="10" max="2000" step="10" title="最大条数" />
           </label>
+          <div class="history-query-actions">
+            <button type="button" class="history-button primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
+            <button type="button" class="history-button" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
+          </div>
         </div>
         <div class="history-compare-row">
           <label class="history-field history-compare-field">
@@ -54,26 +58,12 @@
             </select>
           </label>
           <p>可选多个点位做趋势对比<br /><small>按住 Ctrl / Command 多选</small></p>
-          <div class="history-query-actions">
-            <button type="button" class="history-button primary" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">查询历史</button>
-            <button type="button" class="history-button" :disabled="loading || !historySeries.length" @click="downloadHistory">导出趋势</button>
-          </div>
         </div>
       </section>
 
       <el-alert v-if="historyCapabilityMessage && !appStore.capabilities?.history.available" class="history-notice" :title="historyCapabilityMessage" type="warning" :closable="false" />
       <el-alert v-if="historyReadStatusText" class="history-notice" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
       <el-alert v-if="historyPartialWarning" class="history-notice" :title="historyPartialWarning" type="warning" :closable="false" />
-
-      <div v-if="historySummaryCards.length" class="history-summary">
-        <article v-for="card in historySummaryCards" :key="card.label" :class="{ 'history-time-range': card.label === '时间范围', 'history-value-range': card.label === '数值范围' }">
-          <span>{{ card.label }}</span>
-          <strong :title="historyPresentation.hasResult || card.label === '时间范围' ? card.value : historyPresentation.stateLabel">
-            {{ historyPresentation.hasResult || card.label === '时间范围' ? card.value : '—' }}
-          </strong>
-          <small>{{ historyPresentation.hasResult || card.label === '时间范围' ? card.detail : historyPresentation.stateLabel }}</small>
-        </article>
-      </div>
 
       <div class="history-trend-grid">
         <section class="history-panel history-curve-panel">
@@ -132,6 +122,16 @@
           </div>
         </section>
 
+      </div>
+
+      <div v-if="historySummaryCards.length" class="history-summary">
+        <article v-for="card in historySummaryCards" :key="card.label" :class="{ 'history-time-range': card.label === '时间范围', 'history-value-range': card.label === '数值范围' }">
+          <span>{{ card.label }}</span>
+          <strong :title="historyPresentation.hasResult || card.label === '时间范围' ? card.value : historyPresentation.stateLabel">
+            {{ historyPresentation.hasResult || card.label === '时间范围' ? card.value : '—' }}
+          </strong>
+          <small>{{ historyPresentation.hasResult || card.label === '时间范围' ? card.detail : historyPresentation.stateLabel }}</small>
+        </article>
       </div>
 
       <div class="history-context-grid">

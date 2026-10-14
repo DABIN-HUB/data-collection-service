@@ -88,7 +88,11 @@ public abstract class ConnectionBackedCollector extends BaseCollector {
             connectManagedConnection();
             return typedAdapter;
         } catch (Exception e) {
-            removeManagedConnection(adapterName);
+            try {
+                removeManagedConnection(adapterName);
+            } catch (Exception cleanupFailure) {
+                e.addSuppressed(cleanupFailure);
+            }
             throw e;
         }
     }

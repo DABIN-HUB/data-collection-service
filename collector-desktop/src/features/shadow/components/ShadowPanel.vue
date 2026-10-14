@@ -743,7 +743,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 .shadow-workbench pre,
 .shadow-workbench textarea,
 .version-line strong {
-  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--app-font-family);
 }
 .cell-value,
 .field-link code {
@@ -903,7 +903,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   border: 1px solid var(--console-input-border);
   border-radius: var(--console-radius-sm);
   background: var(--console-input-bg);
-  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.8;
   tab-size: 2;

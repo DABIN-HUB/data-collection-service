@@ -263,6 +263,18 @@ onBeforeUnmount(() => {
   }
 }
 
+@media (width > 900px) and (width <= 1280px) {
+  .app-shell__navigation {
+    flex-basis: 202px;
+  }
+
+  .app-shell__navigation :deep(.app-sidebar) {
+    width: 202px;
+    min-width: 202px;
+    padding-inline: 13px;
+  }
+}
+
 .app-shell :deep(button:not(.el-button)) {
   min-height: var(--app-control-height);
   padding: 0 12px;

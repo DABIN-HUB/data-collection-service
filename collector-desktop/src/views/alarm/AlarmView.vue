@@ -3,7 +3,7 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>告警历史中心</h1>
-        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmSummaryDisplay.acknowledged }}</span>
+        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarmHistoryCountText }} · 已确认 {{ alarmSummaryDisplay.acknowledged }}</span>
       </div>
       <div class="heading-actions">
         <button type="button" :disabled="alarms.length === 0 || ackStatusLoading" @click="refreshAlarmAcknowledgements">确认状态批量查询</button>
@@ -14,6 +14,13 @@
     <p class="alarm-page-note">分别查看告警级别与确认状态；确认记录不等同于告警恢复。</p>
 
     <div class="exact-page-body">
+      <div class="exact-diagnostic-cards alarm-summary-cards" aria-label="当前告警历史摘要">
+        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
+        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
+        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
+        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
+        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
+      </div>
       <div class="exact-toolbar">
         <div class="exact-toolbar-group exact-toolbar-filters">
           <label class="alarm-filter-field">
@@ -56,14 +63,6 @@
 
       <el-alert v-if="alarmReadStatusText" :title="alarmReadStatusText" :type="alarmReadStatusType" :closable="false" />
       <el-alert v-if="ackStatusWarning" :title="ackStatusWarning" type="warning" :closable="false" />
-
-      <div class="exact-diagnostic-cards alarm-summary-cards">
-        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
-        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
-        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
-        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
-        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
-      </div>
 
       <section class="exact-table-card alarm-ack-table">
         <div class="alarm-records-head"><h2>告警历史记录</h2><span>级别 / 发生条件 / 处理记录</span></div>
@@ -210,10 +209,24 @@ const alarmQueryOwner = createLatestRequestOwner(isSameAlarmQueryContext);
 const alarmAckRefreshOwner = createLatestRequestOwner(isSameAlarmAcknowledgementRefreshContext);
 
 const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
-const alarmSummaryDisplay = computed(() => buildAlarmSummaryDisplay(alarmHistorySummary.value, {
-  ackStatusUnavailable: ackStatusUnavailable.value,
-  ackStatusInitialized: ackStatusInitialized.value
-}));
+const hasAlarmLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, currentAlarmQueryContext(), isSameAlarmQueryContext));
+const alarmSummaryDisplay = computed(() => {
+  const summary = buildAlarmSummaryDisplay(alarmHistorySummary.value, {
+    ackStatusUnavailable: ackStatusUnavailable.value,
+    ackStatusInitialized: ackStatusInitialized.value
+  });
+  if (hasAlarmLastGoodForCurrentContext.value) {
+    return summary;
+  }
+  return {
+    ...summary,
+    total: "—",
+    active: "—",
+    critical: "—",
+    warning: "—"
+  };
+});
+const alarmHistoryCountText = computed(() => alarmSummaryDisplay.value.total === "—" ? "数量未知" : `${alarmSummaryDisplay.value.total} 条`);
 const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
 const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
@@ -223,7 +236,6 @@ const alarmQueryDisabled = computed(() => shouldDisableAlarmSubmit(
   pendingAlarmQueryContext.value,
   currentAlarmQueryContext()
 ));
-const hasAlarmLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, currentAlarmQueryContext(), isSameAlarmQueryContext));
 const alarmReadStatusText = computed(() => buildContextualReadStatus({
   loading: loading.value,
   error: error.value,
@@ -863,7 +875,7 @@ function currentAlarmAcknowledgementRefreshContext() {
   border-radius: 6px;
   color: var(--console-code-text);
   background: var(--console-code-bg);
-  font-family: Consolas, monospace;
+  font-family: var(--app-font-family);
   overflow-wrap: anywhere;
 }
 

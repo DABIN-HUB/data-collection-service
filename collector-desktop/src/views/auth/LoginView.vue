@@ -3,7 +3,10 @@
     <section class="login-card">
       <div class="login-form-panel">
         <div class="login-brand">
-          <div class="login-logo">采</div>
+          <svg class="login-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 21V10l6 3V7l6 4V3h5v18H3Z" />
+            <path d="M6 17h2m4 0h2m3-10h1m-1 4h1m-1 6h1" />
+          </svg>
           <div>
             <strong>工业数据控制台</strong>
             <p>数据采集工作台 · v{{ appStore.appVersion }}</p>
@@ -20,7 +23,8 @@
             <el-input v-model="serverUrl" placeholder="http://127.0.0.1:9090/collector" />
           </el-form-item>
           <el-form-item label="访问令牌">
-            <el-input v-model="token" type="password" show-password placeholder="请输入访问令牌" />
+            <el-input v-model="token" type="password" show-password placeholder="请输入访问令牌" aria-describedby="login-token-help" />
+            <p id="login-token-help" class="login-token-help">令牌用于服务认证；记住后按当前运行环境保存。</p>
           </el-form-item>
           <div class="login-options">
             <el-checkbox v-model="rememberToken">记住令牌</el-checkbox>
@@ -33,33 +37,47 @@
             type="warning"
             :closable="false"
           />
-          <el-alert class="desktop-mode-alert" type="info" :closable="false">
-            <template #title>
-              当前运行平台：{{ appStore.platform }}。请先启动采集服务，工作台不会自动启动后端。
-            </template>
-          </el-alert>
           <el-button class="login-submit" type="primary" size="large" :loading="testing" @click="enterWorkbench">
+            <svg class="login-submit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 12h16m-6-6 6 6-6 6" />
+            </svg>
             登录并进入工作台
           </el-button>
         </el-form>
 
-        <footer>
+        <p class="desktop-mode-note">
+          当前运行平台：{{ appStore.platform }}。请先启动采集服务，工作台不会自动启动后端。
+        </p>
+        <footer class="login-footer">
           <span>Copyright © 2026 数据采集工作台</span>
           <el-button type="primary" link @click="openDocs">打开使用文档</el-button>
         </footer>
       </div>
 
       <div class="login-illustration">
-        <h2>让设备、数据与链路<br />处于同一工作视野</h2>
-        <p>从协议连接、点位建模到运行排错，在一个工作台中完成工业数据采集的日常操作。</p>
-        <div class="login-diagram" role="img" aria-label="设备通过采集服务向工作台提供数据的架构示意，不表示实时连接状态">
-          <div class="diagram-device"><span aria-hidden="true">▤</span><strong>工业设备</strong><small>协议与点位</small></div>
-          <span class="diagram-link" aria-hidden="true">→</span>
-          <div class="diagram-service"><span aria-hidden="true">▥</span><strong>采集服务</strong><small>采集 · 处理 · 上报</small></div>
-          <span class="diagram-link" aria-hidden="true">→</span>
-          <div class="diagram-device"><span aria-hidden="true">▦</span><strong>工作台</strong><small>配置与监控</small></div>
-        </div>
-        <p>后端 Spring Boot 服务由你手动启动，桌面端只负责配置、控制、监控和展示。</p>
+        <span class="login-context-label">设备 · 数据 · 链路</span>
+        <h2>让每一次采集，<br />都有清晰的状态与去向。</h2>
+        <p>从协议连接、点位建模到遥测质量与云端确认，建立一个以真实业务状态为核心的操作空间。</p>
+        <svg class="login-diagram" viewBox="0 0 410 220" role="img" aria-label="设备、采集数据与云端确认的链路示意，不表示实时连接状态" focusable="false">
+          <g fill="none" stroke="#92afb8" stroke-width="1.4">
+            <rect x="15" y="60" width="75" height="100" rx="7" />
+            <path d="M28 80h49m-49 17h49m-49 17h49" />
+            <circle cx="30" cy="140" r="3" />
+            <circle cx="42" cy="140" r="3" />
+            <path d="M90 110h55m-8-6 8 6-8 6" />
+            <rect x="145" y="35" width="120" height="150" rx="8" />
+            <path d="M159 60h92m-92 105h92" />
+            <path d="m160 135 16-23 20 9 18-37 20 17 16-29" />
+            <path d="M265 110h55m-8-6 8 6-8 6" />
+            <path d="M338 140a29 29 0 0 1-1-58 26 26 0 0 1 50 10 25 25 0 0 1-4 48h-45Z" />
+          </g>
+          <g fill="#427c86">
+            <circle cx="205" cy="196" r="3" />
+            <circle cx="53" cy="175" r="3" />
+            <circle cx="362" cy="153" r="3" />
+          </g>
+        </svg>
+        <p>客户端就绪不等于服务健康。连接状态、采集健康与云端 ACK 始终分别表达。</p>
         <p v-if="appStore.configPath" class="desktop-config-path">本地配置：{{ appStore.configPath }}</p>
       </div>
     </section>
@@ -147,33 +165,40 @@ function openDocs() {
 .login-illustration {
   display: flex;
   min-width: 0;
-  padding: 48px max(35px, calc((50vw - 380px) / 2));
   flex-direction: column;
   justify-content: center;
 }
 
 .login-form-panel {
+  padding: max(35px, calc((100dvh - 531px) / 2)) 35px 35px;
+  align-items: center;
+  justify-content: flex-start;
   background: var(--console-panel);
+}
+
+.login-form-panel > * {
+  width: 350px;
+  max-width: 100%;
 }
 
 .login-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
+  gap: 10px;
+  min-height: 44px;
 }
 
 .login-logo {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 1px solid #cee3df;
-  border-radius: 8px;
-  color: var(--console-primary);
-  background: var(--app-color-info-soft);
-  font-size: 20px;
-  font-weight: 700;
+  width: 29px;
+  height: 29px;
+  margin-inline: 1.5px;
+  flex: 0 0 auto;
+  color: #84c2c1;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .login-heading h1,
@@ -184,43 +209,81 @@ function openDocs() {
 
 .login-brand strong {
   color: var(--console-text-primary);
-  font-size: 18px;
+  font-size: 16px;
+  letter-spacing: -0.5px;
 }
 
 .login-brand p {
-  margin: 5px 0 0;
+  margin: 2px 0 0;
   font-size: 11px;
 }
 
 .login-heading {
-  margin: 12px 0 25px;
+  margin: 32px 0 27px;
 }
 
 .login-heading h1 {
   font-size: 24px;
   font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.55px;
 }
 
 .login-heading p {
-  margin: 9px 0 0;
+  margin: 8px 0 0;
   color: var(--console-text-muted);
   font-size: 12px;
-  line-height: 1.8;
+  line-height: 1.55;
 }
 
 .login-brand p,
 .login-illustration p,
-footer {
+.login-footer {
   color: var(--console-text-muted);
 }
 
 .login-form {
-  display: grid;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.login-form :deep(.el-form-item__label) {
+  height: auto;
+  margin-bottom: 7px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.login-form :deep(.el-input__wrapper) {
+  min-height: 41px;
+  padding: 0 11px;
+  border-radius: 5px;
+}
+
+.login-form :deep(.el-input__inner) {
+  height: 41px;
+  font-size: 12px;
+  line-height: 41px;
+}
+
+.login-token-help {
+  margin: 7px 0 0;
+  color: var(--console-text-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.login-form :deep(.el-alert) {
+  margin-top: 12px;
 }
 
 .login-options,
-footer {
+.login-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -228,13 +291,54 @@ footer {
   flex-wrap: wrap;
 }
 
-footer {
-  margin-top: 30px;
+.login-options {
+  min-height: 29px;
+}
+
+.login-options :deep(.el-checkbox) {
+  height: 29px;
+}
+
+.login-options :deep(.el-checkbox__label),
+.login-options :deep(.el-button) {
+  font-size: 11px;
+}
+
+.desktop-mode-note {
+  margin: 35px 0 0;
+  color: var(--console-text-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.login-footer {
+  margin-top: 8px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.login-footer :deep(.el-button) {
+  min-height: 20px;
+  padding: 0;
   font-size: 10px;
 }
 
 .login-submit {
   width: 100%;
+  height: 42px;
+  margin-top: 22px;
+  font-size: 12px;
+}
+
+.login-submit-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 7px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .login-illustration {
@@ -243,67 +347,46 @@ footer {
 }
 
 .login-illustration h2 {
+  max-width: 380px;
   font-size: 26px;
   font-weight: 550;
-  line-height: 1.5;
+  line-height: 1.55;
+}
+
+.login-context-label {
+  width: max-content;
+  margin-bottom: 20px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: #597583;
+  background: #d4e4e7;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.55;
 }
 
 .login-illustration p {
   max-width: 390px;
+  margin: 16px 0 0;
+  color: #637f8b;
   font-size: 12px;
   line-height: 1.9;
 }
 
 .login-diagram {
-  display: flex;
+  display: block;
   width: 100%;
-  max-width: 470px;
-  margin: 40px 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.diagram-device,
-.diagram-service {
-  display: grid;
-  min-width: 0;
-  padding: 20px 10px;
-  flex: 1;
-  gap: 8px;
-  border: 1px solid #bbcfd6;
-  border-radius: 8px;
-  background: #f5f9fa;
-  text-align: center;
-}
-
-.diagram-service {
-  background: #d4e5e6;
-}
-
-.login-diagram strong {
-  font-size: 12px;
-}
-
-.login-diagram small {
-  color: #637f8b;
-  font-size: 10px;
-}
-
-.diagram-device > span,
-.diagram-service > span {
-  color: #52818b;
-  font-size: 28px;
-}
-
-.diagram-link {
-  color: #7698a3;
+  max-width: 410px;
+  height: 220px;
+  margin: 35px 0;
+  flex: 0 0 auto;
 }
 
 .desktop-config-path {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 840px) {
+@media (width <= 900px) {
   .login-page {
     padding: 0;
   }
@@ -314,10 +397,6 @@ footer {
 
   .login-illustration {
     display: none;
-  }
-
-  .login-form-panel {
-    padding: 32px 24px;
   }
 }
 </style>

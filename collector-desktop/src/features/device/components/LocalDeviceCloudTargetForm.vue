@@ -84,7 +84,7 @@ const emit = defineEmits<{ "update-field": [key: keyof CloudTargetConfig, value:
   border: 1px solid var(--console-border-soft);
   border-radius: 4px;
   background: var(--console-code-bg);
-  font: 11px/1.7 Consolas, "Microsoft YaHei UI", monospace;
+  font: 11px/1.7 var(--app-font-family);
   resize: vertical;
   overflow-wrap: anywhere;
 }

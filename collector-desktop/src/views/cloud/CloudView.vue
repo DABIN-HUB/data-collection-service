@@ -35,6 +35,22 @@
             <small class="cloud-status-description">{{ cloudOperationalState.description }}</small>
             <small v-if="cloudOperationalState.disabledEvidence" class="cloud-disabled-evidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
           </div>
+          <div class="cloud-chain" aria-label="上报链路阶段">
+            <div class="cloud-chain-node">
+              <span class="cloud-chain-index">01</span>
+              <div><strong>采集数据</strong><small>{{ metricsSourceState === 'ready' ? '来源已读取' : metricsSourceState === 'loading' ? '读取中' : metricsSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div>
+            </div>
+            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
+            <div class="cloud-chain-node">
+              <span class="cloud-chain-index">02</span>
+              <div><strong>可靠发件箱</strong><small>{{ outboxSourceState === 'ready' ? '列表已读取' : outboxSourceState === 'loading' ? '读取中' : outboxSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div>
+            </div>
+            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
+            <div class="cloud-chain-node">
+              <span class="cloud-chain-index">03</span>
+              <div><strong>云端确认（ACK）</strong><small>{{ cloudRawStatusText || '确认状态未知' }}</small></div>
+            </div>
+          </div>
           <div class="cloud-stat-row">
             <span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span>
           </div>

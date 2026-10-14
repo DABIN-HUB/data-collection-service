@@ -1,5 +1,14 @@
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../assets/fonts/NotoSansSC-VF.ttf") format("truetype");
+}
+
 :root {
-  font-family: Bahnschrift, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --app-font-family: "Noto Sans SC", sans-serif;
+  font-family: var(--app-font-family);
   color: var(--app-color-text-secondary);
   background: var(--app-color-bg);
   color-scheme: light;
@@ -46,7 +55,7 @@ summary:focus-visible {
 
 code,
 pre {
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--app-font-family);
 }
 
 time {

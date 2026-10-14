@@ -284,7 +284,7 @@
   border: 1px solid var(--console-code-border);
   border-radius: var(--console-radius-lg);
   background: var(--console-code-bg);
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -336,7 +336,7 @@
   border: 1px solid var(--console-input-border);
   border-radius: var(--console-radius-lg);
   background: var(--console-input-bg);
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--app-font-family);
 }
 
 .status-badge,

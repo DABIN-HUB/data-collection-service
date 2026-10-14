@@ -266,6 +266,119 @@
   gap: 8px;
 }
 
+.page-root.exact-page.network-view .network-workbench {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.page-root.exact-page.network-view .network-result-panel,
+.page-root.exact-page.network-view .network-context-panel {
+  min-width: 0;
+}
+
+.page-root.exact-page.network-view .network-context-body {
+  display: grid;
+  min-width: 0;
+  padding: 14px 16px;
+  gap: 14px;
+}
+
+.page-root.exact-page.network-view .network-context-body h3 {
+  margin: 0;
+  color: var(--network-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.page-root.exact-page.network-view .network-context-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  gap: 9px;
+}
+
+.page-root.exact-page.network-view .network-context-list > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.page-root.exact-page.network-view .network-context-list dt {
+  color: var(--network-muted);
+  font-size: 12px;
+}
+
+.page-root.exact-page.network-view .network-context-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--network-text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.page-root.exact-page.network-view .network-submitted-context {
+  padding-top: 12px;
+  border-top: 1px solid var(--app-color-border);
+}
+
+.page-root.exact-page.network-view .network-source-status {
+  min-width: 0;
+}
+
+.page-root.exact-page.network-view .network-export-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--network-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.page-root.exact-page.network-view .network-pending-note {
+  display: grid;
+  min-height: 176px;
+  margin: 0 16px 16px;
+  padding: 12px 0 0;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border: 0;
+  color: var(--network-muted);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.page-root.exact-page.network-view .network-pending-note h3,
+.page-root.exact-page.network-view .network-pending-note p {
+  margin: 0;
+}
+
+.page-root.exact-page.network-view .network-pending-note h3 {
+  color: var(--network-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.page-root.exact-page.network-view .network-pending-note p {
+  max-width: 48ch;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.page-root.exact-page.network-view .network-empty-symbol svg {
+  width: 34px;
+  height: 34px;
+}
+
 .page-root.exact-page.network-view .network-summary-cards {
   display: grid;
   grid-template-columns: minmax(100px, 0.8fr) minmax(110px, 1fr) minmax(0, 2.3fr) minmax(112px, 0.8fr);
@@ -350,17 +463,6 @@
   overflow-wrap: anywhere;
 }
 
-.page-root.exact-page.network-view .network-pending-note {
-  margin: 0 16px 16px;
-  padding: 12px 0 0;
-  border: 0;
-  color: var(--network-muted);
-  background: transparent;
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
 .page-root.exact-page.network-view .network-json-section { padding: 12px 16px 16px; }
 
 .page-root.exact-page.network-view .network-json-section h3 {
@@ -382,7 +484,7 @@
   border-radius: 6px;
   color: var(--app-code-text);
   background: var(--app-code-bg);
-  font-family: Consolas, "JetBrains Mono", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -411,7 +513,7 @@
 .page-root.exact-page.network-view .network-trace-lines code {
   min-width: 0;
   color: var(--app-code-text);
-  font-family: Consolas, "JetBrains Mono", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -553,7 +655,7 @@
   padding: 12px;
   resize: vertical;
   border-radius: 6px;
-  font-family: Consolas, "JetBrains Mono", monospace;
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -689,6 +791,27 @@
 
   .page-root.exact-page.network-view .network-result-target { max-width: 100%; }
 
+  .page-root.exact-page.network-view .network-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-root.exact-page.network-view .network-condition-fields {
+    gap: 12px;
+  }
+
+  .page-root.exact-page.network-view .network-device-field,
+  .page-root.exact-page.network-view .network-mode-field,
+  .page-root.exact-page.network-view .network-port-field,
+  .page-root.exact-page.network-view .network-timeout-field {
+    width: calc(50% - 6px);
+  }
+
+  .page-root.exact-page.network-view .network-target-field,
+  .page-root.exact-page.network-view .network-run {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
   .page-root.exact-page.network-view :deep(.edge-form-grid),
   .page-root.exact-page.network-view :deep(.edge-json-grid),
   .page-root.exact-page.network-view :deep(.edge-result-meta) {
@@ -752,14 +875,6 @@
   align-items: flex-start;
   flex-wrap: wrap;
   gap: 12px;
-}
-
-.page-root.exact-page.network-view .network-export-note {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--network-muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
 }
 
 .page-root.exact-page.network-view .network-telemetry-tools {

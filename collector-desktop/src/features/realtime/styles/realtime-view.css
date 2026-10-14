@@ -450,7 +450,7 @@
 .realtime-view .realtime-mono,
 .realtime-view code,
 .realtime-view pre {
-  font-family: Consolas, "Microsoft YaHei UI", monospace;
+  font-family: var(--app-font-family);
   font-variant-numeric: tabular-nums;
 }
 

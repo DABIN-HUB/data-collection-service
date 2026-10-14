@@ -3,7 +3,11 @@
     <div class="sidebar-top">
       <div class="brand">
         <span class="brand-mark"><img :src="factoryIcon" alt="" /></span>
-        <div class="brand-copy"><strong>工业数据控制台</strong><small>设备 · 数据 · 链路</small></div>
+        <div class="brand-copy"><strong>工业数据控制台</strong><small>数据采集工作台</small></div>
+      </div>
+      <div class="workspace-label">
+        <span class="node-square" aria-hidden="true"></span>
+        <div>本机采集节点<small>{{ appStore.platform === 'browser' ? '本地浏览器' : `Electron/${appStore.platform}` }} / {{ appStore.initialized ? '客户端就绪' : '初始化中' }}</small></div>
       </div>
       <nav class="section-nav" aria-label="控制台主导航">
         <div v-for="group in navigationGroups" :key="group.title" class="nav-group">
@@ -22,15 +26,16 @@
     </div>
 
     <div class="sidebar-bottom">
-      <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}</span></div>
+      <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}<small>仅客户端状态</small></span></div>
       <details class="sidebar-token-drawer">
-        <summary>运维令牌</summary>
+        <summary>运维令牌与连接</summary>
         <div class="top-token-panel">
           <label>接口访问令牌</label>
           <input v-model="tokenInput" type="password" placeholder="请输入接口令牌" autocomplete="off" @keyup.enter="saveToken" />
           <button type="button" @click="saveToken">保存令牌</button>
         </div>
       </details>
+      <RouterLink to="/login" class="sidebar-connection" @click="emit('navigate')">服务连接页</RouterLink>
     </div>
   </aside>
 </template>
@@ -93,7 +98,7 @@ function saveToken() {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
 .brand {
@@ -101,6 +106,7 @@ function saveToken() {
   min-height: 42px;
   align-items: center;
   gap: 10px;
+  padding: 0 5px 22px;
 }
 
 .brand-mark {
@@ -116,8 +122,8 @@ function saveToken() {
 
 .brand-mark img {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 29px;
+  height: 29px;
 }
 
 .brand-copy strong {
@@ -132,6 +138,32 @@ function saveToken() {
   margin-top: 4px;
   color: var(--console-text-dim);
   font-size: 11px;
+}
+
+.workspace-label {
+  display: flex;
+  padding: 11px 13px;
+  margin-bottom: 21px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--console-border);
+  border-radius: 7px;
+  background: var(--console-panel);
+  font-size: 12px;
+}
+
+.workspace-label small {
+  display: block;
+  margin-top: 2px;
+  color: #9eb2bf;
+  font-size: 10px;
+}
+
+.node-square {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border: 2px solid #b2cbd2;
 }
 
 .section-nav {
@@ -154,7 +186,8 @@ function saveToken() {
 
 .nav-group-title {
   display: block;
-  padding: 0 8px;
+  padding: 0 13px;
+  margin-bottom: 3px;
   color: var(--console-text-dim);
   font-size: 11px;
   font-weight: 500;
@@ -164,9 +197,9 @@ function saveToken() {
   position: relative;
   display: flex;
   min-height: 39px;
-  padding: 0 10px;
+  padding: 0 13px;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
   color: var(--console-text-muted);
   border: 1px solid transparent;
   border-radius: 5px;
@@ -207,6 +240,11 @@ function saveToken() {
   height: 18px;
 }
 
+.section-nav a.is-active .nav-glyph img,
+.section-nav a:hover .nav-glyph img {
+  filter: brightness(0) invert(1);
+}
+
 .sidebar-bottom {
   display: grid;
   flex: 0 0 auto;
@@ -230,14 +268,31 @@ function saveToken() {
 
 .system-status i {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   background: currentColor;
 }
 
 .system-status.is-unknown {
   color: var(--console-text-muted);
+}
+
+.system-status small {
+  margin-left: 5px;
+  color: var(--console-text-dim);
+  font-size: 9px;
+}
+
+.sidebar-connection {
+  padding: 5px 10px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.sidebar-connection:hover {
+  color: var(--console-text-primary);
 }
 
 .sidebar-token-drawer {
@@ -288,6 +343,7 @@ function saveToken() {
 }
 
 .section-nav a:focus-visible,
+.sidebar-connection:focus-visible,
 .sidebar-token-drawer summary:focus-visible,
 .top-token-panel button:focus-visible {
   outline: 2px solid var(--app-control-border-focus);

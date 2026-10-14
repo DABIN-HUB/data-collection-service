@@ -26,6 +26,15 @@
           </select>
           </label>
           <label class="realtime-field">
+            <span>质量状态</span>
+            <select v-model="realtimeQualityFilter" class="realtime-quality-filter" aria-label="实时数据质量状态" @change="realtimePage = 1">
+              <option value="ALL">全部质量</option>
+              <option value="GOOD">质量正常</option>
+              <option value="BAD">异常 / 失败</option>
+              <option value="UNKNOWN">未知 / 未评估</option>
+            </select>
+          </label>
+          <label class="realtime-field realtime-keyword-field">
             <span>点位搜索</span>
           <input v-model="realtimeKeyword" class="realtime-search" type="search" aria-label="搜索点位" placeholder="搜索点位名称、编码或地址" />
           </label>
@@ -291,6 +300,7 @@ const route = useRoute();
 const realtimeAuto = ref(true);
 const realtimeDeviceId = ref("");
 const realtimeKeyword = ref("");
+const realtimeQualityFilter = ref<"ALL" | "GOOD" | "BAD" | "UNKNOWN">("ALL");
 const realtimeRows = ref<RealtimePointRow[]>([]);
 const deviceHealthSnapshot = ref<CompactDeviceRealtimeDataResponse | null>(null);
 const allDeviceHealth = ref<CompactRealtimeDeviceStatus[]>([]);
@@ -314,10 +324,17 @@ const deviceDisplayNameLookup = computed(() => buildRealtimeDeviceNameLookup(dev
 const displayRealtimeRows = computed(() => realtimeRows.value.map(enrichRealtimeRowWithRuntime));
 const filteredRealtimeRows = computed(() => {
   const keyword = realtimeKeyword.value.trim().toLowerCase();
-  if (!keyword) {
-    return displayRealtimeRows.value;
+  const rows = keyword
+    ? filterRealtimeRows(displayRealtimeRows.value, keyword, deviceDisplayNameLookup.value, realtimeDeviceId.value)
+    : displayRealtimeRows.value;
+  if (realtimeQualityFilter.value === "ALL") {
+    return rows;
   }
-  return filterRealtimeRows(displayRealtimeRows.value, keyword, deviceDisplayNameLookup.value, realtimeDeviceId.value);
+  return rows.filter((row) => {
+    const qualityClass = realtimeQualityClass(row);
+    const group = qualityClass === "is-good" ? "GOOD" : qualityClass === "is-bad" ? "BAD" : "UNKNOWN";
+    return group === realtimeQualityFilter.value;
+  });
 });
 
 const realtimePageWindow = computed(() => buildRealtimePageWindow({

@@ -21,50 +21,53 @@
       <div v-else class="dashboard-loading" role="status">正在刷新总览，各项指标按独立数据源展示。</div>
     </div>
 
-    <div class="dashboard-metric-rail">
-      <article v-for="card in overviewCards" :key="card.label" class="dashboard-metric" :class="{ 'dashboard-link-metric': card.label === '云上报链路' }">
-        <span>{{ card.label }}</span>
-        <template v-if="(['采集器总数', '点位总数', '运行设备'].includes(card.label) && deviceState.lastSuccessAt === null) || (card.label === '全局告警' && alarmState.lastSuccessAt === null)">
-          <strong>—</strong>
-          <p>{{ card.label === '全局告警' ? (alarmsUnavailable ? '告警数据暂不可用' : '告警数据待确认') : (devicesUnavailable ? '设备数据暂不可用' : '设备数据待确认') }}</p>
-        </template>
-        <template v-else>
-          <strong :class="{ 'dashboard-warning': card.label === '全局告警' && Number(card.value) > 0 }" :title="String(card.value)">
-            <i v-if="card.label === '云上报链路'" class="dashboard-dot" :class="cloudToneClass" aria-hidden="true"></i>
-            {{ card.value }}
-            <small v-if="['采集器总数', '运行设备'].includes(card.label)">台</small>
-            <small v-else-if="card.label === '点位总数'">个</small>
-            <small v-else-if="card.label === '全局告警' && !alarmsUnavailable">条</small>
-          </strong>
-          <p v-if="card.meta" class="dashboard-metric-meta">
-            <span v-for="item in card.meta" :key="String(item[0])">{{ item[0] }} <b>{{ item[1] }}</b></span>
-          </p>
-          <p v-else>{{ card.subtext }}</p>
-        </template>
+    <div class="dashboard-metric-rail" aria-label="运行主摘要">
+      <article class="dashboard-metric">
+        <span>设备运行</span>
+        <strong>{{ deviceState.lastSuccessAt === null ? '未知' : onlineCount }}<small v-if="deviceState.lastSuccessAt !== null">/ {{ deviceCount }} 在线</small></strong>
+        <div v-if="deviceState.lastSuccessAt !== null && deviceCount > 0" class="dashboard-health-bar" aria-hidden="true"><i v-for="segment in deviceHealthSegments" :key="segment.status" :class="segment.tone" :style="{ flexGrow: segment.count }"></i></div>
+        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : devicesStale ? '刷新失败 · 上次设备数据' : '来自设备运行快照' }}</p>
+      </article>
+      <article class="dashboard-metric">
+        <span>已配置点位</span>
+        <strong>{{ configuredPointsKnown ? totalPointCount : '未知' }}<small v-if="configuredPointsKnown">个</small></strong>
+        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : !configuredPointsKnown ? '设备清单缺少点位数量' : devicesStale ? '刷新失败 · 上次设备清单' : '来自设备配置清单' }}</p>
+      </article>
+      <article class="dashboard-metric">
+        <span>未确认告警</span>
+        <strong>未知</strong>
+        <p>当前来源仅含最近告警，不能确定未确认总数</p>
+        <RouterLink class="dashboard-text-link" to="/alarm">查看告警与处理记录</RouterLink>
+      </article>
+      <article class="dashboard-metric">
+        <span>上报待处理</span>
+        <strong :class="{ 'dashboard-warning': outboxDisplay.pending !== null && outboxDisplay.pending > 0 }">{{ outboxDisplay.pending ?? '未知' }}<small v-if="outboxDisplay.pending !== null">条待发送</small></strong>
+        <p>{{ outboxDisplay.note }}</p>
       </article>
     </div>
 
     <div class="home-dashboard-row home-dashboard-primary">
-      <section class="home-panel home-panel-events">
+      <section class="home-panel home-panel-devices">
         <div class="home-panel-head">
-          <h2>全局告警最近记录</h2>
-          <span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span>
+          <h2>设备运行快照</h2>
+          <RouterLink class="dashboard-text-link" to="/device">全部设备</RouterLink>
         </div>
-        <div class="home-event-list" tabindex="0" role="region" aria-label="最近告警，可独立滚动">
-          <div v-if="recentAlarms.length === 0" class="dashboard-empty">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '正在读取最近告警' : recentAlarmEmptyText }}</div>
-          <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
-            <b class="home-event-level">{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
-            <div class="home-event-main">
-              <strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong>
-              <span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span>
+        <div v-if="devicesStale" class="dashboard-source-note">刷新失败，显示上次设备数据。</div>
+        <div class="home-device-list" tabindex="0" role="region" aria-label="设备运行快照，可独立滚动">
+          <div v-if="deviceState.lastSuccessAt === null || deviceStore.devices.length === 0" class="dashboard-empty">{{ devicesUnavailable ? '设备运行快照暂不可用' : deviceState.lastSuccessAt === null ? '正在读取设备运行快照' : '暂无已配置设备' }}</div>
+          <div v-for="device in deviceSnapshotRows" :key="device.id" class="home-device-row">
+            <div class="home-device-name">
+              <span class="dashboard-equipment-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 7h8M8 11h8M8 15h3M14 15h2M8 18h3" /></svg></span>
+              <div><strong :title="device.name">{{ device.name }}</strong><small :title="device.id">{{ device.id }}</small></div>
             </div>
-            <time>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</time>
+            <span class="dashboard-device-status" :class="device.tone" :title="device.detail"><i class="dashboard-dot" :class="device.tone" aria-hidden="true"></i>{{ device.status }}</span>
+            <small class="home-device-protocol" :title="device.protocol">{{ device.protocol }}</small>
           </div>
         </div>
       </section>
       <section class="home-panel home-panel-attention">
         <div class="home-panel-head">
-          <h2>优先关注设备</h2>
+          <h2>优先关注</h2>
           <span class="dashboard-badge" :class="{ 'dashboard-warning': riskDevices.length > 0 || devicesStale }">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '数据待确认' : riskDeviceBadge }}</span>
         </div>
         <div class="home-risk-list" tabindex="0" role="region" aria-label="设备异常风险，可独立滚动">
@@ -83,8 +86,25 @@
 
     <div class="home-dashboard-row home-dashboard-observability">
       <section class="home-panel home-panel-report">
-        <div class="home-panel-head"><h2>数据上报链路拓扑</h2><span>{{ reportState }}</span></div>
-        <div class="topology-flow" aria-label="数据采集与上报拓扑">
+        <div class="home-panel-head"><h2>数据上报链路</h2><RouterLink class="dashboard-text-link" to="/cloud">链路详情</RouterLink></div>
+        <div class="dashboard-pipeline" role="list" aria-label="设备采集、遥测管线、可靠发件箱、云端确认">
+          <template v-for="(stage, index) in pipelineStages" :key="stage.label">
+            <span v-if="index" class="dashboard-pipeline-arrow" aria-hidden="true">→</span>
+            <div class="dashboard-pipeline-node" :class="stage.tone" role="listitem">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <template v-if="index === 0"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 7h8M8 11h8M8 15h3M14 15h2" /></template>
+                <template v-else-if="index === 1"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v14c0 4 14 4 14 0V5M5 12c0 4 14 4 14 0" /></template>
+                <template v-else-if="index === 2"><path d="M6 18H5a4 4 0 0 1-1-8 8 8 0 0 1 15-1 5 5 0 0 1 0 9h-1M12 20V9m-4 4 4-4 4 4" /></template>
+                <path v-else d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4m-4 10 3 3 5-6" />
+              </svg>
+              <strong>{{ stage.label }}</strong><small>{{ stage.text }}</small>
+            </div>
+          </template>
+        </div>
+        <p class="dashboard-panel-note">发送成功、云端 ACK 与影子提交分别推进，不能混为一个“成功”。</p>
+        <details class="dashboard-topology-details">
+          <summary>技术拓扑与连接指标 <span>{{ reportState }}</span></summary>
+          <div class="topology-flow" aria-label="数据采集与上报技术拓扑">
           <div class="topology-node" :class="collectorToneClass" :title="collectorDetail">
             <span class="topology-icon">采</span><strong>采集器</strong>
             <span class="topology-status-dots"><i class="dashboard-dot" :class="runningToneClass"></i><i class="dashboard-dot" :class="collectorToneClass"></i>连接与风险</span>
@@ -103,22 +123,53 @@
             <span class="topology-icon">云</span><strong>云平台</strong><small :title="reportState">{{ reportState }}</small>
           </div>
         </div>
-        <div class="topology-foot"><span><i class="dashboard-dot is-ok"></i>状态指标已加载</span><span><i class="dashboard-dot is-warn"></i>风险 / 上次数据</span><span><i class="dashboard-dot is-muted"></i>未知</span></div>
+          <div class="topology-foot"><span><i class="dashboard-dot is-ok"></i>状态指标已加载</span><span><i class="dashboard-dot is-warn"></i>风险 / 上次数据</span><span><i class="dashboard-dot is-muted"></i>未知</span></div>
+        </details>
       </section>
       <section class="home-panel home-panel-runtime">
         <div class="home-panel-head"><h2>系统资源与线程池</h2><span>{{ runtimeState }}</span></div>
-        <div class="resource-gauges">
-          <div v-for="gauge in resourceGauges" :key="gauge.label" class="resource-gauge">
-            <div class="resource-ring" :class="`is-${gauge.tone}`" :style="{ '--resource-progress': `${gauge.degrees}deg` }"><strong>{{ gauge.value }}</strong></div>
-            <span>{{ gauge.label }}</span>
+        <div class="resource-rows">
+          <div v-for="gauge in resourceDisplayRows.slice(0, 2)" :key="gauge.label" class="resource-row">
+            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
+            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
+          </div>
+          <div class="resource-row"><div><span>采集线程池</span><strong>{{ collectionPoolDisplay }}</strong></div><div class="resource-load-track is-unknown" aria-label="采集线程池利用率未知"></div></div>
+          <div class="resource-row"><div><span>遥测队列</span><strong>未知</strong></div><div class="resource-load-track is-unknown" aria-label="遥测队列指标未知"></div></div>
+          <div v-for="gauge in resourceDisplayRows.slice(2)" :key="gauge.label" class="resource-row resource-row-secondary">
+            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
+            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
           </div>
         </div>
-        <div class="resource-runtime-summary" :title="resourceSummary.title">
-          <div><span>活跃线程</span><strong>{{ resourceSummary.activeThreads }} / {{ resourceSummary.maxThreads }}</strong><span>队列积压</span><strong :class="{ 'dashboard-warning': resourceSummary.queuedTasks !== '-' && Number(resourceSummary.queuedTasks) > 0 }">{{ resourceSummary.queuedTasks }}</strong></div>
-          <div class="resource-load-track"><i :style="{ width: resourceSummary.threadUsage }"></i></div>
+        <div class="resource-runtime-summary" :title="resourceSummaryDisplay.title">
+          <div><span>活跃线程（汇总）</span><strong>{{ resourceSummaryDisplay.activeThreads }} / {{ resourceSummaryDisplay.maxThreads }}</strong><span>队列积压（汇总）</span><strong :class="{ 'dashboard-warning': resourceSummaryDisplay.queuedTasks !== '-' && Number(resourceSummaryDisplay.queuedTasks) > 0 }">{{ resourceSummaryDisplay.queuedTasks }}</strong></div>
+          <div class="resource-load-track" :class="{ 'is-unknown': resourceSummaryDisplay.maxThreads === '-' }"><i v-if="resourceSummaryDisplay.maxThreads !== '-'" :style="{ width: resourceSummaryDisplay.threadUsage }"></i></div>
         </div>
       </section>
     </div>
+
+    <section class="home-panel home-panel-events">
+      <div class="home-panel-head"><h2>全局告警最近记录</h2><span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span></div>
+      <div class="home-event-list" tabindex="0" role="region" aria-label="最近告警，可独立滚动">
+        <div v-if="recentAlarms.length === 0" class="dashboard-empty">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '正在读取最近告警' : recentAlarmEmptyText }}</div>
+        <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
+          <b class="home-event-level">{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
+          <div class="home-event-main"><strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong><span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span></div>
+          <time>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</time>
+        </div>
+      </div>
+    </section>
+
+    <section class="home-panel dashboard-secondary-metrics" aria-label="补充运行指标">
+      <div class="home-panel-head"><h2>补充运行指标</h2><span>独立来源，不代替主摘要</span></div>
+      <div class="dashboard-secondary-rail">
+        <article v-for="card in secondaryOverviewCards" :key="card.label" class="dashboard-metric" :class="{ 'dashboard-link-metric': card.label === '云上报链路' }">
+          <span>{{ card.label }}</span>
+          <strong :class="{ 'dashboard-warning': card.label === '全局告警' && Number(card.value) > 0 }" :title="String(card.value)"><i v-if="card.label === '云上报链路'" class="dashboard-dot" :class="cloudToneClass" aria-hidden="true"></i>{{ card.value }}</strong>
+          <p v-if="card.meta" class="dashboard-metric-meta"><span v-for="item in card.meta" :key="String(item[0])">{{ item[0] }} <b>{{ item[1] }}</b></span></p>
+          <p v-else>{{ card.subtext }}</p>
+        </article>
+      </div>
+    </section>
 
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />
   </section>
@@ -355,6 +406,84 @@ const resourceSummary = computed(() => {
     title: maxThreads > 0 ? `累计拒绝 ${rejectedTasks || "-"} 次，JVM 线程 ${resource?.threadCount ?? "-"} 个` : "运行资源数据暂不可用"
   };
 });
+
+// 以下仅为只读呈现适配；不改变原始指标、请求、成功提交与生命周期。
+const configuredPointsKnown = computed(() => deviceState.value.lastSuccessAt !== null && deviceStore.devices.every((device) => {
+  const selected = typeof device.pointCount === "number" ? device.pointCount
+    : Array.isArray(device.points) ? device.points.length
+      : device["pointTotal"] ?? device["pointsCount"] ?? device["dataPointCount"];
+  return typeof selected === "number" && Number.isFinite(selected) && selected >= 0;
+}));
+const deviceSnapshotRows = computed(() => deviceState.value.lastSuccessAt === null ? [] : deviceStore.devices.map((device) => {
+  const status = String(device.status || "UNKNOWN").toUpperCase();
+  const labels: Record<string, string> = { ONLINE: "在线", CONNECTING: "连接中", ERROR: "异常", OFFLINE: "离线", DISABLED: "未启用", STALE: "上次状态", UNKNOWN: "状态未知" };
+  return {
+    id: device.normalizedId,
+    name: device.displayName || device.normalizedId,
+    protocol: device.displayProtocol,
+    status: labels[status] || status,
+    tone: status === "ONLINE" ? "is-ok" : ["ERROR", "OFFLINE"].includes(status) ? "is-error" : ["CONNECTING", "STALE"].includes(status) ? "is-warn" : "is-muted",
+    detail: device.runtimeError || device.runtime?.healthReason || device.runtime?.lastError || device.lastError || labels[status] || status
+  };
+}));
+const deviceHealthSegments = computed(() => {
+  const segments = [
+    { status: "ONLINE", tone: "is-ok", count: onlineCount.value },
+    { status: "ERROR", tone: "is-warn", count: deviceStore.errorCount },
+    { status: "OFFLINE", tone: "is-error", count: deviceStore.offlineCount },
+    { status: "OTHER", tone: "is-muted", count: deviceStore.devices.filter((device) => !["ONLINE", "ERROR", "OFFLINE"].includes(String(device.status || "").toUpperCase())).length }
+  ];
+  return segments.filter((segment) => segment.count > 0);
+});
+const outboxDisplay = computed(() => {
+  const loaded = reportMetricState.value.lastSuccessAt !== null;
+  const outbox = loaded ? reportMetrics.value?.outbox : undefined;
+  const pending = typeof outbox?.pendingCount === "number" && Number.isFinite(outbox.pendingCount) && outbox.pendingCount >= 0 ? outbox.pendingCount : null;
+  const isolated = typeof outbox?.isolatedCount === "number" && Number.isFinite(outbox.isolatedCount) && outbox.isolatedCount >= 0 ? outbox.isolatedCount : null;
+  const sourceNote = reportStale.value ? " · 上次上报数据" : reportMetricState.value.status === "loading" && loaded ? " · 刷新中，上次上报数据" : "";
+  const note = !loaded ? reportUnavailable.value ? "上报数据暂不可用" : "上报数据待确认"
+    : `${outbox?.enabled === false ? "发件箱未启用 · " : ""}隔离消息 ${isolated ?? "未知"}${isolated === null ? "" : " 条"}${sourceNote}`;
+  return { pending, isolated, note };
+});
+const pipelineStages = computed(() => [
+  { label: "设备采集", text: deviceState.value.lastSuccessAt === null ? "运行快照未知" : collectorDetail.value, tone: collectorToneClass.value },
+  { label: "遥测管线", text: "阶段指标未知", tone: "is-muted" },
+  { label: "可靠发件箱", text: outboxDisplay.value.note, tone: outboxDisplay.value.isolated !== null && outboxDisplay.value.isolated > 0 ? "is-warn" : reportStale.value ? "is-warn" : "is-muted" },
+  { label: "云端确认", text: "ACK 运行计数未知", tone: "is-muted" }
+]);
+const resourceDisplayRows = computed(() => {
+  const resource = systemResourceState.value.lastSuccessAt === null ? null : systemResource.value;
+  const values = [resource?.systemCpuLoad ?? resource?.processCpuLoad, resource?.totalPhysicalMemorySize, resource?.freePhysicalMemorySize, resource?.heapUsed, resource?.heapMax];
+  const available = values.map((value) => typeof value === "number" && Number.isFinite(value) && value >= 0);
+  const known = [available[0], available[1] && available[2] && Number(values[1]) > 0, available[3] && available[4] && Number(values[4]) > 0];
+  return resourceGauges.value.map((gauge, index) => ({ ...gauge, known: known[index], value: known[index] ? gauge.value : "-" }));
+});
+const collectionPoolDisplay = computed(() => {
+  const pool = systemResourceState.value.lastSuccessAt === null ? undefined : systemResource.value?.threadPools?.asyncCollectorExecutor;
+  return typeof pool?.activeCount === "number" && Number.isFinite(pool.activeCount) && pool.activeCount >= 0
+    && typeof pool.maxPoolSize === "number" && Number.isFinite(pool.maxPoolSize) && pool.maxPoolSize > 0
+    ? `${pool.activeCount} / ${pool.maxPoolSize} 工作线程${systemResourceStale.value ? " · 上次数据" : ""}` : "未知";
+});
+const resourceSummaryDisplay = computed(() => {
+  const resource = systemResourceUnavailable.value ? null : systemResource.value;
+  const pools = Object.values(resource?.threadPools || {});
+  const usesPools = pools.some((pool) => typeof pool.maxPoolSize === "number" && pool.maxPoolSize > 0);
+  const selected = usesPools ? pools : reportMetrics.value?.executor ? [reportMetrics.value.executor] : [];
+  const sourceKnown = usesPools ? systemResourceState.value.lastSuccessAt !== null : reportMetricState.value.lastSuccessAt !== null;
+  const known = sourceKnown && selected.length > 0 && selected.every((pool) => [pool.activeCount, pool.maxPoolSize, pool.queueSize].every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0));
+  return known ? resourceSummary.value : { ...resourceSummary.value, activeThreads: "-", maxThreads: "-", queuedTasks: "-", title: "线程池字段缺失或来源未知；不以默认零表示使用量" };
+});
+const secondaryOverviewCards = computed(() => overviewCards.value.map((card) => {
+  if (["采集器总数", "运行设备"].includes(card.label) && deviceState.value.lastSuccessAt === null) return { ...card, value: "未知", meta: undefined, subtext: devicesUnavailable.value ? "设备数据暂不可用" : "设备数据待确认" };
+  if (card.label === "点位总数" && !configuredPointsKnown.value) return { ...card, value: "未知", meta: undefined, subtext: "配置点位数量未知" };
+  if (card.label === "全局告警") return { ...card, value: alarmState.value.lastSuccessAt === null ? "未知" : card.value, subtext: alarmState.value.lastSuccessAt === null ? "最近告警数据未取得，不提供未确认总数" : `${card.subtext} · 仅最近 ${recentAlarms.value.length} 条，不是未确认总数` };
+  if (card.label === "缓存命中率") {
+    const selected = cacheMetrics.value?.totalHitRate ?? runtimeStatus.value?.cache?.totalHitRate;
+    const sourceKnown = cacheMetrics.value?.totalHitRate != null ? cacheMetricState.value.lastSuccessAt !== null : runtimeMetricState.value.lastSuccessAt !== null;
+    return { ...card, value: sourceKnown && typeof selected === "number" && Number.isFinite(selected) && selected >= 0 ? percentText(ratioFrom(selected)) : "未知" };
+  }
+  return card;
+}));
 
 onMounted(() => {
   void loadDashboard();

@@ -5,7 +5,9 @@
     <div
       v-if="modelValue"
       id="localDevicePanel"
+      ref="editorPanel"
       class="local-editor local-device-panel local-device-web-dialog"
+      tabindex="-1"
       role="dialog"
       aria-modal="true"
       :aria-label="editingDeviceId ? '编辑本地临时设备' : '新增本地临时设备'"
@@ -55,42 +57,44 @@
 
         <section v-show="activeStep === 0" id="localEditorPane-setup" role="tabpanel" class="local-editor-pane" data-local-editor-pane="setup">
           <div class="step-grid step-grid-setup">
-            <EditorProgressRail :validation-title="validationTitle" :items="localEditorChecklist" />
-
             <div class="local-setup-stable-column">
               <section class="local-section-card local-setup-card">
-                <EditorSectionHeader title="设备信息" subtitle="本地标识与采集节奏" />
                 <div class="form-grid setup-identity-grid">
-                  <label class="wide-field">设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" readonly placeholder="自动生成 UUID" @change="syncDeviceIdToPoints"><small class="field-description">自动生成；本次编辑不可修改。</small></label>
-                  <label class="wide-field">设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
-                  <label class="wide-field"><span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span><select id="localProtocolSelect" v-model="protocol" @change="onProtocolChanged"><option v-for="item in visibleProtocols" :key="item.protocol" :value="item.protocol">{{ item.title || item.protocol }} ({{ item.protocol }})</option></select></label>
+                  <label class="identity-id-field">设备 ID *<input id="localDeviceId" v-model="deviceId" type="text" readonly placeholder="自动生成 UUID" @change="syncDeviceIdToPoints"><small class="field-description">自动生成；本次编辑不可修改。</small></label>
+                  <label class="identity-name-field">设备名称 *<input id="localDeviceName" v-model="deviceName" type="text" placeholder="本地测试设备"></label>
+                  <label class="identity-protocol-field"><span class="protocol-label"><span id="localProtocolMetaHelp" class="protocol-meta-anchor"></span><span>协议 *</span></span><select id="localProtocolSelect" v-model="protocol" @change="onProtocolChanged"><option v-for="item in visibleProtocols" :key="item.protocol" :value="item.protocol">{{ item.title || item.protocol }} ({{ item.protocol }})</option></select></label>
+                </div>
+                <div class="setup-adaptive-group">
+                  <h3>自适应采集</h3>
+                  <div class="form-grid setup-adaptive-grid">
                   <label class="adaptive-field">基础采集周期<span class="native-unit-control"><input id="localCollectionInterval" v-model.number="adaptive.baseCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"><span>ms</span></span></label>
                   <label class="adaptive-field">最小采集周期<span class="native-unit-control"><input id="localMinCollectionInterval" v-model.number="adaptive.minCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"><span>ms</span></span></label>
                   <label class="adaptive-field">最大采集周期<span class="native-unit-control"><input id="localMaxCollectionInterval" v-model.number="adaptive.maxCollectionInterval" type="number" min="100" step="100" @change="syncAdaptiveToPoints"><span>ms</span></span></label>
                   <label class="adaptive-field">点位变化阈值<input id="localPointChangeThreshold" v-model.number="adaptive.pointChangeThreshold" type="number" min="0" step="0.01" @change="syncAdaptiveToPoints"></label>
+                  </div>
                 </div>
               </section>
-
-              <section class="local-section-card local-cloud-target-card">
-                <EditorSectionHeader title="云平台身份" subtitle="与“云平台上报”共享同一份身份" />
-                <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
-              </section>
-            </div>
-
-            <section class="local-section-card local-connection-card">
+              <section class="local-section-card local-connection-card">
               <EditorSectionHeader title="协议通信参数" :subtitle="`${currentProtocolDisplay} · 按协议字段组织`"><template #actions><span class="pill">{{ connectionFields.length }} 个字段</span></template></EditorSectionHeader>
               <div class="local-connection-body">
                 <form id="localConnectionForm" class="dynamic-form" @submit.prevent>
                   <ProtocolDynamicForm v-model="connectionModel" :protocol="protocol" :fields="connectionFields" @validate="connectionErrors = $event" />
                 </form>
               </div>
-            </section>
+              </section>
+              <details class="local-section-card local-cloud-target-card supplement-collapse">
+                <summary>共享云平台身份 <span>与“云平台上报”为同一份配置</span></summary>
+                <CloudTargetForm :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
+              </details>
+            </div>
+            <EditorProgressRail :validation-title="validationTitle" :items="localEditorChecklist" />
           </div>
         </section>
 
         <section v-show="activeStep === 1" id="localEditorPane-points" role="tabpanel" class="local-editor-pane" data-local-editor-pane="points">
-          <div class="step-grid step-grid-master-detail">
-            <aside class="local-section-card overview-card">
+          <div class="step-grid step-grid-points">
+            <details class="local-section-card overview-card points-overview supplement-collapse">
+              <summary>点位检查 <span>{{ points.length }} 个点位 · 完整度 {{ pointCompletenessText }}</span></summary>
               <EditorSectionHeader badge="建模概览" title="点位建模" subtitle="点位完整度与地址检查" />
               <div class="metric-stack">
                 <MetricItem label="已配置点位" :value="String(points.length)" />
@@ -101,44 +105,46 @@
               <div class="rail-progress" role="progressbar" aria-label="点位必填项完整度" :aria-valuenow="Number.parseFloat(pointCompletenessText)" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: pointCompletenessText }"></span></div>
               <ul class="hint-list">
                 <li>建议先规划点位编码规则。</li>
-                <li>双击表格行可快速编辑。</li>
+                <li>主要字段可逐行编辑，完整参数在下方展开。</li>
                 <li>完整配置由底部统一保存。</li>
               </ul>
-            </aside>
+            </details>
 
             <div class="detail-stack">
               <section class="local-section-card list-card point-list-card">
-                <EditorSectionHeader title="采集点位" subtitle="选择行后在下方编辑，修改不会立即提交。">
+                <EditorSectionHeader title="点位建模" subtitle="逐行编辑主要字段；高级参数按选中点位展开，修改不会立即提交。">
                   <template #actions>
-                  <div class="inline-actions table-actions">
+                    <button id="addLocalPointBtn" type="button" class="primary-soft" @click="addPoint">新增点位</button>
+                  </template>
+                </EditorSectionHeader>
+                <details class="point-filter-collapse supplement-collapse">
+                  <summary>搜索与筛选<span>{{ filteredPoints.length }} / {{ points.length }} 个点位</span></summary>
+                  <div class="inline-actions table-actions point-filter-actions">
                     <input id="localPointSearch" v-model="pointKeyword" class="compact-select" type="search" placeholder="搜索点位编码 / 名称 / 地址">
                     <select v-model="pointDataTypeFilter" class="compact-select"><option value="">全部类型</option><option v-for="item in pointDataTypes" :key="item" :value="item">{{ item }}</option></select>
                     <select v-model="pointReadWriteFilter" class="compact-select"><option value="">全部读写</option><option v-for="item in readWriteOptions" :key="String(item.value)" :value="String(item.value)">{{ item.label }}</option></select>
-                    <button id="addLocalPointBtn" type="button" class="primary-soft" @click="addPoint">新增点位</button>
                   </div>
-                  </template>
-                </EditorSectionHeader>
+                </details>
                 <div class="table-wrap compact point-table-wrap">
                   <table class="point-table editor-table">
-                    <thead><tr><th>序号</th><th>点位名称</th><th>点位标识</th><th>数据类型</th><th>寄存器地址</th><th>读写</th><th>缩放</th><th>操作</th></tr></thead>
+                    <thead><tr><th v-for="field in matrixPointFields" :key="field.path" :data-matrix-field="field.path">{{ field.label }}<span v-if="field.required" class="field-required"> *</span></th><th>操作</th></tr></thead>
                     <tbody id="localPointRows">
-                      <tr v-for="row in filteredPoints" :key="row.pointCode || row.address || points.indexOf(row)" :class="{ 'is-selected': points.indexOf(row) === selectedPointIndex }" @click="selectPoint(row)" @dblclick="selectPoint(row)">
-                        <td>{{ points.indexOf(row) + 1 }}</td>
-                        <td :title="row.pointName || row.pointCode || '-'"><button type="button" class="point-select-button" :data-select-local-point="points.indexOf(row)" @click.stop="selectPoint(row)"><strong>{{ row.pointName || row.pointCode || '-' }}</strong></button></td>
-                        <td :title="row.pointCode || '-'">{{ row.pointCode || '-' }}</td>
-                        <td :title="row.dataType || '-'">{{ row.dataType || '-' }}</td>
-                        <td :title="row.address || '-'">{{ row.address || '-' }}</td>
-                        <td>{{ row.readWrite || '-' }}</td>
-                        <td :title="String(row.scalingFactor ?? '-')">{{ row.scalingFactor ?? '-' }}</td>
-                        <td class="action-cell"><div class="row-actions"><button type="button" class="text-action" @click.stop="selectPoint(row)">编辑</button><button type="button" class="text-action" @click.stop="duplicatePoint(row)">复制</button><button type="button" class="text-action danger" @click.stop="removePoint(row)">删除</button></div></td>
+                      <tr v-for="row in filteredPoints" :key="points.indexOf(row)" :class="{ 'is-selected': points.indexOf(row) === selectedPointIndex }" @click="selectPoint(row)" @dblclick="selectPoint(row)">
+                        <td v-for="field in matrixPointFields" :key="field.path" :data-matrix-field="field.path">
+                          <component :is="fieldComponent(field)" v-bind="fieldProps(field, row)" :aria-label="`点位 ${points.indexOf(row) + 1} ${field.label}`" :title="String(getPointFieldValue(field.path, row) ?? '')" @update:model-value="updateRowPointField(row, field, $event)">
+                            <el-option v-for="option in field.options || []" :key="String(option.value)" :label="option.label" :value="option.value" />
+                          </component>
+                        </td>
+                        <td class="action-cell"><div class="row-actions"><button type="button" class="text-action" :data-select-local-point="points.indexOf(row)" @click.stop="openPointDetails(row)">详情</button><button type="button" class="text-action" @click.stop="duplicatePoint(row)">复制</button><button type="button" class="text-action danger" @click.stop="removePoint(row)">删除</button></div></td>
                       </tr>
-                      <tr v-if="filteredPoints.length === 0"><td colspan="8">{{ pointKeyword ? '没有匹配的点位' : '暂无点位' }}</td></tr>
+                      <tr v-if="filteredPoints.length === 0"><td colspan="7">{{ pointKeyword ? '没有匹配的点位' : '暂无点位' }}</td></tr>
                     </tbody>
                   </table>
                 </div>
               </section>
 
-              <section class="local-section-card editor-card point-detail-panel">
+              <details ref="pointDetails" class="local-section-card editor-card point-detail-panel supplement-collapse">
+                <summary>高级参数 / 协议扩展 / 只读信息<span>{{ selectedPoint?.pointName || selectedPoint?.pointCode || '未选择点位' }}</span></summary>
                 <PointEditorHeader :point="selectedPoint" />
                 <div v-if="selectedPoint" class="point-detail-stack">
                   <FieldGroup title="主要字段">
@@ -158,13 +164,13 @@
                     </div>
                   </details>
                 </div>
-              </section>
+              </details>
             </div>
           </div>
         </section>
 
         <section v-show="activeStep === 2" id="localEditorPane-alarm" role="tabpanel" class="local-editor-pane" data-local-editor-pane="alarm">
-          <div class="step-grid step-grid-master-detail">
+          <div class="step-grid step-grid-master-detail step-grid-alarm">
             <aside class="local-section-card overview-card">
               <EditorSectionHeader badge="规则概览" title="告警规则" subtitle="触发条件与事件策略" />
               <div class="metric-stack">
@@ -231,9 +237,13 @@
 
         <section v-show="activeStep === 3" id="localEditorPane-cloud" role="tabpanel" class="local-editor-pane" data-local-editor-pane="cloud">
           <div class="step-grid step-grid-cloud">
-            <aside class="local-section-card overview-card cloud-sidebar">
-              <EditorSectionHeader title="云平台身份" subtitle="与基础连接页同步；不是第二份配置" />
+            <div class="detail-stack cloud-main-column">
+            <section class="local-section-card cloud-identity-card">
+              <EditorSectionHeader title="云平台上报" subtitle="云端身份只用于上报边界，不覆盖本地设备 ID；与基础连接共享配置。" />
               <CloudTargetForm id-prefix="cloud-" :cloud-target="cloudTarget" :topic-preview="cloudTopicPreview" @update-field="updateCloudTargetField" />
+            </section>
+            <details class="local-section-card cloud-strategy-card supplement-collapse">
+              <summary>上报策略摘要<span>按当前草稿计算</span></summary>
               <FieldGroup title="上报策略">
                 <div class="metric-stack">
                   <MetricItem label="周期上报" :value="`${adaptive.baseCollectionInterval} ms`" />
@@ -243,9 +253,7 @@
                   <MetricItem label="缓存点位" :value="reportStrategySummary.cache" />
                 </div>
               </FieldGroup>
-            </aside>
-
-            <div class="detail-stack">
+            </details>
               <section class="local-section-card list-card mapping-list-card">
                 <EditorSectionHeader title="云端属性映射" subtitle="本地标识保持不变，云端属性在上报边界映射。"><template #actions><span class="pill">{{ totalReportFieldCount }} 个上报属性</span></template></EditorSectionHeader>
                 <div class="table-wrap compact mapping-table-wrap">
@@ -260,32 +268,31 @@
                   </table>
                 </div>
               </section>
-              <div class="cloud-bottom-grid">
-                <section class="local-section-card editor-card">
+                <details class="local-section-card editor-card cloud-mapping-details supplement-collapse" open>
+                  <summary>当前点位映射详情<span>{{ selectedPoint?.pointName || selectedPoint?.pointCode || '未选择点位' }}</span></summary>
                   <PointEditorHeader :point="selectedPoint" title="属性映射编辑" />
                   <FieldGroup v-if="selectedPoint" title="云端属性映射"><PointFieldGrid layout="four-column" :fields="cloudReportFields" :field-component="fieldComponent" :field-props="fieldProps" :update-point-field="updatePointField" /></FieldGroup>
                   <FieldGroup title="事件预览"><ul class="hint-list"><li v-for="item in eventMappingPreview" :key="item">{{ item }}</li><li v-if="eventMappingPreview.length === 0">暂无事件上报配置</li></ul></FieldGroup>
-                </section>
+                </details>
+            </div>
                 <section class="local-section-card payload-card">
                   <EditorSectionHeader title="Payload 预览" subtitle="由当前配置构造；占位值不代表真实采集值。">
                     <template #actions><select v-model="payloadPreviewMode" class="compact-select"><option value="property">属性上报</option><option value="event">事件上报</option><option value="full">完整配置摘要</option></select></template>
                   </EditorSectionHeader>
                   <pre class="json-preview">{{ payloadPreview }}</pre>
                 </section>
-              </div>
-            </div>
           </div>
         </section>
 
         <section v-show="activeStep === 4" id="localEditorPane-json" role="tabpanel" class="local-editor-pane" data-local-editor-pane="json">
           <div class="step-grid step-grid-json">
-            <aside class="local-section-card overview-card">
-              <EditorSectionHeader title="配置章节" subtitle="选择关注的配置范围" />
+            <details class="local-section-card json-sections supplement-collapse">
+              <summary>配置章节<span>{{ jsonSections.find(item => item.key === jsonSection)?.label }}</span></summary>
               <button v-for="item in jsonSections" :key="item.key" type="button" class="json-nav-item" :class="{ 'is-active': jsonSection === item.key, 'is-modified': item.status === '有修改' }" @click="jsonSection = item.key"><span>{{ item.label }}</span><small>{{ item.status }}</small></button>
-              <p class="json-nav-note">编辑器始终展示完整设备配置；左侧章节用于标记关注范围。</p>
-            </aside>
+              <p class="json-nav-note">编辑器始终展示完整设备配置；章节仅用于标记关注范围。</p>
+            </details>
             <section class="local-section-card json-editor-card">
-              <EditorSectionHeader title="完整设备配置" subtitle="草稿需应用后，才会写入结构化配置。">
+              <EditorSectionHeader title="JSON 高级配置" subtitle="先编辑草稿，再校验并应用；保存不会自动应用未应用草稿。">
                 <template #actions><div class="inline-actions table-actions"><button type="button" @click="formatConfigJson">格式化</button><button type="button" class="primary-soft" @click="applyConfigJson">校验并应用</button><button type="button" @click="syncJsonFromState">恢复当前配置</button></div></template>
               </EditorSectionHeader>
               <div class="json-editor-toolbar"><span>完整 JSON / {{ jsonSections.find(item => item.key === jsonSection)?.label }}</span><span>UTF-8</span></div>
@@ -293,14 +300,21 @@
               <label class="change-note-label">变更说明（仅用于本次编辑备注）<textarea v-model="changeDescription" class="change-note" placeholder="可选：记录本次配置调整目的"></textarea></label>
             </section>
             <aside class="local-section-card schema-card">
+              <EditorSectionHeader title="协议字段参考" subtitle="参考来自当前协议元数据，保留完整字段与说明。" />
+              <div class="schema-tabs"><button v-for="tab in schemaTabs" :key="tab.key" type="button" :class="{ 'is-active': schemaTab === tab.key }" @click="schemaTab = tab.key">{{ tab.label }}</button></div>
+              <p class="schema-reference">{{ schemaTab === 'protocol' ? '协议字段类型与必填标记来自协议元数据。' : '字段参考：沿用现有界面的结构与必填说明，非完整 JSON Schema；保存仍按原规则校验。' }}</p>
+              <div class="schema-table-wrap"><table class="schema-table"><thead><tr><th>字段 / 说明</th><th>{{ schemaTab === 'protocol' ? '类型' : '所属结构' }}</th><th>必填</th></tr></thead><tbody><tr v-for="row in activeSchemaRows" :key="row.field"><td>{{ row.field }}<small>{{ row.description }}</small></td><td>{{ row.type }}</td><td>{{ row.required ? '是' : '否' }}</td></tr></tbody></table></div>
+              <details class="json-validation-details supplement-collapse">
+              <summary>配置校验<span>{{ jsonValidation.errors.length }} 错误 · {{ jsonValidation.warnings.length }} 警告</span></summary>
               <EditorSectionHeader title="配置校验" subtitle="已应用结构化配置的校验，不代表设备连通。" />
               <div class="json-validation-metrics"><MetricItem label="错误" :value="String(jsonValidation.errors.length)" :tone="jsonValidation.errors.length ? 'error' : 'ok'" /><MetricItem label="警告" :value="String(jsonValidation.warnings.length)" :tone="jsonValidation.warnings.length ? 'warn' : 'ok'" /><MetricItem label="章节" :value="String(jsonSections.length)" /><MetricItem label="点位" :value="String(points.length)" /></div>
               <ul class="validation-list"><li v-for="item in jsonValidation.errors" :key="item" class="is-error">{{ item }}</li><li v-for="item in jsonValidation.warnings" :key="item" class="is-warn">{{ item }}</li><li v-if="!jsonValidation.errors.length && !jsonValidation.warnings.length" class="is-ok">已应用结构化配置校验通过</li></ul>
               <p class="json-validation-note">统计与提示只反映已应用状态，未应用的 JSON 草稿不计入。保存不会自动应用草稿；再次进入本页会从当前配置恢复内容。</p>
-              <div class="schema-tabs"><button v-for="tab in schemaTabs" :key="tab.key" type="button" :class="{ 'is-active': schemaTab === tab.key }" @click="schemaTab = tab.key">{{ tab.label }}</button></div>
-              <p class="schema-reference">{{ schemaTab === 'protocol' ? '协议字段类型与必填标记来自协议元数据。' : '字段参考：沿用现有界面的结构与必填说明，非完整 JSON Schema；保存仍按原规则校验。' }}</p>
-              <div class="schema-table-wrap"><table class="schema-table"><thead><tr><th>字段 / 说明</th><th>{{ schemaTab === 'protocol' ? '类型' : '所属结构' }}</th><th>必填</th></tr></thead><tbody><tr v-for="row in activeSchemaRows" :key="row.field"><td>{{ row.field }}<small>{{ row.description }}</small></td><td>{{ row.type }}</td><td>{{ row.required ? '是' : '否' }}</td></tr></tbody></table></div>
+              </details>
+              <details class="json-summary-details supplement-collapse">
+              <summary>配置摘要<span>{{ currentProtocolDisplay }} · {{ points.length }} 个点位</span></summary>
               <FieldGroup title="配置摘要"><div class="metric-stack"><MetricItem label="协议类型" :value="protocol" /><MetricItem label="设备地址" :value="connectionAddressSummary" /><MetricItem label="上报平台" :value="cloudTargetSummary({} as DataPoint, cloudTarget)" /><MetricItem label="告警规则" :value="String(alarmRuleRows.length)" /><MetricItem label="编辑备注" :value="changeDescription ? '有说明' : '未填写'" /></div></FieldGroup>
+              </details>
             </aside>
           </div>
         </section>
@@ -321,7 +335,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onBeforeUnmount, reactive, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, reactive, ref, watch, type PropType } from "vue";
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
@@ -411,6 +425,11 @@ const PointEditorHeader = defineComponent({
 
 const props = defineProps<{ modelValue: boolean; editingBundle?: LocalDeviceBundle | null; protocols: ProtocolSchema[] }>();
 const emit = defineEmits<{ "update:modelValue": [value: boolean]; saved: [deviceId: string] }>();
+
+const editorPanel = ref<HTMLElement | null>(null);
+const pointDetails = ref<HTMLDetailsElement | null>(null);
+let editorReturnFocus: HTMLElement | null = null;
+let focusGeneration = 0;
 
 const localEditorSteps = [
   { key: "setup", no: "01", label: "基础连接", desc: "设备通信与连接参数配置" },
@@ -518,6 +537,8 @@ const primaryPointFields = computed<PointEditorField[]>(() => [
   { path: "remark", label: "点位描述", fullWidth: true }
 ]);
 const dataPointFields = computed<PointEditorField[]>(() => [{ path: "deadband", label: "死区", control: "number", valueType: "number", step: 0.0001 }, { path: "minValue", label: "最小值", control: "number", valueType: "number", step: 0.0001 }, { path: "maxValue", label: "最大值", control: "number", valueType: "number", step: 0.0001 }, { path: "priority", label: "优先级", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }, { path: "status", label: "启用状态", control: "select", valueType: "integer", options: enableOptions }]);
+// 矩阵只选取既有字段定义，控件类型、选项及数值步长与完整详情一致。
+const matrixPointFields = computed(() => primaryPointFields.value.filter((field) => ["pointName", "pointCode", "dataType", "address", "readWrite", "scalingFactor"].includes(field.path)));
 const reportPointFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "参与设备上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "变化最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "cacheEnabled", label: "启用缓存", control: "select", valueType: "integer", options: enableOptions }, { path: "cacheDuration", label: "缓存时长(秒)", control: "number", valueType: "integer", step: 1 }]);
 const cloudReportFields = computed<PointEditorField[]>(() => [{ path: "additionalConfig.reportEnabled", label: "启用上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.reportField", label: "云端属性编码", description: "属性标识：reportField" }, { path: "additionalConfig.changeThreshold", label: "变化阈值", control: "number", valueType: "number", step: 0.0001 }, { path: "additionalConfig.changeMinIntervalMs", label: "最小变化间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.eventEnabled", label: "事件上报", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.eventMinIntervalMs", label: "事件最小间隔(ms)", control: "number", valueType: "integer", step: 1 }, { path: "additionalConfig.streamEnabled", label: "实时流", control: "select", valueType: "boolean", options: booleanOptions }, { path: "additionalConfig.historyEnabled", label: "历史", control: "select", valueType: "boolean", options: booleanOptions }]);
 const protocolPointFields = computed<PointEditorField[]>(() => pointFields.value.map((field) => ({ path: protocolPointFieldPath(field), label: field.label || field.name, required: field.required, control: field.type === "boolean" ? "switch" : field.options?.length ? "select" : (field.type === "number" || field.type === "integer") ? "number" : "text", valueType: field.type === "boolean" ? "boolean" : field.type === "number" ? "number" : field.type === "integer" ? "integer" : "string", options: field.options?.map((option) => ({ label: option, value: option })), description: field.description, span: protocolPointFieldSpan(field) })));
@@ -630,10 +651,27 @@ function addPoint() { const pointCode = createUniqueCode(points.value, "point");
 function duplicatePoint(row?: DataPoint) { const source = row || selectedPoint.value; const sourceIndex = row ? points.value.indexOf(row) : selectedPointIndex.value; if (!source) return; const clone = cloneData(source); delete clone.id; delete clone.pointId; delete clone.createTime; delete clone.updateTime; delete clone.stableCount; delete clone.lastValue; delete clone.changeRate; delete clone.lastAdjustTime; delete clone.reportFieldConflict; clone.pointCode = createUniqueCode(points.value, `${source.pointCode || "point"}_copy`); clone.pointName = `${source.pointName || source.pointCode || "点位"} 副本`; if (isPlainObject(clone.additionalConfig) && hasValue(clone.additionalConfig.reportField)) clone.additionalConfig.reportField = `${clone.additionalConfig.reportField}_copy`; points.value.splice(Math.max(0, sourceIndex) + 1, 0, clone); selectedPointIndex.value = Math.max(0, sourceIndex) + 1; syncJsonFromState(); }
 async function removePoint(row?: DataPoint) { const index = row ? points.value.indexOf(row) : selectedPointIndex.value; const point = points.value[index]; if (!point || index < 0) return; try { await ElMessageBox.confirm(`确认删除点位 ${point.pointCode || point.pointName || "当前点位"} 吗？`, "删除点位", { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }); } catch { return; } points.value.splice(index, 1); selectedPointIndex.value = points.value.length ? Math.min(index, points.value.length - 1) : -1; selectedAlarmRuleIndex.value = 0; syncJsonFromState(); }
 function selectPoint(row: DataPoint) { selectedPointIndex.value = points.value.indexOf(row); selectedAlarmRuleIndex.value = 0; }
+async function openPointDetails(row: DataPoint) {
+  selectPoint(row);
+  if (!pointDetails.value) return;
+  pointDetails.value.open = true;
+  await nextTick();
+  const summary = pointDetails.value?.querySelector("summary");
+  summary?.focus();
+  summary?.scrollIntoView({ block: "nearest" });
+}
 function updatePointField(field: PointEditorField, value: unknown) { updateSelectedPath(field.path, parseFieldValue(value, field.valueType)); }
+function updateRowPointField(point: DataPoint, field: PointEditorField, value: unknown) {
+  if (!points.value.includes(point)) return;
+  updatePointPath(point, field.path, parseFieldValue(value, field.valueType));
+}
 function updateSelectedPath(path: string, value: unknown) {
   const point = selectedPoint.value;
   if (!point) return;
+  updatePointPath(point, path, value);
+}
+// 行编辑与选中详情共用原来的路径写入及协议联动，不克隆或替换原点位对象。
+function updatePointPath(point: DataPoint, path: string, value: unknown) {
   const previousPointCode = point.pointCode;
   const previousAddress = point.address;
   const previousTopic = getPathValue(point, "additionalConfig.topic");
@@ -755,8 +793,8 @@ function close(value: boolean) {
   emit("update:modelValue", value);
 }
 function fieldComponent(field: PointEditorField) { if (field.control === "switch") return ElSwitch; if (field.control === "select") return ElSelect; if (field.control === "number") return ElInputNumber; return ElInput; }
-function fieldProps(field: PointEditorField) { const value = getPointFieldValue(field.path); if (field.control === "switch") return { modelValue: Boolean(value), disabled: field.disabled }; if (field.control === "select") return { modelValue: value ?? "", clearable: true, filterable: true, disabled: field.disabled }; if (field.control === "number") return { modelValue: toNumber(value), controlsPosition: "right", step: field.step || 1, disabled: field.disabled }; return { modelValue: value === undefined || value === null ? "" : String(value), disabled: field.disabled }; }
-function getPointFieldValue(path: string): unknown { return selectedPoint.value ? getPathValue(selectedPoint.value, path) : undefined; }
+function fieldProps(field: PointEditorField, point: DataPoint | null = selectedPoint.value) { const value = getPointFieldValue(field.path, point); if (field.control === "switch") return { modelValue: Boolean(value), disabled: field.disabled }; if (field.control === "select") return { modelValue: value ?? "", clearable: true, filterable: true, disabled: field.disabled }; if (field.control === "number") return { modelValue: toNumber(value), controlsPosition: "right", step: field.step || 1, disabled: field.disabled }; return { modelValue: value === undefined || value === null ? "" : String(value), disabled: field.disabled }; }
+function getPointFieldValue(path: string, point: DataPoint | null = selectedPoint.value): unknown { return point ? getPathValue(point, path) : undefined; }
 function protocolPointFieldPath(field: ProtocolFieldConfig): string { return field.name.startsWith("additionalConfig.") ? field.name : `additionalConfig.${field.name}`; }
 function protocolPointFieldSpan(field: ProtocolFieldConfig): number | undefined {
   if (field.type === "boolean" || field.type === "number" || field.type === "integer" || field.options?.length) {
@@ -771,7 +809,62 @@ function alarmLevelLabel(level: unknown) { return alarmLevels.find((item) => ite
 function alarmLevelClass(level: unknown) { const value = String(level || "").toUpperCase(); if (value === "CRITICAL") return "is-critical"; if (value === "ERROR" || value === "WARNING") return "is-warning"; if (value === "INFO") return "is-info"; return "is-unset"; }
 function minPointAdditionalNumber(key: string) { const values = points.value.map((point) => Number(point.additionalConfig?.[key])).filter((value) => Number.isFinite(value) && value > 0); return values.length ? `${Math.min(...values)} ms` : "未配置"; }
 function buildPayloadPreview(mode: "property" | "event" | "full") { const mapped = points.value.filter((point) => point.additionalConfig?.reportEnabled !== false && hasValue(point.additionalConfig?.reportField)); if (mode === "property") return { topic: cloudTopicPreview.value, productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, properties: Object.fromEntries(mapped.map((point) => [String(point.additionalConfig?.reportField), point.lastValue ?? `<${point.pointCode || point.pointName}>`])) }; if (mode === "event") return { productKey: cloudTarget.productKey, deviceName: cloudTarget.deviceName, events: eventMappingPreview.value, minIntervalMs: eventIntervalSummary.value }; return { device: { deviceId: deviceId.value, deviceName: deviceName.value, protocol: protocol.value }, cloudTarget: { ...cloudTarget }, pointCount: points.value.length, reportFields: mapped.map((point) => point.additionalConfig?.reportField), alarmRules: alarmRuleRows.value.length }; }
-function handleLocalEditorKeydown(event: KeyboardEvent) { if (event.key === "Escape" && props.modelValue) close(false); }
+function editorFocusableElements(): HTMLElement[] {
+  const panel = editorPanel.value;
+  if (!panel) return [];
+  return Array.from(panel.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, summary, [tabindex]")).filter((element) => {
+    if (element.tabIndex < 0 || element.matches(":disabled") || element.closest("[hidden], [inert]") || !element.getClientRects().length) return false;
+    const style = getComputedStyle(element);
+    if (style.visibility === "hidden" || style.visibility === "collapse" || !element.checkVisibility()) return false;
+    // 闭合的任一层 details 仅允许其首个直接 summary 获焦。
+    for (let ancestor = element.parentElement; ancestor && ancestor !== panel; ancestor = ancestor.parentElement) {
+      if (ancestor instanceof HTMLDetailsElement && !ancestor.open) {
+        const summary = Array.from(ancestor.children).find((child) => child.tagName === "SUMMARY");
+        if (!summary?.contains(element)) return false;
+      }
+    }
+    return true;
+  });
+}
+function handleLocalEditorKeydown(event: KeyboardEvent) {
+  if (!props.modelValue || event.defaultPrevented) return;
+  // 确认弹层自行处理键盘，避免关闭编辑器或抢走删除确认的焦点。
+  if (Array.from(document.querySelectorAll<HTMLElement>(".el-message-box")).some((element) => element.getClientRects().length > 0)) return;
+  if (event.key === "Escape") { close(false); return; }
+  if (event.key !== "Tab") return;
+  const candidates = editorFocusableElements();
+  const first = candidates[0];
+  const last = candidates[candidates.length - 1];
+  const active = document.activeElement;
+  if (!first || !last) { event.preventDefault(); editorPanel.value?.focus(); return; }
+  if (!candidates.includes(active as HTMLElement) || (event.shiftKey ? active === first : active === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
+// 独立的 UI 焦点归属；不改既有草稿 reset、请求会话与 Schema 生命周期监听。
+watch(() => props.modelValue, async (visible) => {
+  const generation = ++focusGeneration;
+  if (visible) {
+    editorReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await nextTick();
+    if (generation !== focusGeneration || !props.modelValue) return;
+    const initial = editorPanel.value?.querySelector<HTMLElement>("#localDeviceName");
+    (initial || editorFocusableElements()[0] || editorPanel.value)?.focus();
+  } else {
+    const target = editorReturnFocus;
+    editorReturnFocus = null;
+    await nextTick();
+    if (generation === focusGeneration && !props.modelValue && target?.isConnected) target.focus();
+  }
+}, { immediate: true });
+onBeforeUnmount(() => {
+  focusGeneration += 1;
+  const target = editorReturnFocus;
+  editorReturnFocus = null;
+  void nextTick(() => { if (target?.isConnected) target.focus(); });
+});
 
 watch(() => props.modelValue, (visible) => { document.body.classList.toggle("modal-active", visible); if (visible) { reset(props.editingBundle || null); document.addEventListener("keydown", handleLocalEditorKeydown); } else { editorSession += 1; schemaGeneration += 1; saving.value = false; document.removeEventListener("keydown", handleLocalEditorKeydown); } }, { immediate: true });
 watch(() => props.editingBundle, (bundle) => { if (props.modelValue) reset(bundle || null); });

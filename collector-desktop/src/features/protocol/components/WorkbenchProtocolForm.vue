@@ -444,7 +444,7 @@ watch(() => [props.fields, props.modelValue, props.protocol] as const, ([fields,
   border-radius: 4px;
   outline: none;
   background: var(--console-input-bg);
-  font: 12px/1.65 Consolas, "Microsoft YaHei", monospace;
+  font: 12px/1.65 var(--app-font-family);
 }
 
 .workbench-protocol-form textarea.protocol-textarea {

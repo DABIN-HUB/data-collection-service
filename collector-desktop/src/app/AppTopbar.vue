@@ -10,6 +10,8 @@
         :aria-expanded="navigationOpen"
         @click="emit('open-navigation')"
       ><span aria-hidden="true">☰</span></button>
+      <span class="app-topbar__group">{{ navigationGroups.find(group => group.items.some(item => item.path === route.path || item.activePaths?.includes(route.path)))?.title || '控制台' }}</span>
+      <span class="app-topbar__separator" aria-hidden="true">/</span>
       <span class="app-topbar__page">{{ currentPage }}</span>
     </div>
     <div class="node-status-bar">
@@ -102,9 +104,15 @@ function tickClock() {
 }
 
 .app-topbar__page {
-  color: var(--console-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.app-topbar__group,
+.app-topbar__separator {
+  color: var(--console-text-muted);
+  font-size: 11px;
 }
 
 .app-topbar__menu {
@@ -112,6 +120,11 @@ function tickClock() {
 }
 
 @media (width <= 900px) {
+  .app-topbar__group,
+  .app-topbar__separator {
+    display: none;
+  }
+
   .app-topbar {
     min-height: 52px;
     padding: 0 12px;
