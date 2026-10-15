@@ -2,7 +2,6 @@
   <section class="exact-page device-list-view">
     <header class="device-page-heading">
       <div class="device-title-block">
-        <nav class="device-breadcrumb" aria-label="当前位置"><span>配置</span><span aria-hidden="true">/</span><strong>设备管理</strong></nav>
         <div class="device-title-line">
           <h1>设备管理</h1>
           <span class="device-count" aria-live="polite">{{ deviceInventoryLabel }}</span>
@@ -55,7 +54,6 @@
       <div v-for="item in deviceSummaryItems" :key="item.label" class="device-summary-item">
         <span>{{ item.label }}</span><strong>{{ item.value }}</strong>
       </div>
-      <span class="device-summary-note">{{ deviceSummaryNote }}</span>
     </div>
 
     <div v-if="deviceErrorMessage" class="device-error-banner" role="alert">
@@ -96,8 +94,8 @@
           <div class="device-cell device-identity" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-equipment" aria-hidden="true"><DeviceListIcon name="box" /></span>
             <span class="device-cell-label">设备身份 / 来源</span>
-            <h2>{{ device.displayName || device.normalizedId }}</h2>
-            <span class="device-id device-mono">{{ device.normalizedId }}</span>
+            <h2 :title="device.displayName || device.normalizedId"><template v-for="(segment, index) in (device.displayName || device.normalizedId).split(/(?<=_)/)" :key="index">{{ segment }}<wbr /></template></h2>
+            <span class="device-id device-mono" :title="device.normalizedId">{{ device.normalizedId }}</span>
             <span class="device-source" :class="{ 'is-local': isLocalDevice(device) }"><DeviceListIcon :name="isLocalDevice(device) ? 'local' : 'cloud'" />{{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</span>
           </div>
           <div class="device-cell device-connection" :role="deviceView === 'table' ? 'cell' : undefined">
@@ -166,9 +164,18 @@
           <div v-if="deviceStore.isDeviceOperating(device.normalizedId)" class="device-row-notice is-busy" role="status"><DeviceListIcon name="info" /><span>设备操作进行中；启动、停止及配置缓存操作暂不可重复提交。</span></div>
         </article>
       </div>
-      <footer class="device-register-footer"><span>{{ deviceResultLabel }}</span><span>点击设备选择；配置与运行分别读取，更多菜单包含监测与维护操作</span></footer>
+      <footer class="device-register-footer">
+        <span>{{ deviceResultLabel }}</span>
+        <span class="device-summary-note">{{ deviceSummaryNote }}</span>
+        <details class="device-list-help">
+          <summary><DeviceListIcon name="info" />操作与状态说明</summary>
+          <div class="device-list-help-content">
+            <p>点击设备选择；配置与运行分别读取，更多菜单包含监测与维护操作。</p>
+            <p>运行阶段、通信就绪与采集健康是独立状态。设备已连接或启动请求已受理，不代表当前点位有效。</p>
+          </div>
+        </details>
+      </footer>
     </div>
-    <div class="device-semantic-note"><DeviceListIcon name="info" /><span>运行阶段、通信就绪与采集健康是独立状态。设备已连接或启动请求已受理，不代表当前点位有效。</span></div>
 
     <input ref="configImportInput" class="hidden-file-input" type="file" accept="application/json,.json" @change="handleConfigImportFile" />
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />

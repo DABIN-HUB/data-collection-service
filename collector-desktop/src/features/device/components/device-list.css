@@ -18,7 +18,7 @@
   padding: 27px 30px 24px;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   overflow: hidden;
   color: var(--device-text);
   background: var(--device-bg);
@@ -37,20 +37,6 @@
 
 .device-title-block {
   min-width: 0;
-}
-
-.device-breadcrumb {
-  display: flex;
-  margin-bottom: 6px;
-  align-items: center;
-  gap: 7px;
-  color: var(--device-muted);
-  font-size: 11px;
-}
-
-.device-breadcrumb strong {
-  color: var(--device-text);
-  font-weight: 500;
 }
 
 .device-title-line {
@@ -203,37 +189,29 @@
 .device-summary {
   display: flex;
   min-width: 0;
-  padding: 0 0 2px;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 4px 18px;
   color: var(--device-muted);
   font-size: 11.5px;
 }
 
 .device-summary-item {
   display: inline-flex;
-  min-height: 24px;
-  padding: 0 20px;
+  min-height: 20px;
   align-items: baseline;
-  gap: 7px;
-  border-right: 1px solid var(--device-line);
+  gap: 5px;
   white-space: nowrap;
-}
-
-.device-summary-item:first-child {
-  padding-left: 0;
 }
 
 .device-summary-item strong {
   color: var(--device-text);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .device-summary-note {
-  padding-left: 20px;
   color: var(--device-muted);
   font-size: 11px;
 }
@@ -673,8 +651,8 @@
 .device-register-footer {
   display: flex;
   min-width: 0;
-  min-height: 40px;
-  padding: 9px 18px;
+  min-height: 30px;
+  padding: 5px 18px;
   flex: none;
   align-items: center;
   justify-content: space-between;
@@ -692,23 +670,54 @@
   font-weight: 400;
 }
 
-.device-semantic-note {
-  display: flex;
-  min-width: 0;
-  flex: none;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--console-text-muted);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
+.device-list-help {
+  position: relative;
+  margin-left: auto;
 }
 
-.device-semantic-note > svg {
+.device-list-help > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.device-list-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.device-list-help > summary:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 3px;
+}
+
+.device-list-help > summary > svg {
   width: 14px;
   height: 14px;
-  margin-top: 1px;
   flex: none;
-  color: var(--console-text-muted);
+}
+
+.device-list-help-content {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 3;
+  width: min(340px, calc(100vw - 48px));
+  padding: 12px 14px;
+  color: var(--device-text);
+  border: 1px solid var(--device-line);
+  border-radius: 6px;
+  background: var(--device-surface);
+  box-shadow: var(--console-overlay-shadow);
+}
+
+.device-list-help-content p {
+  margin: 0;
+}
+
+.device-list-help-content p + p {
+  margin-top: 8px;
 }
 
 .device-empty {
@@ -1154,7 +1163,7 @@
   min-width: 0;
   padding: 18px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 16px;
+  gap: 9px 16px;
   border: 1px solid var(--device-line);
   border-radius: 8px;
   background: var(--device-surface);
@@ -1178,19 +1187,30 @@
 
 .device-view-cards .device-identity {
   position: relative;
-  padding-left: 46px;
+  display: grid;
+  padding-left: 44px;
   padding-bottom: 0;
   grid-column: 1 / -1;
   grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 8px;
   border-bottom: 0;
 }
 
 .device-view-cards .device-identity h2 {
   display: -webkit-box;
   max-height: 3em;
+  grid-column: 1 / -1;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.device-view-cards .device-source {
+  margin-top: 0;
 }
 
 .device-view-cards .device-id {
@@ -1216,15 +1236,19 @@
 }
 
 .device-view-cards .device-lifecycle {
+  display: flex;
   grid-column: 1 / -1;
   grid-row: 2;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
 }
 
 .device-view-cards .device-transport {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px 12px;
-  margin-top: 4px;
+  gap: 3px 10px;
+  margin-top: 0;
   font-size: 10.5px;
 }
 
@@ -1238,15 +1262,21 @@
 
 .device-view-cards .device-connection,
 .device-view-cards .device-quality {
-  padding-top: 13px;
+  padding-top: 9px;
   border-top: 1px solid var(--device-line);
 }
 
 .device-view-cards .device-connection {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
-  gap: 3px 12px;
+  gap: 3px;
+}
+
+.device-view-cards .device-protocol-name {
+  margin-bottom: 0;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .device-view-cards .device-connection .device-cell-label,
@@ -1263,10 +1293,8 @@
 .device-view-cards .device-connection .device-configured-points,
 .device-view-cards .device-connection .device-interval {
   min-width: 0;
-  margin-top: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 0;
+  overflow-wrap: anywhere;
 }
 
 .device-view-cards .device-connection .device-config-source {
@@ -1324,7 +1352,7 @@
 }
 
 .device-view-cards .device-register-footer {
-  margin-top: 16px;
+  margin-top: 6px;
   padding-inline: 0;
   background: transparent;
 }
@@ -1363,7 +1391,7 @@
 @media (max-width: 760px) {
   .exact-page.device-list-view {
     padding: 18px 14px 14px;
-    gap: 14px;
+    gap: 12px;
   }
 
   .device-title-line {
@@ -1375,60 +1403,34 @@
   }
 
   .device-heading-actions {
-    display: grid;
     width: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 7px;
-  }
-
-  .device-heading-actions > .device-button:first-child {
-    grid-column: 1;
-    grid-row: 1;
+    align-items: center;
+    gap: 6px;
   }
 
   .device-transfer-actions {
-    width: 100%;
-    grid-column: 2;
-    grid-row: 1;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 2px;
+    gap: 2px;
   }
 
   .device-transfer-label {
-    grid-column: 1 / -1;
-    padding: 2px 4px 0;
-    text-align: center;
-  }
-
-  .device-heading-actions > .device-button.primary {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    display: none;
   }
 
   .exact-page.device-list-view .device-heading-actions button.device-button {
-    width: 100%;
+    min-height: 32px;
+    padding: 0 7px;
+    gap: 5px;
     font-size: 11px;
   }
 
   .device-summary {
-    padding: 9px 0 5px;
-    border-top: 1px solid var(--device-line);
-    border-bottom: 1px solid var(--device-line);
-  }
-
-  .device-summary-item {
-    width: 33.333%;
-    padding: 0 10px 7px 0;
-    border-right: 0;
+    gap: 3px 14px;
+    font-size: 11px;
   }
 
   .device-summary-item strong {
-    font-size: 15px;
-  }
-
-  .device-summary-note {
-    width: 100%;
-    padding: 0;
+    font-size: 12px;
   }
 
   .device-filters,
@@ -1453,8 +1455,17 @@
     gap: 14px;
   }
 
-  .device-view-cards .device-connection {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .device-view-cards .device-identity {
+    padding-left: 40px;
+  }
+
+  .device-view-cards .device-identity h2 {
+    font-size: 13px;
+  }
+
+  .device-view-cards .device-equipment {
+    width: 30px;
+    height: 30px;
   }
 
   .device-view-cards .device-connection .device-cell-label,
@@ -1472,10 +1483,8 @@
   }
 
   .device-register-footer {
-    padding: 10px 14px;
-  }
-
-  .device-semantic-note {
+    padding: 5px 14px;
+    gap: 4px 8px;
     font-size: 11px;
   }
 

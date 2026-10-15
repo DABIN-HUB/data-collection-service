@@ -1,5 +1,5 @@
 <template>
-  <header class="topbar app-topbar">
+  <header class="topbar app-topbar" :class="{ 'app-topbar--device-list': route.path === '/device' }">
     <div class="app-topbar__navigation">
       <button
         type="button"
@@ -123,6 +123,11 @@ function tickClock() {
   .app-topbar__group,
   .app-topbar__separator {
     display: none;
+  }
+
+  .app-topbar--device-list .app-topbar__group,
+  .app-topbar--device-list .app-topbar__separator {
+    display: inline;
   }
 
   .app-topbar {

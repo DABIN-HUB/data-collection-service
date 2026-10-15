@@ -1,5 +1,83 @@
 # collector-desktop 前端架构重构进度
 
+## 最新请求：提交设备页修正、重部署9090与全前端设计提案（2026-10-15）
+
+用户明确要求提交当前代码并重启当前服务，然后继续使用 Frontend Design 扫描所有前端页面，给出更成熟的优化建议和拟修改页面样式图。当前为 `USER_AUTHORIZED_LOCAL_COMMIT_AND_REDEPLOY / FULL_FRONTEND_AUDIT_AND_DESIGN_PROPOSAL_IN_PROGRESS`，不是全站生产改版授权。按当前工作区与前轮15源/61资源冻结身份核对无漂移；提交白名单只包含前轮3个呈现源文件、本进度文档和完整Boot静态资源，不含既有`.gitignore`、`.hermes.md`、图片、证据或JAR，不push。
+
+- 执行计划已保存到 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/EXECUTION-PLAN.md`；实际路由定义核实14个不同View（登录及13个业务路由，根/兜底重定向不重复计数），另盘点本地设备编辑器与点位详情两个重点界面。
+- 服务替换先本地提交，再从精确提交隔离worktree用Java17/Maven3.6.3执行无测试clean package；完整新包与静态字节核验后才停止已确认旧listener，保留回滚包及原启动参数/工作目录，分别报告liveness、HTTP和health。
+- 全前端分监测6页、配置5页和运维3页只读审计，产出逐页来源/控件/默认GET/风险写入/敏感区域/改进建议。新样式图采用单独提案，不改变生产API/Store/Schema、默认值、请求生命周期或业务写入；图内明确示例数据与未实施，不用示例替代真实运行验收。
+- 目标交付为14个路由样式图及2个重点编辑界面图、可导航独立HTML和逐页报告；实际HTTP/PNG/字体/边界核验之后才交付，不以HTML源文件替代样式图。未取得认证或实际像素的页面明确标注源码推断/未覆盖，不伪造成功数据。
+- 不创建、修改或运行测试，不运行quality/verify，不修改依赖、认证或后端业务，不开启设备/同步/告警确认/影子/网络执行等写操作。后续完成的提交hash、包身份、部署读回与提案图在本节追加；以下为前轮已完成的范围限定视觉复审历史。
+
+
+## 最新范围：设备管理独立像素复审与呈现修正（2026-10-15）
+
+用户确认继续设备管理页的保真审核及修正循环。当前为 `BASELINE_PIXEL_FAIL / PRESENTATION_CORRECTIONS_IMPLEMENTED / STATIC_BUILD_PASS / BACKEND_RESTORED / AUTHENTICATED_RECAPTURED / SCOPED_VISIBLE_PIXEL_PASS / READY_FOR_USER_VISUAL_REVIEW`：本轮已针对历史认证图中的 6 项独立问题实施呈现修正，并已完成修正后 7 张真实认证截图；独立桌面及窄屏已对本次 7 张新图的可见呈现范围给出 PASS，新增可确证必须修正项为 0；当前可供用户视觉复核，不是完整原验收条款、全功能或用户最终接受。此前的 9090 部署及运行记录仅是历史证据；初次核对时入口无法连接，监听扫描未发现该端口，原后台会话 `proc_cc6948c36a74` 返回 `not_found`，未查明退出时间或原因。用户随后明确允许启动现有验证 JAR，9090 已恢复，实际 listener PID 为 `29056`，入口 HTTP 200；只恢复旧包，未替换部署新 renderer，整体健康仍为 DOWN。
+
+### 本轮独立复审与逐项修正记录
+
+- Frontend Design 独立复审 `deleg_7d62ff1c` 实际观察了 3 张批准图和 3 张历史认证图（1600×1000、1280×800、390×844），逐图记录路径、SHA-256、尺寸、不同的可见观察和未覆盖区域。原生附图没有提供 analysis handle、传输缩放或 DPR，均明确标为 unavailable，不伪造句柄或声称 1:1；父级另核对源/图像身份、实际委派轨迹及 JSON 的 6 项问题。历史已观察像素范围为 FAIL：P0 0、P1 4、P2 2。该结论不是当前构建终审，也不签滚动底部、展开状态、键盘或业务。
+
+| 原问题 ID | 本轮呈现修正 | 状态 |
+| --- | --- | --- |
+| P1-01 | 窄屏操作带取消拉高的双列块及新增独占整行，改为内容适配、自然换行的紧凑按钮组；保留刷新→导出/导入→新增的阅读顺序和原绑定。 | 所附当前视口可见条件 PASS |
+| P1-02 | 登记册底栏降低占高；长操作指导及三态解释保留于原生“操作与状态说明”详情中，清单来源说明移入紧凑底栏，不再单独挤压首屏。 | 所附三视口及帮助新图可见条件 PASS |
+| P1-03 | 压缩卡片行间距；身份与来源使用紧凑元信息排布，生命周期与通信就绪行可自然换行；连接与采集健康仍独立展示，保留全部真实计数和原操作。 | 所附真实首末卡密度与字段可见条件 PASS |
+| P1-04 | 卡片连接字段不再嵌套双列挤窄短协议；配置点位/周期取消省略策略，保持原值和单位。 | 所附1600/1280当前短协议与周期可见条件 PASS |
+| P2-01 | 页面重复面包屑移除，统一由共享顶栏提供；仅 `/device` 窄屏保留完整“配置 / 设备管理”，其他路由规则不变。真实六项摘要降低视觉层级，来源说明仍保留。 | 设备页三视口可见条件 PASS；邻页未运行 |
+| P2-02 | 长设备名在下划线分隔处提供 `wbr` 软换行机会，完整名称/ID保留在DOM并新增原值title；不改数据、不替换为设计示例。 | 390可见换行条件 PASS；hover 未观察 |
+
+### 源保护、构建与资源身份
+
+- 本轮仅修改 `DeviceListView.vue` 模板、页面局部 `device-list.css` 和 `AppTopbar.vue` 设备路由限定的模板/CSS；没有更改两个 Vue `<script>` 区块，其原始字节与本轮改前快照一致。设备页事件、v-model、disabled 业务绑定序列保持一致；冻结的另 12 个 API/Store/类型/壳/公共样式等保护文件 SHA-256 未变。没有修改请求、Schema、默认模式、生命周期或业务写入边界。
+- 最后生产改动后的 `lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际 exit 0，未创建、修改或运行测试，未执行 quality/verify 聚合脚本；既有第三方 PURE 注释及大 chunk warning 保留，未升级依赖或放宽规则。
+- 新入口为 `index-rdR7KHcm.js`；renderer 与 Boot 静态资源完整 61 项路径及 SHA-256 精确一致。同步涉及的其他路由 JS 文件名变化属于生成产物引用变化，不是新增源业务修改。
+- 改前身份核对另发现旧 JAR 与改前 renderer/static 的 59 个 JS/CSS 字节差异全部仅为 LF/CRLF：文件集合与逻辑文本相同，但不能称三者原始 SHA 相同。已保留精确哈希与只读换行差异记录，未通过规范化重写证据来制造相等。
+- 本轮未重新打包或替换 JAR。原 JAR 的 SHA-256 仍为 `7b653c21e1cc549cbd0a1f9e6d329df08ee903d2664f46d2dcf088492b356db5`，不包含本轮新修正，不能以旧包或旧截图签新入口。初次核对时真实后端和临时认证均不可用；后端随后获准恢复，现已通过本地不回显输入完成一次任务自有认证回读与采集；值未向聊天、源码、参数、文件或日志输出。不猜测令牌、不从历史/storage/配置恢复秘密，也不以示例数据生成成功态截图。
+
+### 用户允许后的旧包恢复记录（2026-10-15）
+
+- 恢复前再次检查 9090 无 listener，JAR 原始 SHA-256 与允许的旧包一致，Java 实际为 17.0.15。沿用原仓库根工作目录、原 Java 17 和 `--server.port=9090`，没有 Maven 打包、复制替换或新增启动配置。
+- 新后台会话 `proc_abad66a65356`；真实 listener PID `29056`，进程创建时间 `2026-10-15T09:09:23.6620720+08:00`。限定读取原生进程元数据确认可执行文件、目标 JAR 及端口参数；未输出其他进程命令或凭据。
+- 入口 HTTP 200，实际仍为 `index-BXY-uzQS.js`，HTML 字节与允许的旧 JAR 精确一致；新修正入口 `index-rdR7KHcm.js` 未部署。无令牌配置请求实际 401，不改认证、不伪造成功。
+- `/collector/health` HTTP 200但整体 DOWN：`collectionService DOWN`、`cache UP`、`connections UNKNOWN`、`application UP`。运行与依赖/采集健康分别记录，未控制设备或修复后端配置。
+- 临时不回显输入控制器已保存于 scratch；原生控制台能力实际检查返回 `nativeConsoleReady=true / echoFallback=false`，不会退回可回显输入。原 Playwright 模块已被清理，已改用现有 Chromium 与 Node 原生 WebSocket/CDP，没有安装项目或测试依赖。
+- 无认证准备实际运行通过：新候选完整 61 项资源与入口身份匹配，17 项 CDP 命令签名核验，真实配置/runtime/protocols 均 401、零设备行；原生 1600×1000 PNG 成功，Noto Sans SC 加载与 computed font-family 已观察。prepare 不是认证成功或视觉终审；原始准备报告、EOF 失败和新版安全观察回执分别保存，没有覆盖历史。
+- 父级已核验委派原始脚本/回执/PNG 的 SHA、PNG 尺寸及 prepare 自有端口关闭；保留原脚本快照，并以 `PARENT-CAPTURE-TOOL-OVERLAY.json` 关联父级补充后的采集器与实际新版准备回执。补充只涉及截图隐文本但保留容器颜色、明确 stdin 凭据来源、安全字体/几何/完整原值布尔 metadata，不改变生产或业务源码。
+- 本地不回显输入已真正启动，会话 `proc_4f508af6871b`。`CONTROLLER-STATE.json` 读回 `WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`，当前任务自有 renderer 静态身份验证为 true，候选 `index-rdR7KHcm.js`。只等待用户在 `local-hidden-input.py` 本地终端输入后回车；当时尚未取得令牌、执行认证七图矩阵或宣称 PASS，Esc 可取消。
+- 安全恢复回执：`BACKEND-RESTORED.json`。后台输出仅重定向到本地 private 日志，不读取或交付原始日志；服务不启用每分钟心跳通知，仅保留退出通知，避免重复运行状态回复。
+
+### 可见输入窗口及当前构建认证采集（2026-10-15）
+
+- 用户表示找不到后台输入入口后，先以 Esc 取消原后台等待进程，确认 exit 130 且未提交令牌；桌面 pane 工具不可用时没有要求用户继续寻找文件，而是直接启动任务自有 Windows 可见控制台 `Collector - Token Input (Hidden)`。原生 `msvcrt.getwch` 不回显，不使用可回显降级，也不从既存存储读取秘密；额外检测采集子进程结束以避免输入窗口过期后仍永久等待。
+- 可见窗口 launcher 会话 `proc_a9fb788a64dc` 实际正常 exit 0，控制器状态为 CAPTURE_FINISHED；其采集时记录 native console visible=true。launcher 进程号与控制器自报进程号分别留在原始安全记录，不把不同 PID 当作同一进程或推断未保留的父子关系。完成依据为以下原始认证回执/请求/PNG，而不是窗口打开或退出码单独证明。
+- 本次新构建真实认证回执 `authenticated-dzZ1y2/receipt.json`，SHA-256 `06f773552f244df2ae4ca6e036aecb06b0d444322be76eafc5e99a837df596bc`，状态 CAPTURED_PIXEL_REVIEW_PENDING。标准 appStore→configureHttp→Axios→同源临时转发链的 capabilities、配置清单、全设备 runtime、protocols 四个原 GET 全部 HTTP 200，x-collector-token 只记录 presence=true，不保存值；无越界/非GET请求或模拟响应。
+- 当前 renderer 实际读取 31 台设备；7 张原生 PNG 包含1600×1000、1280×800、390×844的顶部/登记册滚动末端及390帮助展开底部。父级逐张验证原路径、SHA-256、PNG尺寸和字节数，底部三图最后设备与操作几何完整可见；各图 Noto loaded、完整名称/ID DOM-title 对应为 true，协议/周期横溢计数均 0，页面级横向溢出 0，console/page errors 0。
+- 首卡位置/高度的真实测量：1600 从 y284.1/高394.7 变为 y242.4/高316.8；1280 从 y271.1/高394.7 变为 y241.4/高316.8；390 从 y529.2/高418.7 变为 y358.6/高334.8。三种首屏均实际包含首卡连接、采集健康和操作；这是几何证据，不替代逐图像素签收。
+- 采集仅执行原 GET、调整任务自有视口/内部滚动和打开本轮非敏感帮助 summary；不选设备、不改筛选、不打开令牌 details 或执行业务命令。潜在敏感 notice/error/JSON/密码/URL-fallback 只在截图时隐藏正文且保留容器颜色与几何，不签被隐文字的可读性；没有读回令牌。
+- 当前源与61项 renderer 资源再次对冻结身份核对无漂移。原生截图传输到独立 Frontend Design 终审 `deleg_7be3bdaf`：桌面4候选+2批准图、窄屏3候选+1批准图，合计7个不同候选与3个批准稿；两个子任务只签各自实际附图和相关条件；随后返回的范围限定裁决见下节，派发不等于通过。
+- 父级保留 `AUTHENTICATED-CAPTURE-READBACK.json`、`POST-CAPTURE-CLOSURE.json`、可见输入 owner/state及原始回执。任务自有 incognito context/browser/profile/proxy已清理，原本次代理/debug端口读回关闭；9090入口仍200，health仍DOWN。新 renderer 仍未部署，未重新打包/提交/推送。
+
+### 最终独立像素裁决与父级核证（2026-10-15）
+
+- `deleg_7be3bdaf` 两个独立 Frontend Design 审核均已返回：桌面1600×1000/1280×800顶部和滚动底部4个候选可见范围 PASS，390×844顶部/底部/帮助展开3个候选可见范围 PASS；分别对各自F01–F07可见条件给出PASS，未发现新增可确证must-fix。两个任务分别实际读取6图与4图，包括3个批准稿，未把DOM/几何声明当作像素观察。
+- 父级读取两份完整Markdown/JSON和可用委派工具轨迹，重算7个唯一候选、3个批准稿的SHA/IHDR、实际所述整幅观察矩形和具体逐图观察；原生附图通道未给analysis句柄/传输缩放，仍记unavailable。`FINAL-REVIEW-READBACK.json`实际返回SCOPED_VISIBLE_PIXEL_PASS、errors空；两份历史完整问题对象与基线逐字一致，6个原id/priority/acceptance/status未改写，未将整条旧验收矩阵冒称全部闭合。
+- 6项历史问题在本轮已观察呈现条件中的修正均获得相应桌面/窄屏支持；P1-04的wide条件由桌面审核支持，P1-01/P2-02的390条件由窄屏支持，多视口项合并已观察的视口支持，不以单批未观察替代另一批。被隐藏的运行提示正文、全部31设备中间滚动位置、键盘/focus/hover、其他route/table/menu/drawer/editor、业务写入和用户接受仍未签。
+- 末次父级核对15个冻结源hash无漂移、renderer与Boot静态资源61项完整路径/字节继续一致；两个Vue业务script及原绑定保护结论不变。源码未在末次5项允许门禁后继续修改，只追加安全证据及进度文档；无测试、依赖变化或规则放宽。
+- 最后运行读回为 `2026-10-15T10:10:05+08:00`：9090实际listener仍PID29056，入口HTTP200且原字节匹配允许的旧JAR，整体健康仍DOWN（application/cache UP、collectionService DOWN、connections UNKNOWN）。本轮新renderer没有部署，旧包恢复不改变此边界；任务自有采集proxy/debug端口已关闭、incognito上下文/浏览器/profile已销毁，临时认证值未保存。
+- 交付采用本轮最终7图、范围限定审核报告、安全身份/门禁/运行记录，不混入旧图或私有日志/凭据；图像可见范围PASS与未覆盖条件分开。当前设备页呈现修正轮次结束，不自动进入新包部署、commit/push或其他页面阶段。
+
+### 当前交付与范围边界
+
+- 现有已验证 JAR 的9090恢复、一次本地不回显认证采集及7图可见范围独立复审均已完成；当前为READY_FOR_USER_VISUAL_REVIEW，不要求用户重复输入。新包打包/部署和commit/push不在当前授权中，保持未执行。
+- 三个视口的顶部/末端与说明详情新图、安全几何及独立像素复审已完成；只签实际所附7图可见条件，不将几何、历史截图、源码声明或静态门禁当作像素PASS。邻页、键盘/hover、菜单及未授权或隐藏内容不因本次7图而自动通过。
+- 本轮最终交付已保存到 `C:/Users/wangbin/AppData/Local/hermes/artifacts/device-fidelity-20261015/index-rdR7KHcm/`，包含7张当前PNG、`REPORT.md`、两份独立审核的JSON/Markdown及安全身份/源保护/运行/核证记录；仅文本交付副本对2处协议连接URI做脱敏，原始/交付SHA及次数分开保留，未改原始审核证据。
+- 已生成并重新打开校验 `C:/Users/wangbin/AppData/Local/hermes/artifacts/device-fidelity-20261015/device-fidelity-index-rdR7KHcm.zip`：18个哈希载荷文件加1个manifest，共19成员，精确成员集合及全部SHA读回一致。ZIP为848846 bytes，SHA-256 `9931a7db29a82a56734ef5f37623369dd34584ad9f89cab095906c1e0571c861`；`ARCHIVE-RECEIPT.json`保留在ZIP外，避免自引用。私有日志、凭据、profile、采集脚本和旧图没有进入交付包。
+- 原始安全证据在 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/device-fidelity-20261015/`；历史PNG/report及冻结身份没有覆盖，临时证据不纳入Git。持久化交付包不依赖scratch保留期。
+- 未 commit/push、执行业务写入或控制设备；既有 `.gitignore` 修改和 `.hermes.md` 保留。不新增 Phase 18，以下 2026-10-14 的 DEPLOYED_9090 等说明均为此前执行窗口历史。
+
+
 ## 最新范围：设备管理保真修正、Noto Sans SC 与认证 Header 只读复核（2026-10-14）
 
 用户明确要求“设备管理页面没有按照设计图实现，需要监工修改；字体改成 Noto Sans SC；认证失败时通过标准请求 Header 读取真实设备”。当前状态为 `IMPLEMENTED / AUTHENTICATED_READONLY_RECAPTURED / DEPLOYED_9090 / CONDITIONAL_PIXEL_REVIEW_PENDING`。本轮沿用已批准的 `designs/collector-workbench/`，只修前端呈现层和既有 HTTP Header 的大小写表达，保持真实 API、Store、Schema、请求归属、生命周期、默认模式和业务写入边界；不创建、修改或运行测试，不伪造设备数据或认证成功。Header 由浏览器 Axios 的当前令牌和 Electron 主进程凭据存储统一注入为 `x-collector-token: [REDACTED]`，不把凭据硬编码到源码。认证后的真实 renderer 只读回读得到 31 台设备；独立像素复审指出的操作层级、配置点位摘要和标题上下文已在最新候选中修正，但当前候选的独立视觉复审调用因上游栈溢出失败，因此不宣称最终无条件视觉 PASS。
