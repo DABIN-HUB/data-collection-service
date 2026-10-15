@@ -517,6 +517,14 @@ public class Iec104Collector extends AbstractIce104Collector {
         status.put("requestTimeout", timeout);
         status.put("ioaFieldLength", ioaFieldLength);
         status.put("ioaEncodingMode", ioaEncodingMode.name());
+        status.put("generalInterrogationMode", readMode);
+        status.put("generalInterrogationOnConnect", generalInterrogationOnConnect);
+        status.put("generalInterrogationInterval", generalInterrogationInterval);
+        status.put("generalInterrogationQualifier", generalInterrogationQualifier);
+        status.put("singleInterrogationOnReadMiss", singleInterrogationOnReadMiss);
+        status.put("cacheTtl", cacheTtl);
+        status.put("readCommandEnabled", !isGeneralInterrogationOnly()
+                && isSingleInterrogationOnReadMiss());
         status.put(CommonMapKeys.CONNECTED, isConnected());
         status.put("dataTransferStopped", dataTransferStopped);
         status.put(CommonMapKeys.CONNECTION_STATUS, connectionStatus);
@@ -734,7 +742,8 @@ public class Iec104Collector extends AbstractIce104Collector {
     private boolean maybeTriggerSingleInterrogation(DataPoint point,
                                                     Iec104Address address,
                                                     Set<InterrogationKey> triggered) {
-        if (iec104Config == null || !iec104Config.isSingleInterrogationOnReadMiss()) {
+        if (!isGeneralInterrogationOnly()
+                && !isSingleInterrogationOnReadMiss()) {
             return false;
         }
         if (address == null) {
@@ -742,6 +751,9 @@ public class Iec104Collector extends AbstractIce104Collector {
         }
 
         Integer qualifier = resolveQualifier(point);
+        if (qualifier == null && isGeneralInterrogationOnly()) {
+            qualifier = getGeneralInterrogationQualifier();
+        }
         if (qualifier == null) {
             return false;
         }

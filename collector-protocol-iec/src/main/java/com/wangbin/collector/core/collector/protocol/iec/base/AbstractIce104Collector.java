@@ -37,6 +37,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected Iec104IoaEncodingMode ioaEncodingMode = Iec104IoaEncodingMode.STANDARD;
     protected boolean timeTag = true;
     protected CollectorProperties.Iec104Config iec104Config;
+    /** 当前设备的读取策略，AUTO 保持历史行为。 */
+    protected String readMode = "AUTO";
+    protected boolean generalInterrogationOnConnect = true;
+    protected boolean singleInterrogationOnReadMiss = true;
+    protected long generalInterrogationInterval;
+    protected long cacheTtl;
+    protected int generalInterrogationQualifier = 20;
 
     protected volatile boolean dataTransferStopped = true;
 
@@ -81,6 +88,18 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 : new CollectorProperties.Iec104Config();
 
         DeviceConnection connectionConfig = requireConnectionConfig();
+        this.readMode = resolveReadMode(connectionConfig.getString("generalInterrogationMode", "AUTO"));
+        this.generalInterrogationOnConnect = Boolean.TRUE.equals(connectionConfig.getBool(
+                "generalInterrogationOnConnect", iec104Config.isGeneralInterrogationOnConnect()));
+        this.singleInterrogationOnReadMiss = Boolean.TRUE.equals(connectionConfig.getBool(
+                "singleInterrogationOnReadMiss", iec104Config.isSingleInterrogationOnReadMiss()));
+        this.cacheTtl = resolveLongConfig(connectionConfig, "cacheTtl", iec104Config.getCacheTtl());
+        this.generalInterrogationQualifier = resolveIntConfig(connectionConfig,
+                "generalInterrogationQualifier", 20);
+        long configuredInterrogationInterval = resolveLongConfig(connectionConfig,
+                "generalInterrogationInterval", iec104Config.getGeneralInterrogationInterval());
+        this.generalInterrogationInterval = resolveInterrogationInterval(
+                configuredInterrogationInterval, cacheTtl);
         this.host = connectionConfig.getHost() != null && !connectionConfig.getHost().isBlank()
                 ? connectionConfig.getHost() : deviceInfo.getIpAddress();
         this.port = connectionConfig.getPort() != null ? connectionConfig.getPort()
@@ -316,7 +335,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 解析或转换业务数据。
      */
     private Object resolveCacheValue(int commonAddress, Integer typeId, int ioa, CacheEntry entry) {
-        long ttl = iec104Config != null ? iec104Config.getCacheTtl() : 0;
+        long ttl = cacheTtl;
         if (ttl <= 0) {
             return entry.value();
         }
@@ -547,9 +566,47 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 执行当前业务逻辑。
      */
     protected void maybeTriggerGeneralInterrogation(String reason) {
-        if (iec104Config != null && iec104Config.isGeneralInterrogationOnConnect()) {
-            triggerInterrogation(commonAddress, 20, reason);
+        if (generalInterrogationOnConnect) {
+            triggerInterrogation(commonAddress, generalInterrogationQualifier, reason);
         }
+    }
+
+    protected boolean isGeneralInterrogationOnly() {
+        return "GENERAL_INTERROGATION".equals(readMode);
+    }
+
+    protected boolean isSingleInterrogationOnReadMiss() {
+        return singleInterrogationOnReadMiss;
+    }
+
+    protected int getGeneralInterrogationQualifier() {
+        return generalInterrogationQualifier;
+    }
+
+    private String resolveReadMode(String raw) {
+        String normalized = raw == null || raw.isBlank() ? "AUTO" : raw.trim().toUpperCase(Locale.ROOT);
+        if (Set.of("AUTO", "READ_COMMAND", "GENERAL_INTERROGATION", "SPONTANEOUS").contains(normalized)) {
+            return normalized;
+        }
+        throw new IllegalArgumentException("Unsupported IEC104 generalInterrogationMode: " + raw);
+    }
+
+    private long resolveLongConfig(DeviceConnection connectionConfig, String key, long defaultValue) {
+        Long value = connectionConfig.getLong(key, defaultValue);
+        return value != null ? value : defaultValue;
+    }
+
+    private int resolveIntConfig(DeviceConnection connectionConfig, String key, int defaultValue) {
+        Integer value = connectionConfig.getInt(key, defaultValue);
+        return value != null ? value : defaultValue;
+    }
+
+    private long resolveInterrogationInterval(long configuredInterval, long effectiveCacheTtl) {
+        if (!isGeneralInterrogationOnly() || effectiveCacheTtl <= 0) {
+            return configuredInterval;
+        }
+        long safeInterval = Math.max(1000L, effectiveCacheTtl / 2L);
+        return configuredInterval <= 0 ? safeInterval : Math.min(configuredInterval, safeInterval);
     }
 
     /**
@@ -559,7 +616,7 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         if (iec104Config == null || interrogationScheduler == null) {
             return;
         }
-        long interval = iec104Config.getGeneralInterrogationInterval();
+        long interval = generalInterrogationInterval;
         if (interval <= 0) {
             return;
         }
