@@ -1,0 +1,63 @@
+services:
+  sim-opcua:
+    container_name: sim-opcua
+    image: mcr.microsoft.com/iotedge/opc-plc@sha256:fa926a6fc4a58d77abe034c8483d91e91aa768c5a50ea3f5d86e45b66d955486
+    command:
+      - --pn=14841
+      - --ph=0.0.0.0
+      - --autoaccept
+      - --ut
+      - --dua
+      - --dca
+      - --sph
+      - --sn=4
+      - --sr=1
+      - --st=double
+      - --fn=4
+      - --fr=1
+      - --ft=uint
+      - --gn=4
+    ports:
+      - "127.0.0.1:14841:14841/tcp"
+      - "127.0.0.1:14842:8080/tcp"
+    restart: "no"
+    networks:
+      - phase6-isolated
+
+  sim-mc:
+    container_name: sim-mc
+    build:
+      context: ./mc
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:15001:15001/tcp"
+    restart: "no"
+    networks:
+      - phase6-isolated
+
+  sim-eip:
+    container_name: sim-eip
+    build:
+      context: ./eip
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:14423:44818/tcp"
+    restart: "no"
+    networks:
+      - phase6-isolated
+
+  sim-bacnet:
+    container_name: sim-bacnet
+    build:
+      context: ./bacnet
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:14782:47808/udp"
+    restart: "no"
+    networks:
+      - phase6-isolated
+
+networks:
+  phase6-isolated:
+    name: phase6-protocol-isolated
+    driver: bridge
