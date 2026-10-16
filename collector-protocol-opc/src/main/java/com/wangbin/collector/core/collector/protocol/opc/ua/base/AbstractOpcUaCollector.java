@@ -38,8 +38,7 @@ import java.util.function.Consumer;
 @Slf4j
 public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
-    private ConnectionAdapter<OpcUaClient> connectionAdapter;
-    protected OpcUaClient client;
+    private volatile ConnectionAdapter<OpcUaClient> connectionAdapter;
     protected String endpointUrl;
     protected String securityPolicy;
     protected String username;
@@ -66,7 +65,6 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
                 "OPC UA");
 
         this.connectionAdapter = opcUaAdapter;
-        this.client = opcUaAdapter.getClient();
         reportProtocolReady();
 
         log.info("OPC UA连接建立成功: end点位={} securityPolicy={}", endpointUrl, securityPolicy);
@@ -79,8 +77,24 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     protected void doDisconnect() {
         removeManagedConnection("OPC UA");
         connectionAdapter = null;
-        client = null;
         subscriptions.clear();
+    }
+
+    /** 每次操作捕获受管适配器的当前客户端，不能跨重连缓存已经关闭的会话。 */
+    protected OpcUaClient requireCurrentClient() {
+        ConnectionAdapter<OpcUaClient> adapter = connectionAdapter;
+        OpcUaClient current = adapter != null ? adapter.getClient() : null;
+        if (adapter == null || !adapter.isConnected() || current == null
+                || connectionManager.getConnection(adapter.getDeviceId()) != adapter) {
+            throw new IllegalStateException("OPC UA连接尚未就绪或已退役");
+        }
+        return current;
+    }
+
+    protected boolean hasCurrentClient() {
+        ConnectionAdapter<OpcUaClient> adapter = connectionAdapter;
+        return adapter != null && adapter.isConnected() && adapter.getClient() != null
+                && connectionManager.getConnection(adapter.getDeviceId()) == adapter;
     }
 
     /**
@@ -99,7 +113,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      * 查询并返回业务数据。
      */
     protected Object readValue(OpcUaAddress address, NodeId nodeId) throws Exception {
-        DataValue value = client.readValue(0, TimestampsToReturn.Both, nodeId);
+        DataValue value = requireCurrentClient().readValue(0, TimestampsToReturn.Both, nodeId);
         if (!isGoodRead(value)) {
             throw new IllegalStateException("OPC UA 读取失败: nodeId=" + nodeId + ", status=" + readStatus(value));
         }
@@ -134,7 +148,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
     }
 
     protected List<DataValue> readValues(List<NodeId> nodeIds) throws Exception {
-        return client.readValues(0, TimestampsToReturn.Both, nodeIds);
+        return requireCurrentClient().readValues(0, TimestampsToReturn.Both, nodeIds);
     }
 
     protected Map<String, Object> readValues(List<DataPoint> points, List<NodeId> nodeIds) throws Exception {
@@ -167,7 +181,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
 
     protected boolean writeValue(NodeId nodeId, OpcUaDataType dataType, Object rawValue) throws Exception {
         Variant variant = OpcUaAddressParser.toVariant(rawValue, dataType);
-        List<StatusCode> results = client.writeValues(List.of(nodeId), List.of(DataValue.valueOnly(variant)));
+        List<StatusCode> results = requireCurrentClient().writeValues(List.of(nodeId), List.of(DataValue.valueOnly(variant)));
         return !results.isEmpty() && results.get(0).isGood();
     }
 
@@ -175,7 +189,7 @@ public abstract class AbstractOpcUaCollector extends ConnectionBackedCollector {
      * 创建并返回业务对象。
      */
     protected OpcUaSubscription createSubscription() throws Exception {
-        OpcUaSubscription subscription = new OpcUaSubscription(client, subscriptionInterval);
+        OpcUaSubscription subscription = new OpcUaSubscription(requireCurrentClient(), subscriptionInterval);
         subscription.create();
         String key = subscription.getSubscriptionId()
                 .map(UInteger::toString)
