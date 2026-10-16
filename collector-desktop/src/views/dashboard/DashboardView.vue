@@ -21,32 +21,57 @@
       <div v-else class="dashboard-loading" role="status">正在刷新总览，各项指标按独立数据源展示。</div>
     </div>
 
-    <div class="dashboard-metric-rail" aria-label="运行主摘要">
+    <div class="dashboard-metric-rail" aria-label="设备与点位主摘要">
       <article class="dashboard-metric">
-        <span>设备运行</span>
-        <strong>{{ deviceState.lastSuccessAt === null ? '未知' : onlineCount }}<small v-if="deviceState.lastSuccessAt !== null">/ {{ deviceCount }} 在线</small></strong>
-        <div v-if="deviceState.lastSuccessAt !== null && deviceCount > 0" class="dashboard-health-bar" aria-hidden="true"><i v-for="segment in deviceHealthSegments" :key="segment.status" :class="segment.tone" :style="{ flexGrow: segment.count }"></i></div>
-        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : devicesStale ? '刷新失败 · 上次设备数据' : '来自设备运行快照' }}</p>
+        <span>设备总数</span><strong>{{ deviceState.lastSuccessAt === null ? '未知' : deviceCount }}</strong>
+        <p>{{ devicesStale ? '上次设备清单' : '设备配置清单' }}</p>
       </article>
       <article class="dashboard-metric">
-        <span>已配置点位</span>
-        <strong>{{ configuredPointsKnown ? totalPointCount : '未知' }}<small v-if="configuredPointsKnown">个</small></strong>
-        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : !configuredPointsKnown ? '设备清单缺少点位数量' : devicesStale ? '刷新失败 · 上次设备清单' : '来自设备配置清单' }}</p>
+        <span>在线</span><strong>{{ deviceState.lastSuccessAt === null ? '未知' : onlineCount }}</strong>
+        <p>{{ devicesStale ? '上次设备状态' : '设备运行状态' }}</p>
       </article>
       <article class="dashboard-metric">
-        <span>未确认告警</span>
-        <strong>未知</strong>
-        <p>当前来源仅含最近告警，不能确定未确认总数</p>
-        <RouterLink class="dashboard-text-link" to="/alarm">查看告警与处理记录</RouterLink>
+        <span>采集异常</span><strong class="dashboard-warning">{{ deviceState.lastSuccessAt === null ? '未知' : deviceStore.errorCount }}</strong>
+        <p>设备异常状态，不是未确认告警数</p>
       </article>
       <article class="dashboard-metric">
-        <span>上报待处理</span>
-        <strong :class="{ 'dashboard-warning': outboxDisplay.pending !== null && outboxDisplay.pending > 0 }">{{ outboxDisplay.pending ?? '未知' }}<small v-if="outboxDisplay.pending !== null">条待发送</small></strong>
-        <p>{{ outboxDisplay.note }}</p>
+        <span>离线</span><strong>{{ deviceState.lastSuccessAt === null ? '未知' : deviceStore.offlineCount }}</strong>
+        <p>设备状态，不代表服务健康</p>
+      </article>
+      <article class="dashboard-metric">
+        <span>点位数</span><strong>{{ configuredPointsKnown ? totalPointCount : '未知' }}</strong>
+        <p>{{ configuredPointsKnown ? '设备配置清单' : '配置数量尚未取得' }}</p>
       </article>
     </div>
 
+    <div class="dashboard-workspace">
     <div class="home-dashboard-row home-dashboard-primary">
+      <section class="home-panel home-panel-attention">
+        <div class="home-panel-head">
+          <h2>优先关注</h2>
+          <span class="dashboard-badge" :class="{ 'dashboard-warning': riskDevices.length > 0 || devicesStale }">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '数据待确认' : riskDeviceBadge }}</span>
+        </div>
+        <div class="home-risk-list" tabindex="0" role="region" aria-label="设备异常风险，可独立滚动">
+          <div v-if="riskDevices.length === 0" class="dashboard-empty">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '正在读取设备状态' : riskDeviceEmptyText }}</div>
+          <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
+            <i class="dashboard-dot" :class="riskToneClass(device)" aria-hidden="true"></i>
+            <div>
+              <strong :title="device.displayName || device.normalizedId">{{ device.displayName || device.normalizedId }}</strong>
+              <p>{{ riskDescription(device) }}</p>
+            </div>
+            <span class="dashboard-badge">{{ riskToneClass(device) === 'is-error' ? '异常' : '离线' }}</span>
+          </div>
+        </div>
+        <div class="home-panel-head"><h2>最近事件</h2><span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span></div>
+        <div class="home-event-list" tabindex="0" role="region" aria-label="最近告警，可独立滚动">
+          <div v-if="recentAlarms.length === 0" class="dashboard-empty">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '正在读取最近告警' : recentAlarmEmptyText }}</div>
+          <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
+            <b class="home-event-level">{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
+            <div class="home-event-main"><strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong><span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span></div>
+            <time>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</time>
+          </div>
+        </div>
+      </section>
       <section class="home-panel home-panel-devices">
         <div class="home-panel-head">
           <h2>设备运行快照</h2>
@@ -65,28 +90,41 @@
           </div>
         </div>
       </section>
-      <section class="home-panel home-panel-attention">
-        <div class="home-panel-head">
-          <h2>优先关注</h2>
-          <span class="dashboard-badge" :class="{ 'dashboard-warning': riskDevices.length > 0 || devicesStale }">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '数据待确认' : riskDeviceBadge }}</span>
-        </div>
-        <div class="home-risk-list" tabindex="0" role="region" aria-label="设备异常风险，可独立滚动">
-          <div v-if="riskDevices.length === 0" class="dashboard-empty">{{ deviceState.lastSuccessAt === null && !devicesUnavailable ? '正在读取设备状态' : riskDeviceEmptyText }}</div>
-          <div v-for="device in riskDevices" :key="device.normalizedId" class="home-risk-row" :class="riskToneClass(device)">
-            <i class="dashboard-dot" :class="riskToneClass(device)" aria-hidden="true"></i>
-            <div>
-              <strong :title="device.displayName || device.normalizedId">{{ device.displayName || device.normalizedId }}</strong>
-              <p>{{ riskDescription(device) }}</p>
-            </div>
-            <span class="dashboard-badge">{{ riskToneClass(device) === 'is-error' ? '异常' : '离线' }}</span>
-          </div>
-        </div>
-      </section>
     </div>
 
     <div class="home-dashboard-row home-dashboard-observability">
-      <section class="home-panel home-panel-report">
-        <div class="home-panel-head"><h2>数据上报链路</h2><RouterLink class="dashboard-text-link" to="/cloud">链路详情</RouterLink></div>
+      <section class="home-panel home-panel-sources">
+        <div class="home-panel-head"><h2>来源新鲜度</h2><span>各来源独立成功时间</span></div>
+        <div class="dashboard-source-list">
+          <div v-for="(source, key) in dashboardMetricStates" :key="key" class="dashboard-source-row">
+            <div><strong>{{ sourceLabel(key) }}</strong><small>{{ source.lastSuccessAt === null ? '尚无成功读取' : `最后成功 ${new Date(source.lastSuccessAt).toLocaleTimeString()}` }}</small></div>
+            <span class="dashboard-badge" :class="{ 'dashboard-warning': source.status === 'error' }">{{ source.status === 'success' ? '已读取' : source.status === 'loading' ? '读取中' : source.status === 'error' ? '读取失败' : '未读取' }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-panel home-panel-runtime">
+        <div class="home-panel-head"><h2>系统资源与线程池</h2><span>{{ runtimeState }}</span></div>
+        <div class="resource-rows">
+          <div v-for="gauge in resourceDisplayRows.slice(0, 2)" :key="gauge.label" class="resource-row">
+            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
+            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
+          </div>
+          <div class="resource-row"><div><span>采集线程池</span><strong>{{ collectionPoolDisplay }}</strong></div><div class="resource-load-track is-unknown" aria-label="采集线程池利用率未知"></div></div>
+          <div class="resource-row"><div><span>遥测队列</span><strong>未知</strong></div><div class="resource-load-track is-unknown" aria-label="遥测队列指标未知"></div></div>
+          <div v-for="gauge in resourceDisplayRows.slice(2)" :key="gauge.label" class="resource-row resource-row-secondary">
+            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
+            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
+          </div>
+        </div>
+        <div class="resource-runtime-summary" :title="resourceSummaryDisplay.title">
+          <div><span>活跃线程（汇总）</span><strong>{{ resourceSummaryDisplay.activeThreads }} / {{ resourceSummaryDisplay.maxThreads }}</strong><span>队列积压（汇总）</span><strong :class="{ 'dashboard-warning': resourceSummaryDisplay.queuedTasks !== '-' && Number(resourceSummaryDisplay.queuedTasks) > 0 }">{{ resourceSummaryDisplay.queuedTasks }}</strong></div>
+          <div class="resource-load-track" :class="{ 'is-unknown': resourceSummaryDisplay.maxThreads === '-' }"><i v-if="resourceSummaryDisplay.maxThreads !== '-'" :style="{ width: resourceSummaryDisplay.threadUsage }"></i></div>
+        </div>
+      </section>
+
+      <details class="home-panel home-panel-report dashboard-technical-details">
+        <summary>技术拓扑与上报链路 <span>{{ reportState }}</span></summary>
         <div class="dashboard-pipeline" role="list" aria-label="设备采集、遥测管线、可靠发件箱、云端确认">
           <template v-for="(stage, index) in pipelineStages" :key="stage.label">
             <span v-if="index" class="dashboard-pipeline-arrow" aria-hidden="true">→</span>
@@ -102,6 +140,7 @@
           </template>
         </div>
         <p class="dashboard-panel-note">发送成功、云端 ACK 与影子提交分别推进，不能混为一个“成功”。</p>
+        <RouterLink class="dashboard-technical-link" to="/cloud">查看云链路详情</RouterLink>
         <details class="dashboard-topology-details">
           <summary>技术拓扑与连接指标 <span>{{ reportState }}</span></summary>
           <div class="topology-flow" aria-label="数据采集与上报技术拓扑">
@@ -125,42 +164,36 @@
         </div>
           <div class="topology-foot"><span><i class="dashboard-dot is-ok"></i>状态指标已加载</span><span><i class="dashboard-dot is-warn"></i>风险 / 上次数据</span><span><i class="dashboard-dot is-muted"></i>未知</span></div>
         </details>
-      </section>
-      <section class="home-panel home-panel-runtime">
-        <div class="home-panel-head"><h2>系统资源与线程池</h2><span>{{ runtimeState }}</span></div>
-        <div class="resource-rows">
-          <div v-for="gauge in resourceDisplayRows.slice(0, 2)" :key="gauge.label" class="resource-row">
-            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
-            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
-          </div>
-          <div class="resource-row"><div><span>采集线程池</span><strong>{{ collectionPoolDisplay }}</strong></div><div class="resource-load-track is-unknown" aria-label="采集线程池利用率未知"></div></div>
-          <div class="resource-row"><div><span>遥测队列</span><strong>未知</strong></div><div class="resource-load-track is-unknown" aria-label="遥测队列指标未知"></div></div>
-          <div v-for="gauge in resourceDisplayRows.slice(2)" :key="gauge.label" class="resource-row resource-row-secondary">
-            <div><span>{{ gauge.label }}</span><strong>{{ gauge.value }}</strong></div>
-            <div class="resource-load-track" :class="{ 'is-unknown': !gauge.known }" :aria-label="gauge.known ? `${gauge.label} ${gauge.value}` : `${gauge.label} 未知`"><i v-if="gauge.known" :style="{ width: `calc(${gauge.degrees} / 360 * 100%)` }"></i></div>
-          </div>
-        </div>
-        <div class="resource-runtime-summary" :title="resourceSummaryDisplay.title">
-          <div><span>活跃线程（汇总）</span><strong>{{ resourceSummaryDisplay.activeThreads }} / {{ resourceSummaryDisplay.maxThreads }}</strong><span>队列积压（汇总）</span><strong :class="{ 'dashboard-warning': resourceSummaryDisplay.queuedTasks !== '-' && Number(resourceSummaryDisplay.queuedTasks) > 0 }">{{ resourceSummaryDisplay.queuedTasks }}</strong></div>
-          <div class="resource-load-track" :class="{ 'is-unknown': resourceSummaryDisplay.maxThreads === '-' }"><i v-if="resourceSummaryDisplay.maxThreads !== '-'" :style="{ width: resourceSummaryDisplay.threadUsage }"></i></div>
-        </div>
-      </section>
+      </details>
+    </div>
     </div>
 
-    <section class="home-panel home-panel-events">
-      <div class="home-panel-head"><h2>全局告警最近记录</h2><span class="dashboard-badge" :class="{ 'dashboard-warning': alarmsStale }">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '数据待确认' : recentAlarmBadge }}</span></div>
-      <div class="home-event-list" tabindex="0" role="region" aria-label="最近告警，可独立滚动">
-        <div v-if="recentAlarms.length === 0" class="dashboard-empty">{{ alarmState.lastSuccessAt === null && !alarmsUnavailable ? '正在读取最近告警' : recentAlarmEmptyText }}</div>
-        <div v-for="(alarm, index) in recentAlarms" :key="alarmListKey(alarm, index)" class="home-event-row" :class="alarmToneClass(alarm)">
-          <b class="home-event-level">{{ alarmLevelText(alarm.level || alarm.alarmType) }}</b>
-          <div class="home-event-main"><strong :title="alarmMessage(alarm)">{{ alarmMessage(alarm) }}</strong><span>{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointName || alarm.pointCode || '-' }}</span></div>
-          <time>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</time>
-        </div>
-      </div>
-    </section>
-
-    <section class="home-panel dashboard-secondary-metrics" aria-label="补充运行指标">
-      <div class="home-panel-head"><h2>补充运行指标</h2><span>独立来源，不代替主摘要</span></div>
+    <details class="home-panel dashboard-secondary-metrics" aria-label="补充运行指标">
+      <summary>补充运行指标 <span>独立来源，不代替主摘要</span></summary>
+    <div class="dashboard-auxiliary-rail" aria-label="其他运行摘要">
+      <article class="dashboard-metric">
+        <span>设备运行</span>
+        <strong>{{ deviceState.lastSuccessAt === null ? '未知' : onlineCount }}<small v-if="deviceState.lastSuccessAt !== null">/ {{ deviceCount }} 在线</small></strong>
+        <div v-if="deviceState.lastSuccessAt !== null && deviceCount > 0" class="dashboard-health-bar" aria-hidden="true"><i v-for="segment in deviceHealthSegments" :key="segment.status" :class="segment.tone" :style="{ flexGrow: segment.count }"></i></div>
+        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : devicesStale ? '刷新失败 · 上次设备数据' : '来自设备运行快照' }}</p>
+      </article>
+      <article class="dashboard-metric">
+        <span>已配置点位</span>
+        <strong>{{ configuredPointsKnown ? totalPointCount : '未知' }}<small v-if="configuredPointsKnown">个</small></strong>
+        <p>{{ devicesUnavailable ? '设备数据暂不可用' : deviceState.lastSuccessAt === null ? '设备数据待确认' : !configuredPointsKnown ? '设备清单缺少点位数量' : devicesStale ? '刷新失败 · 上次设备清单' : '来自设备配置清单' }}</p>
+      </article>
+      <article class="dashboard-metric">
+        <span>未确认告警</span>
+        <strong>未知</strong>
+        <p>当前来源仅含最近告警，不能确定未确认总数</p>
+        <RouterLink class="dashboard-text-link" to="/alarm">查看告警与处理记录</RouterLink>
+      </article>
+      <article class="dashboard-metric">
+        <span>上报待处理</span>
+        <strong :class="{ 'dashboard-warning': outboxDisplay.pending !== null && outboxDisplay.pending > 0 }">{{ outboxDisplay.pending ?? '未知' }}<small v-if="outboxDisplay.pending !== null">条待发送</small></strong>
+        <p>{{ outboxDisplay.note }}</p>
+      </article>
+    </div>
       <div class="dashboard-secondary-rail">
         <article v-for="card in secondaryOverviewCards" :key="card.label" class="dashboard-metric" :class="{ 'dashboard-link-metric': card.label === '云上报链路' }">
           <span>{{ card.label }}</span>
@@ -169,7 +202,7 @@
           <p v-else>{{ card.subtext }}</p>
         </article>
       </div>
-    </section>
+    </details>
 
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />
   </section>

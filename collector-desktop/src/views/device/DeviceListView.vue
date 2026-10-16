@@ -19,6 +19,12 @@
       </div>
     </header>
 
+    <div class="device-summary" aria-label="设备汇总">
+      <div v-for="item in deviceSummaryItems" :key="item.label" class="device-summary-item">
+        <span>{{ item.label }}</span><strong>{{ item.value }}</strong>
+      </div>
+    </div>
+
     <div class="device-toolbar">
       <div class="device-filters">
         <label class="device-search">
@@ -47,12 +53,6 @@
           <button type="button" :class="{ active: deviceView === 'cards' }" aria-label="卡片视图" :aria-pressed="deviceView === 'cards'" @click="closeDeviceMenu(); deviceView = 'cards'"><Grid /></button>
           <button type="button" :class="{ active: deviceView === 'table' }" aria-label="表格视图" :aria-pressed="deviceView === 'table'" @click="closeDeviceMenu(); deviceView = 'table'"><List /></button>
         </div>
-      </div>
-    </div>
-
-    <div class="device-summary" aria-label="设备汇总">
-      <div v-for="item in deviceSummaryItems" :key="item.label" class="device-summary-item">
-        <span>{{ item.label }}</span><strong>{{ item.value }}</strong>
       </div>
     </div>
 
@@ -101,8 +101,11 @@
           <div class="device-cell device-connection" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-cell-label">连接与采集</span>
             <strong class="device-protocol-name">{{ device.displayProtocol || '-' }}</strong>
+            <details class="device-connection-details" :open="deviceView === 'table'">
+              <summary>连接与来源</summary>
             <span class="device-address device-mono" :title="deviceAddress(device)">{{ deviceAddress(device) }}</span>
             <div class="device-config-source">配置来源 <span>{{ isLocalDevice(device) ? '本地临时' : '远端同步' }}</span></div>
+            </details>
             <div class="device-configured-points">配置点位 <span class="device-mono">{{ typeof device.pointCount === 'number' && Number.isFinite(device.pointCount) && device.pointCount >= 0 ? device.pointCount : Array.isArray(device.points) ? device.points.length : '未知' }}</span></div>
             <div class="device-interval">采集周期 <span class="device-mono">{{ device.collectionInterval ?? '-' }}</span> ms</div>
           </div>
@@ -114,6 +117,8 @@
           <div class="device-cell device-quality" :role="deviceView === 'table' ? 'cell' : undefined">
             <span class="device-cell-label">采集健康 / 有效样本</span>
             <span class="device-health" :class="devicePresentation(device).healthTone"><i class="device-dot"></i>{{ devicePresentation(device).health }}</span>
+            <details class="device-sample-details" :open="deviceView === 'table'">
+              <summary>样本计数与时点</summary>
             <div class="device-counts">
               <span>有效 <b class="device-mono">{{ devicePresentation(device).good }}/{{ devicePresentation(device).total }}</b></span>
               <span>失败 <b class="device-mono">{{ devicePresentation(device).failed }}</b></span>
@@ -121,6 +126,7 @@
               <span>等待 <b class="device-mono">{{ devicePresentation(device).waiting }}</b></span>
             </div>
             <div class="device-last-valid">最近有效 <span class="device-mono">{{ devicePresentation(device).lastValid }}</span></div>
+            </details>
           </div>
           <div class="device-cell device-actions" :role="deviceView === 'table' ? 'cell' : undefined">
             <button type="button" class="device-button subtle-primary" @click.stop="openDeviceOperation(device, 'config')">配置</button>

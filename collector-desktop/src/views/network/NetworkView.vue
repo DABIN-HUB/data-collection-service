@@ -14,9 +14,11 @@
     </div>
 
     <div class="exact-page-body network-body">
+      <div class="network-workbench">
+      <div class="network-target-column">
       <section class="exact-surface network-toolbar" aria-labelledby="network-conditions-title">
         <div class="exact-surface-head network-panel-head">
-          <h2 id="network-conditions-title">检测条件</h2>
+          <h2 id="network-conditions-title">检测目标</h2>
           <span>端口仅用于 TCP 检测</span>
         </div>
         <div class="network-condition-fields">
@@ -60,7 +62,9 @@
         </div>
       </section>
 
-      <div class="network-workbench">
+      </div>
+
+      <div class="network-result-column">
       <section class="exact-surface network-result-panel" :class="{ 'is-pending': !networkResult }">
         <div class="exact-surface-head network-panel-head">
           <h2>检测结果</h2>
@@ -80,8 +84,9 @@
           <p>确认目标、方式与超时后，点击“开始检测”查看真实结果。未执行时不显示耗时或可达状态。</p>
         </div>
         <div v-else class="network-json-section">
-          <h3 id="network-json-title">结果 JSON</h3>
+          <details class="network-result-raw"><summary id="network-json-title">查看结果 JSON</summary>
           <pre class="json-view" tabindex="0" aria-labelledby="network-json-title">{{ networkResult ? prettyJson(networkResult) : '尚未执行网络检测' }}</pre>
+          </details>
         </div>
         <div v-if="networkResult && networkResult.details.length" class="network-trace-lines">
           <strong>路由明细</strong>
@@ -119,6 +124,7 @@
           <p id="network-export-note" class="network-export-note">{{ networkHistory.length === 0 ? '当前会话暂无检测结果，导出不可用。' : '导出当前会话保留的检测历史，最多 10 条。' }}</p>
         </div>
       </aside>
+      </div>
       </div>
 
       <section class="exact-table-card network-history-table">
@@ -169,7 +175,7 @@
       </section>
 
       <details class="network-telemetry-tools">
-        <summary>边缘遥测调试 <span>高级工具 · 展开后可查看参数、预览与原提交入口</span></summary>
+        <summary>边缘遥测入口 <span>高级工具 · 提交会写入真实数据链路，不属于网络检测</span></summary>
         <EdgeTelemetryPanel :devices="deviceStore.devices" :selected-device-id="networkDeviceId" @select-device="selectNetworkDevice" />
       </details>
     </div>

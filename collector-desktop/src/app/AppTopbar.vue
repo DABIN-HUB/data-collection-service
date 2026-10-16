@@ -10,9 +10,9 @@
         :aria-expanded="navigationOpen"
         @click="emit('open-navigation')"
       ><span aria-hidden="true">☰</span></button>
-      <span class="app-topbar__group">{{ navigationGroups.find(group => group.items.some(item => item.path === route.path || item.activePaths?.includes(route.path)))?.title || '控制台' }}</span>
-      <span class="app-topbar__separator" aria-hidden="true">/</span>
       <span class="app-topbar__page">{{ currentPage }}</span>
+      <span class="app-topbar__separator" aria-hidden="true"></span>
+      <span class="app-topbar__group">{{ navigationGroups.find(group => group.items.some(item => item.path === route.path || item.activePaths?.includes(route.path)))?.title || '控制台' }}工作空间</span>
     </div>
     <div class="node-status-bar">
       <span class="node-item"><span>本机节点: <strong>{{ nodeIdentity }}</strong></span></span>
@@ -62,7 +62,7 @@ function tickClock() {
   display: flex;
   flex: 0 0 auto;
   min-height: var(--app-topbar-height);
-  padding: 0 30px;
+  padding: 0 28px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -104,15 +104,19 @@ function tickClock() {
 }
 
 .app-topbar__page {
-  color: var(--console-text-muted);
-  font-size: 11px;
-  font-weight: 500;
+  color: var(--console-text-primary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.app-topbar__group,
-.app-topbar__separator {
+.app-topbar__group {
   color: var(--console-text-muted);
-  font-size: 11px;
+  font-size: 12px;
+}
+
+.app-topbar__separator {
+  height: 16px;
+  border-left: 1px solid var(--app-color-border);
 }
 
 .app-topbar__menu {

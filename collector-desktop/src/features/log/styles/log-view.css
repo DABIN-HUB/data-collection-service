@@ -3,7 +3,7 @@
   --log-line-soft: var(--console-border-soft);
   --log-muted: var(--app-color-text-muted);
 
-  padding: 27px 30px 24px;
+  padding: 24px 28px 34px;
   min-width: 0;
   gap: 16px;
   color: var(--app-color-text-primary);
@@ -21,6 +21,37 @@
   min-width: 0;
   flex: 0 0 auto;
 }
+
+.log-body > .log-query-panel { order: 0; }
+.log-body > .log-read-status { order: 1; }
+.log-body > .modao-log-panel { order: 2; }
+.log-body > .log-source-block { order: 3; }
+.log-body > .log-summary-details { order: 4; }
+.log-summary-details {
+  overflow: hidden;
+  border: 1px solid var(--log-line-soft);
+  border-radius: 6px;
+  background: var(--app-color-panel);
+}
+.log-summary-details > summary {
+  display: flex;
+  padding: 15px 18px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--app-color-text-primary);
+  cursor: pointer;
+  font-size: 13px;
+}
+.log-summary-details > summary span {
+  color: var(--log-muted);
+  font-size: 11px;
+}
+.log-summary-details > summary:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: -2px;
+}
+.log-summary-details .log-summary-cards { border: 0; }
 
 .log-view .log-heading {
   min-width: 0;
@@ -140,7 +171,7 @@
 .log-view .log-query-panel {
   padding: 14px 16px;
   border-color: var(--log-line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--app-color-panel);
 }
 
@@ -286,7 +317,7 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   border: 1px solid var(--log-line-soft);
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
 }
 
@@ -329,7 +360,7 @@
   padding: 0;
   overflow: hidden;
   border-color: var(--log-line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--app-color-panel);
 }
 

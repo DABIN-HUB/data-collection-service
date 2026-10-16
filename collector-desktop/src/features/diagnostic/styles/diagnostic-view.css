@@ -4,7 +4,7 @@
   --diagnostic-text: var(--app-color-text-primary);
 
   min-width: 0;
-  padding: 27px 30px 24px;
+  padding: 24px 28px 34px;
   gap: 16px;
   color: var(--diagnostic-text);
   background: var(--app-color-bg);
@@ -124,6 +124,73 @@
   flex: 0 0 auto;
 }
 
+.diagnostic-view .diagnostic-workbench {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.46fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.diagnostic-view .diagnostic-primary,
+.diagnostic-view .diagnostic-aside {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+
+.diagnostic-view .diagnostic-client-state {
+  display: flex;
+  padding: 10px 16px 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+
+.diagnostic-view .diagnostic-client-state strong {
+  color: var(--diagnostic-text);
+  font-weight: 550;
+}
+
+.diagnostic-view .diagnostic-client-state span {
+  color: var(--diagnostic-muted);
+}
+
+.diagnostic-view .diagnostic-device-context p {
+  margin: 0;
+  padding: 0 16px 12px;
+  color: var(--diagnostic-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.exact-page.diagnostic-view .diagnostic-aside :deep(.runtime-summary-cards) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.exact-page.diagnostic-view .diagnostic-aside :deep(.runtime-device-toolbar select) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.exact-page.diagnostic-view .diagnostic-aside :deep(.runtime-device-toolbar .exact-toolbar-group) {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.exact-page.diagnostic-view .diagnostic-aside :deep(.runtime-device-table) {
+  max-height: 230px;
+}
+
+@media (max-width: 1050px) {
+  .diagnostic-view .diagnostic-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .diagnostic-view .diagnostic-message {
   margin: 0;
   padding: 10px 12px;
@@ -148,7 +215,7 @@
   max-width: 100%;
   padding: 0;
   border: 1px solid var(--diagnostic-line);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--diagnostic-text);
   background: var(--app-color-panel);
   box-shadow: none;
@@ -224,7 +291,7 @@
 .diagnostic-view .diagnostic-table-scroll {
   min-width: 0;
   max-width: 100%;
-  max-height: 430px;
+  max-height: 320px;
   overflow: auto;
   border-radius: 0 0 8px 8px;
 }

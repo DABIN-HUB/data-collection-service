@@ -12,10 +12,6 @@
 
     <div class="exact-page-body">
       <el-alert v-if="collectionError" title="部分配置读取失败，请检查接口访问权限或连接；各来源状态见下方。" type="warning" :closable="false" />
-      <div class="collection-sources" aria-label="配置读取来源与时间">
-        <OperationSourceStatus :state="configSummarySourceState" source="运行配置摘要" :last-attempt-at="configSummaryLastAttemptAt" :last-success-at="configSummaryLastSuccessAt" :detail="configSummaryError ? '本次摘要读取失败；按原规则不保留摘要，库存回退来源另列。' : '只读运行配置，已读取不代表采集服务健康。'" />
-        <OperationSourceStatus :state="deviceSourceState" source="设备配置库存" :last-attempt-at="collectionLastAttemptAt" :last-success-at="deviceStore.lastUpdatedAt || null" :detail="deviceSourceDetail" />
-      </div>
       <section class="exact-surface exact-global-config" aria-labelledby="collection-summary-title">
         <div class="exact-surface-head"><h2 id="collection-summary-title">全局采集配置</h2><span>{{ collectionDataContextText }}</span></div>
         <div class="exact-config-grid collection-summary-grid">
@@ -26,6 +22,41 @@
         </div>
       </section>
 
+      <div class="collection-device-context" aria-label="当前设备配置上下文">
+        <div><strong>{{ deviceStore.selectedDevice?.displayName || '尚未选择设备' }}</strong><span>{{ deviceStore.selectedDeviceId || '请先在设备管理中选择设备' }}</span></div>
+        <span>{{ deviceStore.selectedDevice?.displayProtocol || '协议未知' }}</span>
+        <router-link v-if="deviceStore.selectedDeviceId" :to="{ path: '/device/workbench', query: { deviceId: deviceStore.selectedDeviceId } }">打开配置工作台</router-link>
+      </div>
+
+      <div class="collection-workspace">
+        <div class="collection-main-stack">
+          <section class="collection-point-card" aria-labelledby="collection-point-title">
+            <div class="exact-table-title"><h2 id="collection-point-title">点位配置摘要</h2><span>设备库存附带字段，非独立点位查询</span></div>
+            <div v-if="deviceStore.selectedDevice?.points?.length" class="collection-point-scroll" tabindex="0" role="region" aria-label="库存附带点位明细，可横向及纵向滚动">
+              <table>
+                <thead><tr><th scope="col">点位编码</th><th scope="col">点位名称</th><th scope="col">数据类型</th><th scope="col">基础采集周期</th><th scope="col">上报字段</th></tr></thead>
+                <tbody>
+                  <tr v-for="(point, index) in deviceStore.selectedDevice.points as Record<string, unknown>[]" :key="index">
+                    <td :title="String(point?.pointCode ?? '-')">{{ point?.pointCode ?? '-' }}</td>
+                    <td :title="String(point?.pointName ?? '-')">{{ point?.pointName ?? '-' }}</td>
+                    <td>{{ point?.dataType ?? '-' }}</td>
+                    <td>{{ point?.baseCollectionInterval ?? '-' }}<span v-if="point?.baseCollectionInterval != null"> ms</span></td>
+                    <td :title="String((point?.additionalConfig as Record<string, unknown> | undefined)?.reportField ?? '-')">{{ (point?.additionalConfig as Record<string, unknown> | undefined)?.reportField ?? '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="collection-unavailable" role="status">{{ !deviceStore.selectedDeviceId ? '尚未选择设备；从设备管理选择后查看配置。' : deviceStore.selectedDevice?.points ? '当前设备库存附带空点位列表；完整点位配置请在工作台读取。' : '当前设备库存未提供点位明细；请进入配置工作台读取，不以缺失明细表示零点位。' }}</p>
+          </section>
+          <section class="collection-diff-card" aria-labelledby="collection-diff-title">
+            <div class="exact-table-title"><h2 id="collection-diff-title">配置差异</h2><span>差异读取与同步操作分开</span></div>
+            <div class="collection-diff-body">
+              <p>本页没有独立读取当前设备差异，也不持有已保存快照与草稿对照；差异数量和同步完成状态未知。</p>
+              <router-link v-if="deviceStore.selectedDeviceId" :to="{ path: '/device/workbench', query: { deviceId: deviceStore.selectedDeviceId } }">在工作台读取配置差异</router-link>
+            </div>
+          </section>
+          <details class="collection-protocol-disclosure">
+            <summary>协议定义与设备配置入口<span>{{ protocolCountText }}</span></summary>
       <section class="exact-table-card collection-protocol-table" aria-labelledby="collection-protocol-title">
         <div class="exact-table-title"><h2 id="collection-protocol-title">协议配置列表</h2><span>{{ protocolCountText }}</span></div>
         <OperationSourceStatus class="collection-protocol-source" :state="protocolSourceState" source="协议定义列表" :last-attempt-at="collectionLastAttemptAt" :last-success-at="protocolLastSuccessAt" :detail="protocolStore.error ? '本次协议读取失败；已有列表仍可查看。' : '成功时间仅对应当前代次已完成且无错误的列表读取。'" />
@@ -50,6 +81,16 @@
         <div v-if="protocolStore.protocols.length === 0" class="collection-empty" role="status">{{ protocolStore.loading ? '协议加载中' : protocolStore.error ? '协议数据不可用，请刷新重试' : protocolLastSuccessAt ? '当前没有可用的协议定义' : '协议尚未成功读取' }}</div>
       </section>
 
+          </details>
+        </div>
+        <aside class="collection-aside-stack" aria-label="配置来源与高级操作">
+          <section class="collection-source-card">
+            <div class="exact-table-title"><h2>来源证据</h2><span>独立读取状态与成功时间</span></div>
+            <div class="collection-sources" aria-label="配置读取来源与时间">
+              <OperationSourceStatus :state="configSummarySourceState" source="运行配置摘要" :last-attempt-at="configSummaryLastAttemptAt" :last-success-at="configSummaryLastSuccessAt" :detail="configSummaryError ? '本次摘要读取失败；按原规则不保留摘要，库存回退来源另列。' : '只读运行配置，已读取不代表采集服务健康。'" />
+              <OperationSourceStatus :state="deviceSourceState" source="设备配置库存" :last-attempt-at="collectionLastAttemptAt" :last-success-at="deviceStore.lastUpdatedAt || null" :detail="deviceSourceDetail" />
+            </div>
+          </section>
       <ConfigOpsPanel
         :devices="deviceStore.devices"
         :selected-device-id="deviceStore.selectedDeviceId"
@@ -57,10 +98,12 @@
         @synced="refreshCollectionContext"
       />
 
-      <details v-if="selectedProtocol" class="exact-json-panel" open>
+      <details v-if="selectedProtocol" class="exact-json-panel">
         <summary>{{ selectedProtocol.title || selectedProtocol.protocol }} Schema</summary>
         <pre class="json-view" tabindex="0" aria-label="完整协议 Schema，可滚动查看">{{ prettyJson(selectedProtocol) }}</pre>
       </details>
+        </aside>
+      </div>
     </div>
 
     <LocalDeviceEditor v-model="localEditorVisible" :editing-bundle="editingBundle" :protocols="protocolStore.protocols" @saved="handleLocalSaved" />

@@ -2,20 +2,11 @@
   <div class="login-page">
     <section class="login-card">
       <div class="login-form-panel">
-        <div class="login-brand">
-          <svg class="login-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M3 21V10l6 3V7l6 4V3h5v18H3Z" />
-            <path d="M6 17h2m4 0h2m3-10h1m-1 4h1m-1 6h1" />
-          </svg>
-          <div>
-            <strong>工业数据控制台</strong>
-            <p>数据采集工作台 · v{{ appStore.appVersion }}</p>
-          </div>
-        </div>
+        <p class="login-connection-caption">连接采集服务</p>
 
         <div class="login-heading">
-          <h1>连接采集服务</h1>
-          <p>后端服务由你启动，工作台负责配置、控制与监控。</p>
+          <h1>进入工作台</h1>
+          <p>配置目标服务并验证访问能力。这里不是账号密码登录。</p>
         </div>
 
         <el-form label-position="top" class="login-form" @submit.prevent>
@@ -45,39 +36,30 @@
           </el-button>
         </el-form>
 
+        <div class="login-connection-boundary" role="note" aria-label="连接操作边界">
+          <strong>测试连接会应用地址与凭据</strong>
+          <p>测试连接与登录均会应用当前地址和令牌；是否记住遵循本页选项。</p>
+          <p>接口访问结果与业务健康分开判断，连接成功不代表采集服务健康。</p>
+        </div>
+
         <p class="desktop-mode-note">
           当前运行平台：{{ appStore.platform }}。请先启动采集服务，工作台不会自动启动后端。
         </p>
         <footer class="login-footer">
-          <span>Copyright © 2026 数据采集工作台</span>
+          <span>数据采集工作台 · v{{ appStore.appVersion }} · © 2026</span>
           <el-button type="primary" link @click="openDocs">打开使用文档</el-button>
         </footer>
       </div>
 
       <div class="login-illustration">
-        <span class="login-context-label">设备 · 数据 · 链路</span>
-        <h2>让每一次采集，<br />都有清晰的状态与去向。</h2>
-        <p>从协议连接、点位建模到遥测质量与云端确认，建立一个以真实业务状态为核心的操作空间。</p>
-        <svg class="login-diagram" viewBox="0 0 410 220" role="img" aria-label="设备、采集数据与云端确认的链路示意，不表示实时连接状态" focusable="false">
-          <g fill="none" stroke="#92afb8" stroke-width="1.4">
-            <rect x="15" y="60" width="75" height="100" rx="7" />
-            <path d="M28 80h49m-49 17h49m-49 17h49" />
-            <circle cx="30" cy="140" r="3" />
-            <circle cx="42" cy="140" r="3" />
-            <path d="M90 110h55m-8-6 8 6-8 6" />
-            <rect x="145" y="35" width="120" height="150" rx="8" />
-            <path d="M159 60h92m-92 105h92" />
-            <path d="m160 135 16-23 20 9 18-37 20 17 16-29" />
-            <path d="M265 110h55m-8-6 8 6-8 6" />
-            <path d="M338 140a29 29 0 0 1-1-58 26 26 0 0 1 50 10 25 25 0 0 1-4 48h-45Z" />
-          </g>
-          <g fill="#427c86">
-            <circle cx="205" cy="196" r="3" />
-            <circle cx="53" cy="175" r="3" />
-            <circle cx="362" cy="153" r="3" />
-          </g>
-        </svg>
-        <p>客户端就绪不等于服务健康。连接状态、采集健康与云端 ACK 始终分别表达。</p>
+        <span class="login-reference-mark" aria-hidden="true">◇</span>
+        <h2>让每一次采集，都有可追溯的上下文。</h2>
+        <p>面向工业现场的连接、采集、告警与上报工作台。把设备身份、数据来源与操作风险放在同一张工作面上。</p>
+        <div class="login-signal">
+          <strong>精密控制台 / Precision Workbench</strong><br />
+          本地客户端就绪 ≠ 服务健康<br />
+          接口访问结果与业务健康分开表达
+        </div>
         <p v-if="appStore.configPath" class="desktop-config-path">本地配置：{{ appStore.configPath }}</p>
       </div>
     </section>
@@ -157,7 +139,7 @@ function openDocs() {
   display: grid;
   width: 100%;
   min-height: 100%;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   background: var(--console-panel);
 }
 
@@ -170,14 +152,16 @@ function openDocs() {
 }
 
 .login-form-panel {
-  padding: max(35px, calc((100dvh - 531px) / 2)) 35px 35px;
+  grid-column: 2;
+  grid-row: 1;
+  padding: 40px;
   align-items: center;
-  justify-content: flex-start;
-  background: var(--console-panel);
+  justify-content: center;
+  background: #f4f7f8;
 }
 
 .login-form-panel > * {
-  width: 350px;
+  width: 430px;
   max-width: 100%;
 }
 
@@ -201,12 +185,6 @@ function openDocs() {
   stroke-linejoin: round;
 }
 
-.login-heading h1,
-.login-illustration h2 {
-  margin: 0;
-  color: var(--console-text-primary);
-}
-
 .login-brand strong {
   color: var(--console-text-primary);
   font-size: 16px;
@@ -219,10 +197,12 @@ function openDocs() {
 }
 
 .login-heading {
-  margin: 32px 0 27px;
+  margin: 0 0 28px;
 }
 
 .login-heading h1 {
+  margin: 0;
+  color: var(--console-text-primary);
   font-size: 24px;
   font-weight: 650;
   line-height: 1.35;
@@ -237,9 +217,14 @@ function openDocs() {
 }
 
 .login-brand p,
-.login-illustration p,
 .login-footer {
   color: var(--console-text-muted);
+}
+
+.login-connection-caption {
+  margin: 0 0 10px;
+  color: var(--console-text-muted);
+  font-size: 12px;
 }
 
 .login-form {
@@ -304,8 +289,26 @@ function openDocs() {
   font-size: 11px;
 }
 
+.login-connection-boundary {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-color-border);
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.login-connection-boundary strong {
+  color: var(--console-text-primary);
+  font-weight: 600;
+}
+
+.login-connection-boundary p {
+  margin: 7px 0 0;
+}
+
 .desktop-mode-note {
-  margin: 35px 0 0;
+  margin: 18px 0 0;
   color: var(--console-text-muted);
   font-size: 10px;
   line-height: 1.55;
@@ -342,44 +345,67 @@ function openDocs() {
 }
 
 .login-illustration {
-  padding: 65px 55px;
-  background: #e5eef0;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  padding: 72px;
+  overflow: hidden;
+  justify-content: flex-start;
+  color: #d9e5e8;
+  background: var(--app-color-sidebar);
 }
 
 .login-illustration h2 {
-  max-width: 380px;
-  font-size: 26px;
-  font-weight: 550;
-  line-height: 1.55;
+  margin: 0;
+  max-width: 460px;
+  color: #f4fbfa;
+  font-size: 33px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.04em;
 }
 
-.login-context-label {
-  width: max-content;
-  margin-bottom: 20px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  color: #597583;
-  background: #d4e4e7;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.55;
+.login-reference-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #7ac4c1;
+  color: #9ee0d9;
+  font-weight: 700;
+  letter-spacing: -2px;
 }
 
 .login-illustration p {
-  max-width: 390px;
+  max-width: 430px;
   margin: 16px 0 0;
-  color: #637f8b;
-  font-size: 12px;
-  line-height: 1.9;
+  color: #a4b9be;
+  font-size: 13px;
+  line-height: 1.8;
 }
 
-.login-diagram {
-  display: block;
-  width: 100%;
-  max-width: 410px;
-  height: 220px;
-  margin: 35px 0;
-  flex: 0 0 auto;
+.login-signal {
+  margin-top: 82px;
+  padding-left: 16px;
+  border-left: 2px solid #6bc7c1;
+  color: #aac3c5;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.login-illustration::after {
+  position: absolute;
+  right: -100px;
+  bottom: -100px;
+  width: 420px;
+  height: 420px;
+  border: 1px solid rgb(116 205 199 / 25%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 35px rgb(116 205 199 / 6%), 0 0 0 70px rgb(116 205 199 / 4%);
+  content: '';
+  pointer-events: none;
 }
 
 .desktop-config-path {
@@ -397,6 +423,12 @@ function openDocs() {
 
   .login-illustration {
     display: none;
+  }
+
+  .login-form-panel {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 32px 24px;
   }
 }
 </style>

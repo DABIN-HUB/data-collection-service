@@ -29,7 +29,7 @@
   transform: translate(-50%, -50%);
   color: var(--panel-text);
   border: 1px solid var(--console-border-soft);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--editor-bg);
   box-shadow: var(--console-overlay-shadow);
   font-size: 13px;
@@ -1744,6 +1744,113 @@
 
   .local-title-line h3 {
     font-size: 15px;
+  }
+}
+
+/* 五个真实章节置于左轨；编辑区和底部提交语义独立，不增加向导步骤。 */
+.local-device-panel > .local-editor-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: 170px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.local-device-panel .local-editor-workspace > .local-editor-tabs {
+  padding: 15px 10px;
+  flex-direction: column;
+  gap: 3px;
+  overflow: auto;
+  border-right: 1px solid var(--panel-line);
+  border-bottom: 0;
+  background: var(--console-bg-soft);
+}
+
+.local-device-panel .local-editor-workspace .local-editor-tab {
+  min-height: 42px;
+  padding: 10px 11px;
+  flex: none;
+  border: 0;
+  border-radius: 4px;
+}
+
+.local-device-panel .local-editor-workspace .local-editor-tab.is-active {
+  color: var(--console-primary);
+  background: var(--app-color-success-soft);
+}
+
+.local-device-panel .local-editor-workspace > .local-editor-body {
+  padding: 20px 22px;
+  background: var(--console-panel);
+}
+
+.local-device-panel .step-grid-setup,
+.local-device-panel .step-grid-master-detail,
+.local-device-panel .step-grid-cloud,
+.local-device-panel .step-grid-json {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.local-device-panel .step-grid-master-detail > .detail-stack,
+.local-device-panel .step-grid-json > .json-editor-card {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.local-device-panel .step-grid-master-detail > .overview-card,
+.local-device-panel .step-grid-json > .json-sections {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.local-device-panel .step-grid-json > .schema-card {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.local-device-panel .step-grid-setup > :deep(.progress-rail) {
+  padding: 14px;
+  border-radius: 5px;
+}
+
+.local-device-panel .local-editor-workspace .setup-identity-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.local-device-panel .local-editor-footer {
+  border-top: 1px solid var(--panel-line);
+  background: var(--console-bg-soft);
+}
+
+@media (max-width: 700px) {
+  .local-device-panel > .local-editor-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .local-device-panel .local-editor-workspace > .local-editor-body {
+    padding: 14px 12px;
+    order: 0;
+  }
+
+  .local-device-panel .local-editor-workspace > .local-editor-tabs {
+    padding: 5px;
+    order: 1;
+    flex-direction: row;
+    overflow-x: auto;
+    border-top: 1px solid var(--panel-line);
+    border-right: 0;
+  }
+
+  .local-device-panel .local-editor-workspace .local-editor-tab {
+    min-height: 34px;
+    padding: 6px 9px;
+  }
+
+  .local-device-panel .local-editor-workspace .setup-identity-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -211,11 +211,17 @@
         </div>
       </section>
 
-      <section class="realtime-panel realtime-single-panel" aria-labelledby="realtime-single-title" :aria-busy="singleLoading">
-        <div class="realtime-panel-head">
+      <div class="realtime-source-context" role="note">
+        <strong>实时读取来源</strong>
+        <p>完整快照 / 增量轮询；设备健康来自最近完整快照，不能用点位质量代替。当前页面不宣称 WebSocket 可用。</p>
+        <span>范围：{{ realtimeDeviceId ? deviceDisplayName(realtimeDeviceId) : '全部设备' }} · 自动刷新{{ realtimeAuto ? '开启' : '关闭' }}</span>
+      </div>
+
+      <details class="realtime-panel realtime-single-panel" aria-labelledby="realtime-single-title" :aria-busy="singleLoading" :open="singleLoading || Boolean(realtimeSingleResult) || Boolean(singleRealtimeError)">
+        <summary class="realtime-panel-head">
           <h2 id="realtime-single-title">单点实时查询</h2>
           <span>按稳定 pointId / 点位编码查询</span>
-        </div>
+        </summary>
         <div class="realtime-single-body">
           <div class="realtime-single-form">
             <label class="realtime-field">
@@ -240,7 +246,7 @@
           </div>
           <pre class="realtime-single-result" tabindex="0" aria-label="单点实时查询完整结果">{{ prettyJson(realtimeSingleResult) }}</pre>
         </div>
-      </section>
+      </details>
     </div>
   </section>
 </template>

@@ -13,9 +13,38 @@
     </section>
 
     <div class="shadow-grid">
+      <div class="shadow-desired-column">
+      <section class="shadow-panel saved-desired-panel" aria-labelledby="shadow-saved-desired-title">
+        <header class="panel-head"><h3 id="shadow-saved-desired-title">已保存 desired</h3><span class="draft-tag">当前快照</span></header>
+        <div class="saved-desired-body">
+          <div class="version-line"><span>当前影子版本</span><strong>{{ currentShadowVersion ?? "未读取" }}</strong></div>
+          <p class="section-status" :class="{ 'is-warning': shadowError }">{{ summaryStatus }} · 此区域不包含编辑草稿</p>
+          <pre class="raw-json saved-desired-json" tabindex="0" aria-label="当前影子快照中已保存的 desired 完整内容">{{ currentDocument ? Object.hasOwn(currentDocument.state, 'desired') ? JSON.stringify(currentDocument.state.desired, null, 2) : '当前快照未返回 desired' : '尚未成功读取已保存 desired' }}</pre>
+        </div>
+      </section>
+
+      <aside class="shadow-panel desired-panel">
+        <header class="panel-head"><h3>独立编辑草稿</h3><span class="draft-tag">草稿</span></header>
+        <div class="desired-body">
+          <div class="version-line"><span>当前影子版本</span><strong>{{ currentShadowVersion ?? "未读取" }}</strong></div>
+          <div class="editor-head"><label for="shadow-desired-draft">期望状态 · JSON</label><button type="button" class="text-button" :disabled="savingDesired" @click="formatDesired">格式化</button></div>
+          <textarea id="shadow-desired-draft" v-model="desiredPayload" spellcheck="false" aria-describedby="shadow-draft-help" :readonly="savingDesired"></textarea>
+          <p class="draft-version">{{ draftVersionText }}</p>
+          <p id="shadow-draft-help" class="desired-help">保存期望状态不代表设备已执行，也不代表云端已确认。版本冲突时保留草稿，重新读取并核对后再提交。</p>
+          <p v-if="savingDesiredDeviceId" class="section-status" role="status">正在处理设备 {{ savingDesiredDeviceId }} 的期望状态</p>
+          <p v-if="writeNotice" class="write-notice" :class="{ 'is-warning': writeFailed }" role="status">{{ writeNotice }}</p>
+        </div>
+        <footer class="desired-footer">
+          <button type="button" class="clear-button" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired || currentShadowVersion === null" @click="clearDesired">清理期望状态</button>
+          <button type="button" class="primary" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired || currentShadowVersion === null" @click="saveDesired">保存期望状态</button>
+        </footer>
+      </aside>
+      </div>
+
+      <div class="shadow-snapshot-column">
       <section class="shadow-panel state-panel">
         <header class="panel-head">
-          <h3>影子状态对照</h3>
+          <h3>同快照字段对照</h3>
           <div class="inline-actions">
             <button type="button" :disabled="!deviceId || !shadowCapabilityAvailable || loadingShadow || loadingDelta || loadingHistory" @click="loadShadowBundle">读取全部</button>
             <button type="button" :disabled="!deviceId || !shadowCapabilityAvailable || loadingShadow" @click="loadShadow">读取影子</button>
@@ -56,6 +85,10 @@
         </template>
         <pre v-else class="raw-json current-json">{{ shadowText }}</pre>
         <div class="state-caption"><span>对照表仅使用当前影子 state 的同一快照；未设置不等于 0、null 或 false。</span><span v-if="currentDocument">版本 {{ currentShadowVersion }}</span></div>
+      </section>
+
+      <section class="shadow-panel independent-delta-panel" aria-labelledby="shadow-independent-delta-title">
+        <header class="panel-head"><h3 id="shadow-independent-delta-title">独立读取差异</h3><span class="draft-tag">独立来源</span></header>
         <div class="delta-section">
           <div class="delta-head">
             <button type="button" class="raw-toggle" :aria-expanded="deltaRawOpen" @click="deltaRawOpen = !deltaRawOpen">{{ deltaRawOpen ? "收起" : "查看" }}独立 delta 原始 JSON</button>
@@ -67,22 +100,7 @@
         </div>
       </section>
 
-      <aside class="shadow-panel desired-panel">
-        <header class="panel-head"><h3>期望状态编辑</h3><span class="draft-tag">草稿</span></header>
-        <div class="desired-body">
-          <div class="version-line"><span>当前影子版本</span><strong>{{ currentShadowVersion ?? "未读取" }}</strong></div>
-          <div class="editor-head"><label for="shadow-desired-draft">期望状态 · JSON</label><button type="button" class="text-button" :disabled="savingDesired" @click="formatDesired">格式化</button></div>
-          <textarea id="shadow-desired-draft" v-model="desiredPayload" spellcheck="false" aria-describedby="shadow-draft-help" :readonly="savingDesired"></textarea>
-          <p class="draft-version">{{ draftVersionText }}</p>
-          <p id="shadow-draft-help" class="desired-help">保存期望状态不代表设备已执行，也不代表云端已确认。版本冲突时保留草稿，重新读取并核对后再提交。</p>
-          <p v-if="savingDesiredDeviceId" class="section-status" role="status">正在处理设备 {{ savingDesiredDeviceId }} 的期望状态</p>
-          <p v-if="writeNotice" class="write-notice" :class="{ 'is-warning': writeFailed }" role="status">{{ writeNotice }}</p>
-        </div>
-        <footer class="desired-footer">
-          <button type="button" class="clear-button" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired || currentShadowVersion === null" @click="clearDesired">清理期望状态</button>
-          <button type="button" class="primary" :disabled="!deviceId || !shadowCapabilityAvailable || savingDesired || currentShadowVersion === null" @click="saveDesired">保存期望状态</button>
-        </footer>
-      </aside>
+      </div>
     </div>
 
     <section class="shadow-panel history-panel">
@@ -600,21 +618,37 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 .shadow-grid {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 16px;
   align-items: start;
+}
+.shadow-desired-column,
+.shadow-snapshot-column {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  align-content: start;
+}
+.saved-desired-body {
+  padding: 14px 16px;
+}
+.saved-desired-panel .saved-desired-json {
+  min-height: 96px;
+  max-height: 190px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .shadow-panel {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
+  border-radius: 6px;
   background: var(--console-panel);
 }
 .panel-head {
   display: flex;
-  min-height: 57px;
-  padding: 11px 18px;
+  min-height: 46px;
+  padding: 11px 16px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -626,6 +660,16 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+}
+.state-panel .panel-head,
+.state-panel .state-toolbar,
+.state-panel .panel-head .inline-actions,
+.independent-delta-panel .delta-head {
+  flex-wrap: wrap;
+}
+.independent-delta-panel button.raw-toggle {
+  white-space: normal;
+  text-align: left;
 }
 .inline-actions {
   display: flex;
@@ -790,7 +834,6 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 }
 .delta-section {
   padding: 11px 18px 14px;
-  border-top: 1px solid var(--console-border-soft);
 }
 .delta-head {
   display: flex;
@@ -1067,7 +1110,7 @@ function normalizeShadowErrorMessage(error: unknown, fallback: string): string {
 
 @container (max-width: 1050px) {
   .shadow-grid {
-    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.72fr);
     gap: 12px;
   }
   .shadow-metric {

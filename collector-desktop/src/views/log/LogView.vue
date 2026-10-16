@@ -80,7 +80,6 @@
           <p id="log-export-note" class="log-export-note">{{ logExportNote }}</p>
         </div>
       </section>
-      <div class="log-source-block">
       <el-alert v-if="logReadStatusText" class="log-read-status" :title="logReadStatusText" :type="logReadStatusType" :closable="false" show-icon>
         <div class="log-recovery-actions">
           <button v-if="hasCurrentLogError" type="button" :disabled="logQueryDisabled" @click="refreshLogs">重试读取</button>
@@ -88,6 +87,7 @@
           <span>只读诊断入口，不修改访问凭据。</span>
         </div>
       </el-alert>
+      <div class="log-source-block">
       <OperationSourceStatus
         class="log-source-status"
         :state="logSourceState"
@@ -98,12 +98,15 @@
       />
       </div>
 
+      <details class="log-summary-details">
+        <summary>当前结果统计 <span>仅当前成功来源与本地筛选结果</span></summary>
       <div class="exact-diagnostic-cards log-summary-cards" :class="{ 'is-unknown': !hasLogLastGoodForCurrentServerContext }" aria-label="当前条件的可见日志摘要">
         <div class="exact-diagnostic-card"><span>当前结果</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.total : '未知' }}</strong></div>
         <div class="exact-diagnostic-card log-summary-error"><span>错误日志</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.error : '未知' }}</strong></div>
         <div class="exact-diagnostic-card log-summary-warn"><span>警告日志</span><strong>{{ hasLogLastGoodForCurrentServerContext ? logSummary.warn : '未知' }}</strong></div>
         <div class="exact-diagnostic-card"><span>日志器 / 线程</span><strong>{{ hasLogLastGoodForCurrentServerContext ? `${logSummary.loggerCount} / ${logSummary.threadCount}` : '未知' }}</strong></div>
       </div>
+      </details>
 
       <section class="exact-surface modao-log-panel" aria-labelledby="log-stream-title">
         <div class="log-panel-heading log-stream-heading">

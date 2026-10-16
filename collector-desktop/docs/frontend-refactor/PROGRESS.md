@@ -1,8 +1,108 @@
 # collector-desktop 前端架构重构进度
 
+## 最新请求：Precision Workbench 全站生产视觉改造与9090重部署（2026-10-15）
+
+用户确认按独立 Precision Workbench 示意图开始生产页面改造，并要求持续监督、重新编译并运行 9090。当前为 `POINT_EDITOR_CSS_DELTA_VERIFIED / FRONTEND_AND_JAVA17_BUILD_PASS / DEPLOYED_9090_BYTES_PASS / CURRENT_AUTH_CAPTURE_RECORDED / PIXEL_ACCEPTANCE_BLOCKED`。当前候选认证采集已完成150张PNG（84个默认路由状态、30个LocalDeviceEditor状态、36个PointEditor状态），入口为 `index-Bnw03rgX.js`，JAR SHA-256为 `5fb20c6d9e08ed6d3639f983a18adf972da83b33e51213080a1d755305c786b6`。当前候选与历史图严格分离；观察子集没有确证像素must-fix，但14路由及两个编辑器的完整criterion仍BLOCKED，未宣称用户接受。
+
+**当前边界（2026-10-16当前候选认证复核）**：用户提供的临时凭据仅通过任务自有无回显stdin使用，未从历史、storage、配置或环境恢复，也未写入参数、环境、源码、截图、日志或证据。当前候选 `capture-BeeU6I` 已记录认证矩阵150张PNG；NoActivate查看器已关闭并回读进程/窗口不存在。当前观察子集无确证像素must-fix，但原16项完整criterion仍BLOCKED，因细字/凭据值/JSON/log原生可读性、键盘焦点、隐藏Tab/折叠区、危险确认层级和全部图片独立复核尚未完整观察；服务健康DOWN与像素验收、用户接受分别记账。
+
+- 本轮在任务自有NoActivate拼图查看器中完成16块当前候选拼图的串行概览观察（14路由、LocalDeviceEditor、PointEditor），覆盖150张当前认证PNG对应的三视口top/bottom板面；新增记录 `STAGE-HANDOFF-index-Bnw03rgX-current-auth-review-20261016/montage-review-20261016.json`。PNG完整性回读为150/150存在、SHA不一致0、PNG签名失败0、尺寸不一致0、routeExact/entryExact各150、页面级横向溢出0；观察子集仍无确证像素must-fix。
+- 本轮未操作业务浏览器、未输入/恢复凭据、未执行任何业务写入；拼图查看器按授权选择关闭，PID/HWND均已回读不存在。源码交互契约只读核对确认AppShell抽屉/焦点陷阱、LocalDeviceEditor五Tab/关闭Details过滤/Tab与Escape、PointEditor六Tab及弹层结构存在；真实运行时Tab序列、抽屉开闭/焦点恢复、编辑器确认层和危险操作仍未实际观察，因此完整16项criterion继续BLOCKED，userAccepted=false。
+- 已生成并重新打开安全补充包 `STAGE-HANDOFF-index-Bnw03rgX-current-auth-review-20261016-montage.zip`：6个成员（含manifest），不含PNG、凭据、profile或JAR；ZIP 57,029 bytes，SHA-256 `83df7e6378a53e82e1a750fa535f6fa1cfe9e415426c646f07a26c5b1a753963`，归档回执在ZIP外。
+
+### 最新请求：完整像素/交互证据闭环补充（2026-10-16）
+
+当前状态仍为 `CURRENT_AUTH_CAPTURE_RECORDED_PARENT_MONTAGE_OVERVIEW_RECORDED_RUNTIME_INTERACTION_PENDING / PIXEL_ACCEPTANCE_BLOCKED`。本次补充只增加外部安全证据和进度记录，不改生产源码、接口、依赖、测试配置或业务状态；完整标准未缩窄，不把拼图概览或源码契约当作运行时交互PASS。
+
+
+### 点位编辑器裁切修正与新包部署（当前候选，2026-10-15）
+
+- 在 `capture-FCt33O` 上完成的150图认证采集保留原回执：84/84默认路由端点、276条获准只读请求全部200；这证明采集与身份，不证明每个编辑器实际可见。随后外部采集器沿真实祖先滚动定位编辑器，补捕36张点位图、33条获准GET均200，并逐项核对选中Tab、顶部/底部相交、PNG身份、字体及自有上下文清理。原图、原工具、原回执没有覆盖。
+- 父级串行NoActivate查看器实际观察批准PointEditor、1600顶部/原像素底部局部及390底部，确认 `PW16-FLEX-CLIP-01`（P1）：420px嵌入宿主中，顶部工具条、说明和工作区被Flex收缩；桌面内容矩形延伸出裁切面板，窄屏底部甚至未呈现字段页签。修正前PW-16的这一条件为FAIL，不能因DOM存在、选中Tab或根矩形相交就称完整覆盖。
+- 本轮生产增量仅 `src/features/point/components/PointEditor.vue` 的scoped CSS：对 `.point-toolbar`、`.point-workbench-note`、`.point-workbench-grid` 添加 `flex-shrink: 0`，保留宿主原有局部滚动。完整template/script原字节一致，枚举CSS字节差异后精确反向还原与真正改前快照一致；API/Store/DTO/Schema、字段、默认值、事件、请求归属、生命周期及保存逻辑均未改。
+- 最后生产修改后的lint、stylelint、typecheck、build、build:web均实际exit0，网页同步61项。相同HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main隔离构建仅叠加冻结renderer，使用Java17.0.15/Maven3.6.3和 `-Dmaven.test.skip=true clean package`：17模块SUCCESS、既有warning行3、JAR为111513672 bytes、应用及collector库1324个后端class与替换前完全一致、class major61；没有混入脏后端源码或运行测试。
+- 新JAR及renderer/Boot静态源码/冻结副本的61项完整路径和SHA一致。按PID40636、原生创建时间、Java17绝对exe、根cwd及唯一JAR/9090参数再次确认旧实例，验证回滚与候选哈希后才停止并替换。新后台会话 `proc_5cd3aa7dd0ba`，23:13:03实际listener PID372、原生创建时间1792077156.9447863；入口及61项HTTP资源全200且原字节匹配。health HTTP200但整体DOWN，application/cache UP、collectionService DOWN、connections UNKNOWN；未修后端、开启设备或执行业务写入。
+- 新 `prepare-4VMtzS` 只覆盖未认证login：三视口顶部/底部6 PNG、3个唯一位图，候选61资源与源指纹及自有browser/incognito/debug端口/profile清理已核对。父级另实际观察新1600/1280概貌及390原尺寸图，保存3份分析与像素身份；桌面0.75缩放、窗口边缘裁切及隐藏文字限制明确记录，不以该观察签点位编辑器、键盘或完整PW-01。
+- 新版外部采集器在写点位图前核对选中Tab、编辑器端点可见性，并记录内容区及只读末行相对所有滚动/裁切祖先的几何；若basic底部只读末行存在却未完整可见则拒绝完成。该逻辑已语法检查且无认证prepare成功，但尚未在新候选认证点位中执行，不称已修复像素PASS。
+- 新覆盖层保留16项原ID、原Row、原标准及历史状态，新候选完整像素条款均为BLOCKED，PW-16另关联修正前FAIL和已实施/待复验状态。证据在外部 `login-boundary-correction-20261015/user-authorized-fresh-document-capture-20261015/point-editor-flex-correction/`；发布候选、回滚与私有日志在忽略目录 `collector-boot/target/releases/20261015-pw-point-flex-0eb2dd1c/`。未创建/修改/运行测试，未运行quality/verify，未改依赖或规则，未commit/push；没有把实现、部署或补证阶段交接冒充总验收完成。
+- 已生成明确标注非完整验收的 `STAGE-HANDOFF-index-Bnw03rgX.zip`：28个载荷文件加manifest共29成员、846763 bytes，重新打开后精确成员集合及全部SHA一致；SHA-256为 `71f8e9def82a44acfc72e796d4dba0fa863e6cec0fc8bee04373494d61b9075b`。包只含本轮报告、安全身份/门禁/16项覆盖层、PW-14逐图父级补审JSON、6张新未认证login图、父级观察及明确标为历史的点位裁切证据，不包含凭据、私有日志、profile、采集脚本或JAR。归档回执在ZIP外；自有查看器已按精确窗口归属关闭并核对不存在，9090仍运行、入口200且字节匹配。
+- PW-14 Shadow 的独立审阅 `deleg_44254e0c/task-5` 因上游超时失败，未产生独立像素结论；父级随后通过任务自有NoActivate查看器逐张观察参考及6张历史候选PNG（1600/1280/390，top/bottom），源SHA、矩形和缩放均记录在 `pw14-shadow-parent-follow-up.json`。六张图未观察到确证的像素must-fix；真实未读取/空值/未执行状态未判为缺陷。已将这些文件从 `currentCaptureImages` 移入历史父级补审字段，不再称为当前候选；独立审阅仍为BLOCKED，PW-14不升级为完整PASS。
+- PW-07 Workbench 的独立审阅 `deleg_9b367d61/task-6` 因上游超时失败，未产生独立像素结论；父级随后逐张观察参考及6张历史候选默认态PNG（1600/1280/390，top/bottom），源SHA、矩形和缩放记录在 `pw07-workbench-parent-follow-up.json`。默认态未观察确证must-fix；真实空工作区、UNKNOWN、未连接、脱敏和health DOWN均未判为视觉缺陷。已将这些文件从 `currentCaptureImages` 移入历史父级补审字段；隐藏编辑Tab和键盘条件未覆盖，PW-07仍严格BLOCKED。
+- PW-01 Login 的当前候选入口为 `index-Bnw03rgX.js`；父级复用已保全的任务自有NoActivate观察记录核对当前候选1600/1280/390三张顶部PNG，源SHA、范围、缩放及观察句已写入 `pw01-login-parent-follow-up.json`。三张顶部图未观察到确证像素must-fix，连接边界静态说明可见；源码核对确认测试连接仍先应用地址/凭据，再读取health与protocols并刷新运行态，未点击该动作。当前候选认证图为0，三个底部图、细字/令牌值可读性、键盘和真实测试连接行为未覆盖，PW-01严格BLOCKED。
+- PW-02 Dashboard 的源码核对确认五项主摘要、优先关注/最近事件、设备运行快照、独立来源新鲜度、资源/线程池和技术拓扑/补充指标分层均保留，未知/离线/未确认等真实状态没有被改成健康或零。历史候选仅有一张1600桌面右侧局部成功观察（来源新鲜度、风险边缘与内部滚动），该裁切无确证must-fix；独立七图恢复仍无完整像素结论。当前候选无认证Dashboard PNG，PW-02保持BLOCKED，记录于 `pw02-dashboard-parent-follow-up.json`。
+- PW-03 Realtime 的独立审阅 `deleg_9b367d61/task-3` 因上游超时失败，未产生独立像素结论；父级使用任务自有NoActivate查看器逐张观察参考及6张历史候选PNG（1600/1280/390，top/bottom），并记录源SHA、整图矩形和缩放于 `pw03-realtime-parent-follow-up.json`。历史图中筛选、实时记录表、健康/来源和单点查询区域未观察到确证pixel must-fix；真实离线/UNKNOWN/空值/未执行与低缩放细字不判缺陷。当前候选认证PNG仍为0，键盘、细字完整可读性及当前候选像素接受仍严格BLOCKED。
+
+### 登录操作边界修正、部署与有界像素复核（历史候选，已被点位裁切修正版替代，2026-10-15）
+
+- 已核对较早 `proc_2f70ad4d8916` 的exit15属于历史会话；当时当前密度修正版PID58428仍是匹配的Java17实例，入口200，未因旧通知重复重启。此前输入流程没有取得令牌，最终 `CONTROLLER_FAILED`；回执为BLOCKED、credential supplied=false、认证矩阵=false，自有browser/incognito/profile/debug端口清理成功，不能继续把已结束窗口说成正在等待。
+- 修正仅在外部任务工具：标准库输入控制器改为直接使用已安装的基础Python，避免Windows虚拟环境重定向器导致Popen PID与真实控制器PID不同，保留原父子关系、可见窗口和不回显的就绪校验，不放宽安全条件。prepare只采未认证login，覆盖三个原定视口；认证模式的14路由与编辑器矩阵、严格写入阻断不变。原工具及历史证据按原字节保留。
+- 父级在任务自有NoActivate查看器实际观察批准图概貌/表单细部及原部署三尺寸登录页，保存6组真实原生分析与像素身份。0.5倍概貌曾误称账号密码/忘记密码，已被1倍细部和实际模板推翻，不据此改业务。确认的 `LOGIN-BOUNDARY-01` 是批准图的“测试连接会应用地址与凭据”常驻说明未呈现，而现有testConnection确实先执行applyConfig；没有点击该操作验证视觉。
+- 本轮相对密度候选148个生产Vue/TS/CSS输入，只改 `views/auth/LoginView.vue`：增加配置应用与连接不等于采集健康的静态提示和分隔线，收紧既有平台说明间距；保留真实平台/文档及条件安全存储警告。完整script原字节一致，原12个受保护组件/指令及其条件祖先、原插值均一致，未改默认值、handler、生命周期、请求、API/Store/Schema、凭据或保存边界。
+- 最后生产修改后lint、stylelint、typecheck、build、build:web均实际exit0，renderer/Boot静态源码完整61项一致。LoginView定向diff检查exit0；全仓检查另发现原有`.gitignore:46` EOF空行，未顺手修改或将全仓检查称为PASS。未创建/修改/运行测试，未执行quality/verify，未升级依赖或降低规则。
+- 同一HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main隔离构建实际使用Java17/Maven3.6.3、`-Dmaven.test.skip=true clean package`，17模块SUCCESS、既有warning行3；当前JAR为111513654 bytes，应用class major61，完整61静态资源集合/字节一致。应用及15个collector库内1324个后端class与替换前密度候选逐项相同。
+- 按PID58428/创建时间/Java17/根cwd/唯一JAR参数核对后，保留哈希已验回滚再替换。首次启动的裸java错误解析到JDK21，被运行门禁拦截；保存失败回执，只停止本任务新建的PID47576，改用JDK17绝对可执行文件启动，不改JAR或参数。当前服务会话 `proc_48248f3e06d9`，实际listener PID61276、原生创建时间1792062674.5266805、Java17和根cwd均核对；入口及61项HTTP资源全200且字节一致。health HTTP200但仍DOWN，application/cache UP、collectionService DOWN、connections UNKNOWN，未修后端或开启设备。
+- 当前 `prepare-2uI6hD` 实际产生6张未认证login图（3种尺寸、3种唯一位图，首末图相同），源/renderer/PNG身份与自有浏览器清理已核对。父级另保全3组新候选原生分析：1600表单细部、1280整体、390整体，均验证捕获像素与限定源矩形相同，新增提示、真实连接控件及平台/文档说明可见。该单一缺项在默认可见状态下已补回，不等于完整PW-01、隐藏输入值可读性、条件告警、键盘、业务写入或其他15项验收通过。
+- 原16项ID/全文及批准计划SHA保持不变，当前认证PNG仍0，userAccepted=false。新证据在外部 `frontend-premium-20261015/login-boundary-correction-20261015/`；包、回滚及私有日志在忽略目录 `collector-boot/target/releases/20261015-pw-login-boundary-0eb2dd1c/`。完整认证复捕仍需要用户新的本地临时输入，禁止恢复旧凭据；未commit/push。
+- 修正后的输入启动器已真实运行并读回 `VISIBLE_NATIVE_PROMPT_VERIFIED`。19:23:52核对本轮 `input-g0q3d_pp` 为 `WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`，会话 `proc_40f71691a726`，真实控制器/原生窗口所属PID21676、HWND1516420；Popen PID、基础Python、父链、可见固定标题均匹配，输入为原生msvcrt.getwch不回显、echoFallback=false。凭据不在argv/env中，未读取或保存值。此等待状态有超时边界，不把之后已结束窗口说成永久等待；认证采集与全站像素结论仍待实际完成。
+- 后续19:33实际读回该会话exit1、控制器19:31:25 `CONTROLLER_FAILED`；对应 `capture-16s5iy/receipt.json` 的安全错误为 `wait-for-new-stdin-only-token / INPUT_CLOSED_WITHOUT_TOKEN`，未提供凭据，认证矩阵=false、截图0。清理全部成功，控制器PID21676、Node PID18304及HWND1516420均已不存在；保存 `capture-ended-readback.json` 并将当前16项覆盖层改为等待用户准备好的阻塞状态。此前19:23的就绪核验作为历史快照保留，不反向修改成未就绪，也不继续要求向已关闭窗口输入。旧B/D/F等只读审图组的上游超时仍只是缺失审核证据，不是产品缺陷裁决或当前版本PASS。
+
+### 概览密度修正与复捕准备（历史候选，已被登录边界修正版替代，2026-10-15）
+
+- 父级成功观察并保全了移动概览顶部/底部、批准参考概貌、原部署1600顶部概貌和来源侧栏原像素局部。概貌不签小字、局部不签全页；这些是父级补充，不能冒充独立终审。可见差异是原部署的风险/事件与来源区占高，将设备快照和资源区明显推后；进一步定位到本页列表仍继承 `min-height:292px`，压过专属 `max-height:192px/230px` 的高度意图，以及来源行的双行和上下13px留白。
+- 本次生产源码只改 `features/dashboard/styles/dashboard-view.css`：明确两个列表 `min-height:0`、保留独立滚动，收紧来源/资源间距，让来源名和原成功时间同行且可自然换行。全部真实来源、指标、文字和滚动内容仍保留；完整Dashboard Vue与本次真正改前快照逐字节相同。未改模板、script、API/Store/DTO/Schema、默认值、请求、handler或业务写入。原采集sourceEvidence没有包含此CSS，现已单独保存真正的本次CSS改前快照，不追称为全站改造前基线；新复捕工具另外纳入该CSS指纹。
+- 本次最后生产修改后，`lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际exit0，renderer与Boot静态源码完整61项路径/SHA一致。36个原采集受保护源码仍无漂移，另冻结当前148个生产Vue/TS/CSS输入。未创建/修改/运行测试、未运行quality/verify、未升级依赖或降低规则。
+- 从同一HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main生产代码准备新隔离目录，只叠加冻结renderer；Java17/Maven3.6.3的 `-Dmaven.test.skip=true clean package` 实际exit0，17模块SUCCESS，既有warning行3。最初单独探测launcher漏传multiModuleProjectDirectory而退出，补齐属性后版本探测及实际构建成功；未绕过门禁。
+- 新JAR为111513463 bytes、SHA-256 `5436df4ae4c7c5873b3dbebf14ff748a05fc1eae8686ff9b8663a46c91f32848`，应用class major61；包内61静态资源与冻结renderer全集合/字节一致，缺失/多余/不同字节均0。1324个应用及collector模块后端class与替换前运行候选逐项相同，不包含无关脏后端源码或后端修复。
+- 按PID64508/原生创建时间/Java17/根cwd/唯一JAR及9090参数再次核实旧实例；先验证候选与回滚副本，才停止旧listener并替换。新服务会话 `proc_12b091d22213`，实际listener PID58428、原生创建时间1792059641.91745，保持Java17、仓库根cwd和原端口参数。新入口及61项静态HTTP回读均200且字节匹配，未认证配置仍401；health HTTP200但整体仍DOWN，与部署、视觉结论分别记录。
+- 新工具副本保留原有严格只读策略、diagnostic running GET规则和favicon辅助归因，只增加本次CSS指纹，原工具/原PNG/原receipt不改写。`node --check`、控制器内存语法编译及新候选无认证prepare均成功，prepare实际2张登录图、37项源指纹，并读回自有incognito/browser/debug端口/profile全部清理。此准备不证明认证业务状态或诊断修正规则已认证复验；已启动任务自有不回显输入窗口流程，新的认证矩阵、修正后像素裁决仍待实际完成。
+- 本轮安全证据在外部 `frontend-premium-20261015/dashboard-density-correction-20261015/`，新候选/回滚/私有运行日志在忽略目录 `collector-boot/target/releases/20261015-pw-density-0eb2dd1c/`。原批准标准、原始150图和历史结论保留；不将修正实现、构建、重部署或未认证prepare变成像素PASS，未commit/push。
+
+### 中间候选历史（已被下方当前候选替代）
+
+- 生产修改集中在 `collector-desktop/src/app/`、`collector-desktop/src/styles/`、`collector-desktop/src/views/auth/LoginView.vue` 及各功能 CSS；视觉基线统一为石墨侧栏、浅灰作业面、白色内容面、青绿色状态、琥珀风险、红色危险和 4–6px 精密面板圆角。登录页已按示意图改为左侧深色说明区、右侧浅色连接表单，保留真实服务地址、令牌、测试连接、登录、文档和安全提示边界。
+- 前端门禁实际通过：`npm run lint`、`npm run stylelint`、`npm run typecheck`；未运行测试、`quality` 或 `verify`，未创建/修改测试代码。
+- `npm run build` 与 `npm run build:web` 实际通过；构建期间仅出现既有 Rollup 注释和 chunk 体积 warning，没有升级依赖或放宽规则。网页控制台同步 61 个资源。
+- Java17/Maven3.6.3 使用 `-Dmaven.test.skip=true package` 实际通过，17 个 reactor 模块全部 SUCCESS。中间候选 JAR 为 112019281 bytes，SHA-256 `cc014728acc7349f50108fab58bc82ee753c0e19b7bb0620287463b7c886574f`；当前61个静态资源在JAR内逐项字节一致，入口为 `index-D5yBTL2s.js`。进一步检查完整路径集合发现JAR实际含126个desktop资源、其中65个是增量构建遗留的旧hash资源，故完整资源集合门禁未通过；最终必须在独立目录执行clean package并核对集合，不能沿用本轮中间包作为最终交付身份。
+- 已停止旧 listener 并以 Java17、仓库根目录和 `--server.port=9090` 启动新包；当前入口 `http://127.0.0.1:9090/collector/desktop/index.html` 实际 HTTP 200，最终 listener 已建立。`/collector/health` 仍如实为 `DOWN`：`application UP`、`cache UP`、`collectionService DOWN`、`connections UNKNOWN`；未修复后端依赖、未启动设备、未执行配置同步、告警确认、影子提交、网络检测或控制写入。
+- 中间候选1600×1000及390×844生产登录截图已由Chromium从9090实际渲染；RGB平均绝对差6.66仅为图像差异数值，未定义通过阈值，也不能证明信息结构、字体或全部主色分布一致。登录页独立像素复审及业务页认证态截图仍待完成；没有恢复或记录任何凭据，不能把未认证登录图冒充全站真实业务态验收。
+- 后续实施清单已保存至 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/PRODUCTION-FIDELITY-PLAN.md`，含14路由及两个编辑器逐项状态。`production-checkpoint/`只是在初步token/共享壳/登录修改之后的检查点，不宣称为全轮修改前基线。以上中间构建和部署记录保留为历史，最终门禁须在最后源码修改之后重跑。
+
+### 上轮候选的源码、构建及9090回读（历史，已被密度修正版替代）
+
+- 逐页结构调整已涉及 Dashboard 的五项设备/点位摘要与来源侧轨、History 趋势/原始表与上下文主辅区、Alarm 事件表/当前确认记录与风险侧轨、Realtime 完整13列表及低频单点区、Log 正文优先，以及配置/云链路/诊断/网络/控制/影子工作区和真实5/6Tab编辑器。告警的“确认记录”只使用当前列表已有数据，不冒充完整操作轨迹；控制页只呈现实际保留的最近回执，不新增历史能力。具体结构保真仍在独立源码审查及当前像素复核中，不宣布16项全部通过。
+- 最后一次源码修改后，`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际 exit0；保留既有第三方 PURE 注释和大 chunk warning，不升级依赖或降低规则。未创建/修改/运行测试，未运行quality/verify。
+- 外部只读审查实际解析完整Vue模板：22个Vue的完整script与 `production-checkpoint/src` 逐字节一致，原非呈现指令多重集合无缺失，41个API/Store/类型/路由文件无漂移。该检查点产生在初步修改后，只覆盖其后差异；指令和script相同不能证明移动后的条件祖先/slot/挂载语义或像素一致，已另行独立审查。
+- 长会话中HEAD已更新为 `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0`；未复用旧05f6a149隔离目录，而是从当前HEAD重新提取生产构建输入，仅叠加本轮61项renderer资源。Java17/Maven3.6.3在核实过cwd的新隔离目录执行 `-Dmaven.test.skip=true clean package`，17个reactor模块全部SUCCESS，错误0，warning行3，不编译或运行测试。
+- 当前可执行JAR为111513458 bytes，SHA-256 `e3579dc1cd390a51c5c746a4b974babe5c6e1992c17bebb6512d925bf55b15a1`，应用class major61。renderer、Boot静态源码与JAR均完整61项路径/字节一致，缺失0、额外旧hash资源0，已解决此前126项旧包遗留问题。
+- 部署前按PID15844、原生创建时间、Java21可执行文件、仓库根cwd及唯一JAR/9090参数核实旧listener；候选和回滚副本哈希验证后只停止该进程，再替换相同目标JAR。新服务使用Java17、仓库根cwd及原 `--server.port=9090` 参数，会话 `proc_61d00eab600b`，实际listener PID64508，原生创建时间1792052674.2467737。
+- 新9090入口及61/61静态HTTP资源均200、与最终JAR逐字节一致；未认证配置请求仍401。`/collector/health` HTTP200但整体DOWN：application/cache UP、collectionService DOWN、connections UNKNOWN；服务运行不等于采集健康，未修后端配置、启动设备或执行业务写入。
+- 认证采集前的无认证准备已实际捕获登录及设备认证失败态各顶部/底部共4图，自有incognito/browser/profile/debug端口均已清理；该准备不是全站认证态证据或像素PASS。其后已通过任务自有可见不回显窗口完成一次临时输入和下述150图采集，未恢复历史storage/配置/日志中的秘密，也不把已结束的输入窗口描述成仍在等待。
+- 构建、源保护、完整资源、受控替换及安全运行回执保留于外部 `frontend-premium-20261015/`；JAR/回滚及私有运行日志在被忽略的 `collector-boot/target/releases/20261015-pw-0eb2dd1c/`。本轮未commit/push，既有`.gitignore`和`.hermes.md`保持原状态。
+
+### 上轮候选的真实认证采集与逐页像素复核（历史证据保留）
+
+- 任务自有可见输入控制器已读回 `CAPTURE_FINISHED`，原生不回显且无降级；认证值未保存。真实截图回执为外部 `final-capture/capture-UGexIp/receipt.json`，原SHA-256为 `d6187b7da8d3c5cd9d9acbd99ed745834a8196fed2ba9fbcd5a741634fefd341`，原回执和PNG保持不变。
+- 实际取得150张PNG：14路由×1600×1000、1280×800、390×844三视口×顶部/底部共84张；本地设备5Tab及点位6Tab在同三视口顶部/底部另66张。父级逐项核对PNG签名、尺寸、SHA、Noto字体loaded及页面级横向溢出，图像无损坏、字体未加载和页面级横溢均0。此几何门禁不签表格内部滚动、细字可读性或视觉保真。
+- 295条非静态请求中244条获精确策略允许且全部HTTP200；51条被拒绝，其中48条无认证header、3条带认证header。Runtime exception和console error均0。原策略没有保存被阻断URL，不能事后把48条全部反推为favicon，也不能把所有来源分类成真实业务故障。
+- 工具源码核对发现：诊断的真实组件自动读取 `GET /api/device/{id}/running`，原精确策略遗漏此只读规则；原 `realState` 也把全部被阻断的非静态请求算作来源失败，150张原标签均为degraded。因此这些标签不能单独证明生产故障或采集健康，诊断局部错误态受采集工具边界影响，尚不能签成功来源态。原截图仍可用于其确实可见的布局审阅，不覆盖此限制。
+- 已在外部工具补上仅diagnostic可用的running精确GET规则，仍默认拒绝写入；对精确无参数同源favicon仅分开辅助分类、不放行；当hash导航复用文档时显式reload。原工具另按原字节留存，未覆盖旧证据。新版 `node --check` 和一次无认证prepare实际exit0、当前入口及完整资源核对通过、2张登录图捕获并清理；没有以无认证prepare宣称诊断running认证请求或整套认证矩阵已重跑成功。
+- 150张当前原图按25块审阅板拼接，每板含批准参考和对应三视口顶部/底部，source裁剪为exclusive坐标、destination为xywh，父级逐面板验证与源PNG像素相同。拼接验证只证明图像身份，不证明图片已被看见；原生附图通道没有提供传输缩放或analysis句柄，仍明确标为unknown/unavailable。7组逐页面板复核曾派发，其后上游失败与恢复记录见下；派发和中断均不计作通过。
+- 父级尝试一次任务自有无激活查看器的app-targeted像素观察，截图虽已保存，但辅助视觉返回server overloaded；该次为BLOCKED，不计作成功审图、无缺陷结论或像素PASS。不得用几何或源码结论补作视觉裁决。
+- 原采集自有incognito/browser/profile/debug端口均已清理，9090未被采集器重启或修改。采集结束后的当前renderer完整61项路径/字节仍与冻结候选相同；整体采集健康仍与视觉状态分开，尚无全站视觉PASS或用户接受。
+
+### 源码补充复核与像素通路恢复
+
+- 配置/运维/编辑器独立源码报告已交付，覆盖检查点之后11个Vue及6个CSS，未发现可确证新增P0/P1；父级重算报告所列17个目标指纹均一致。该报告有条件/循环/key/slot/form/Teleport等上下文核查，但不覆盖检查点之前的改动、像素、隐藏表格恢复或业务写入，不升级为完整生产验收。
+- 监测页独立源码审查尚无有效交付；父级另运行只读AST补充审查，五页原script字节一致、69个原交互/组件的受保护条件/循环/key/slot/分支链/form/Teleport上下文均找到匹配，解析错误0。六个控件的原生details折叠层级变化已逐个读源码复核：概览两个详情链接、实时单点的选择/输入/查询、历史JSON刷新。此为父级静态补充，不冒充独立审查或运行结果。
+- 原图附件批次 `deleg_d75e23b2` 的B/C/D/F/G已由完成轨迹确认上游超时，没有像素裁决；其余A/E运行超过25分钟仍无有效交付后请求中断，不通过重复等价派发或换provider制造结论。旧三页实施代理 `deleg_4579df11` 也确认零工具修改、无交付；父级再次核对36个冻结源码及完整renderer无漂移，未让旧失败任务覆盖当前候选。
+- 较早四任务批次 `deleg_6c9196ff` 的延迟完整交接现已核对：配置9个文件、运维10个文件（含保持原样的ControlView/ShadowView），合计19个唯一文件的子任务清单SHA均与当前源码相同；当前36个截图冻结源码、独立审查17个目标及renderer完整路径/字节亦无漂移。因此配置/运维交付已包含在当前构建与9090候选中，此通知未触发覆盖、重复重建或重启。该批监测任务仍是失败无交付；历史登录审图实际观察0张、BLOCKED，不能代替当前像素裁决。核对记录为 `late-deleg_6c9196ff-readback.json`，不将子任务自报的全阶段脚本保留范围扩大为父级已验证的原始基线范围。
+- 父级成功观察概览1600原图的一处原像素局部，识别真实31台/在线0/离线31/点位未知、风险主区和来源侧轨；另一成功分析仅描述概览七面板拼图的分组结构，并明确多数细字不可读，不把它分摊为七个面板或全部原图通过。两次技术分析失败和一次unchanged回复均单独保留。一次有界冷却后的标题校正已验证源PNG与业务像素不变、native标题读回改变、无激活/无前台焦点，随后得到上述分组级成功分析。
+- 当前采用实质不同、已验证可用的public computer_use只读查看器路径恢复：不再携带原生大图片附件，独占任务自有PID48704/HWND5838640，按原图序列分析。首个恢复任务 `deleg_91c4050d` 只覆盖Dashboard批准参考及三视口顶部/底部7图，要求逐图持久化真实分析和截图、失败有界、不关闭或抢焦点，不据此签其他页面。
+- 原始16项标准没有改写：新增 `current-acceptance-status-20261015-173832.json` 覆盖层绑定原计划SHA及原有ID/全文/历史状态，记录150图分布、源码受限结论、采集限制和逐项像素pending。PW-05仅有当前确认记录而非完整历史，PW-08缺少真实草稿差异快照，均明确保留为结构/来源边界，不用设计示例补齐。
+
 ## 最新请求：提交设备页修正、重部署9090与全前端设计提案（2026-10-15）
 
-用户明确要求提交当前代码并重启当前服务，然后继续使用 Frontend Design 扫描所有前端页面，给出更成熟的优化建议和拟修改页面样式图。当前为 `USER_AUTHORIZED_LOCAL_COMMIT_AND_REDEPLOY / FULL_FRONTEND_AUDIT_AND_DESIGN_PROPOSAL_IN_PROGRESS`，不是全站生产改版授权。按当前工作区与前轮15源/61资源冻结身份核对无漂移；提交白名单只包含前轮3个呈现源文件、本进度文档和完整Boot静态资源，不含既有`.gitignore`、`.hermes.md`、图片、证据或JAR，不push。
+用户明确要求提交当前代码并重启当前服务，然后继续使用 Frontend Design 扫描所有前端页面，给出更成熟的优化建议和拟修改页面样式图。当前为 `COMMITTED_AND_DEPLOYED_9090 / FULL_FRONTEND_AUDIT_AND_DESIGN_PROPOSAL_IN_PROGRESS`，不是全站生产改版授权。按当前工作区与前轮15源/61资源冻结身份核对无漂移；提交白名单只包含前轮3个呈现源文件、本进度文档和完整Boot静态资源，不含既有`.gitignore`、`.hermes.md`、图片、证据或JAR，不push。
 
 - 执行计划已保存到 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/EXECUTION-PLAN.md`；实际路由定义核实14个不同View（登录及13个业务路由，根/兜底重定向不重复计数），另盘点本地设备编辑器与点位详情两个重点界面。
 - 服务替换先本地提交，再从精确提交隔离worktree用Java17/Maven3.6.3执行无测试clean package；完整新包与静态字节核验后才停止已确认旧listener，保留回滚包及原启动参数/工作目录，分别报告liveness、HTTP和health。
@@ -10,6 +110,23 @@
 - 目标交付为14个路由样式图及2个重点编辑界面图、可导航独立HTML和逐页报告；实际HTTP/PNG/字体/边界核验之后才交付，不以HTML源文件替代样式图。未取得认证或实际像素的页面明确标注源码推断/未覆盖，不伪造成功数据。
 - 不创建、修改或运行测试，不运行quality/verify，不修改依赖、认证或后端业务，不开启设备/同步/告警确认/影子/网络执行等写操作。后续完成的提交hash、包身份、部署读回与提案图在本节追加；以下为前轮已完成的范围限定视觉复审历史。
 
+### 全站设计提案产出（2026-10-15）
+
+- 已基于 `audit-monitor/config/ops.json/.md` 完成独立 Precision Workbench 原型，覆盖 14 个真实路由及 LocalDeviceEditor、PointEditor 两个重点编辑界面，共 16 个 1600×1000 PNG 样式图。
+- 原型入口位于 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/prototype/index.html`，通过 HTTP 导航；入口使用 `app-clean.js` 和独立 `styles.css`，不进入生产源码、不请求生产 API、不执行写操作。示例数据显式标注“设计提案 · 示例数据 · 未实施”。
+- 已实际启动本地静态 HTTP 服务并通过 Chromium headless 渲染 16 张图；PNG 尺寸均为 1600×1000，均为非空渲染。该结果证明独立提案可渲染，不证明生产页面成功态像素、接口健康、键盘行为或用户接受。
+- 设计建议重点：监测页按来源新鲜度与风险组织；实时页保留完整 13 列；历史页保留采样顺序轴；告警分开 pointCode/确认/恢复；配置编辑器保留真实 5/6 Tab；云链路区分投递/ACK；诊断区分客户端就绪/服务健康/范围；网络页默认未执行。详见全站 `audit/DESIGN-PROPOSAL.md`。
+- 委派的独立 14 路由真实认证像素采集因 provider HTTP 429 未完成，因此不把未认证运行态或示例图冒充生产像素审查；剩余真实运行像素复核需另行执行。
+
+
+### 本次提交与新包重启实绩
+
+- 本地生产提交 `05f6a14929bf4dd68a52350bd7cd36d1c2b9d413`（`fix(desktop): refine device workbench visual hierarchy`）已完成，未push；提交路径以禁用rename合并口径为25条，折叠rename的Git统计为19文件，二者口径不同不混计。四个明确源/文档路径及完整生成资源范围、索引blob已逐项核验；既有`.gitignore`修改与`.hermes.md`保持未提交。
+- 精确提交的全新detached worktree采用命令级`core.autocrlf=false`检出，未修改用户Git配置；实际cwd及HEAD已核对，静态61项与前轮已审核renderer原始字节完全一致。Java17/Maven3.6.3无测试`clean package`实际exit0，17个reactor模块全部SUCCESS，可执行Boot入口及应用class major61已核验。
+- 新JAR为111501739 bytes，SHA-256 `152b8d4864f5326c85f0481daf011ef291dba8db4717c2fa311eb8346198b3b1`，打包61静态资源与已审核renderer精确匹配。备份旧包并验证SHA后，按进程可执行文件、工作目录、JAR/端口参数和原生创建时间再次确认，只停止旧listener PID29056，再替换相同目标JAR及latest副本。
+- 新后台会话`proc_d3e0b0e5b901`，实际listener PID38420；沿用Java17、仓库根cwd和`--server.port=9090`，不增加启动配置。61/61静态HTTP GET均200且与新JAR字节一致，实际入口现为`index-rdR7KHcm.js`；无认证设备配置实际401，认证默认没有放宽。
+- 整体health仍DOWN：application/cache UP，collectionService DOWN，connections UNKNOWN；新包启动与服务整体业务健康分别记录，没有通过启动/HTTP200声称采集正常。原认证上下文已销毁，当前全站成功态回读待另行本地临时输入，不读取旧storage/配置恢复秘密。
+- 安全回执和回滚/新包在忽略目录`collector-boot/target/releases/20261015-05f6a149/`，其中`ARTIFACT-READY.json`与`DEPLOYMENT-RECEIPT.json`已逐字节复制核对到全站提案artifacts的`release/`；私有Maven/后台日志、JAR和截图未提交。设备页旧7图证据包保持原字节；全站新建议与样式图继续进行，不能以重启完成代替提案交付。
 
 ## 最新范围：设备管理独立像素复审与呈现修正（2026-10-15）
 

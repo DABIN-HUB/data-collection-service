@@ -4,7 +4,7 @@
   min-width: 0;
   min-height: 0;
   margin: 0;
-  padding: 27px 30px 24px;
+  padding: 24px 28px 34px;
   flex: 1 1 auto;
   gap: 18px;
   overflow: auto;
@@ -60,7 +60,8 @@
 .collection-view .collection-sources {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 12px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .collection-view .collection-protocol-source {
@@ -140,7 +141,7 @@
   min-width: 0;
   padding: 0;
   border: 1px solid var(--console-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--console-panel);
   box-shadow: none;
 }
@@ -309,7 +310,7 @@
 }
 .collection-view :deep(.config-ops-panel .config-sync-form) {
   margin-bottom: 12px;
-  grid-template-columns: minmax(0, 260px) minmax(0, 360px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px 16px;
 }
 .collection-view :deep(.config-ops-panel .config-sync-form label) {
@@ -337,7 +338,7 @@
   display: grid;
   margin-top: 14px;
   padding: 14px 0 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
   border-top: 1px solid var(--console-border-soft);
 }
@@ -472,11 +473,170 @@
   overflow-wrap: anywhere;
 }
 
+/* 点位与差异占主工作面；来源证据、同步及原始文档在辅助列保留。 */
+.collection-view .collection-workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.collection-view .collection-main-stack,
+.collection-view .collection-aside-stack {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+
+.collection-view .collection-device-context {
+  display: flex;
+  min-width: 0;
+  padding: 11px 14px;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+
+.collection-device-context > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.collection-device-context strong {
+  color: var(--console-text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.collection-device-context span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.collection-device-context > a {
+  margin-left: auto;
+}
+
+.collection-view .collection-device-context a,
+.collection-view .collection-diff-body a {
+  color: var(--console-primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.collection-view a:focus-visible {
+  outline: 2px solid var(--console-primary);
+  outline-offset: 3px;
+}
+
+.collection-point-card,
+.collection-diff-card,
+.collection-source-card,
+.collection-protocol-disclosure {
+  min-width: 0;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+
+.collection-view .exact-table-title {
+  display: flex;
+  justify-content: space-between;
+}
+
+.collection-point-scroll {
+  min-width: 0;
+  max-height: 360px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.collection-point-scroll table {
+  width: 100%;
+  min-width: 660px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.collection-point-scroll th,
+.collection-point-scroll td {
+  height: 40px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--console-border-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.collection-point-scroll th {
+  position: sticky;
+  top: 0;
+  color: var(--console-text-muted);
+  background: var(--console-bg-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.collection-point-scroll td {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.collection-view .collection-unavailable,
+.collection-diff-body {
+  margin: 0;
+  padding: 16px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.collection-diff-body p {
+  margin: 0 0 12px;
+}
+
+.collection-protocol-disclosure > summary {
+  display: flex;
+  padding: 13px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.collection-protocol-disclosure > summary span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.collection-view .collection-protocol-disclosure > .collection-protocol-table {
+  border: 0;
+  border-top: 1px solid var(--console-border-soft);
+  border-radius: 0;
+}
+
 @media (max-width: 1440px) {
   .exact-page.collection-view { padding: 20px 22px 24px; }
 }
 
 @media (max-width: 1100px) {
+  .collection-view .collection-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .exact-page.collection-view { padding: 18px 20px 22px; }
   .collection-view :deep(.config-ops-panel .surface-grid.two) {
     grid-template-columns: minmax(0, 1fr);

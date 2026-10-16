@@ -33,6 +33,7 @@
         </div>
       </header>
 
+      <div class="local-editor-workspace">
       <nav class="local-editor-tabs" role="tablist" aria-label="新增设备配置分区">
         <button
           v-for="(step, index) in localEditorSteps"
@@ -319,6 +320,7 @@
           </div>
         </section>
       </main>
+      </div>
 
       <footer class="local-options local-editor-footer">
         <div class="local-footer-options"><label class="check-line"><input id="localOverwrite" v-model="overwrite" type="checkbox"> 覆盖已有本地临时设备</label>

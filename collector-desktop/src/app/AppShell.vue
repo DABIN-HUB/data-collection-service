@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
   --console-panel: #263d4b;
   --console-panel-soft: #283f4d;
   --console-bg-soft: #203541;
-  --console-primary-hover: #92d1cd;
+  --console-primary-hover: #9be1d9;
   --console-input-bg: #203541;
   --console-input-border: #526c7b;
   --console-input-text-disabled: #8ea5b3;

@@ -14,7 +14,7 @@
 .exact-page.cloud-view {
   width: 100%;
   min-width: 0;
-  padding: 27px 30px 24px;
+  padding: 24px 28px 34px;
   gap: 16px;
   background: transparent;
   overflow: auto;
@@ -236,7 +236,7 @@
   padding: 16px 18px;
   color: var(--cloud-text);
   border: 1px solid var(--cloud-line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--app-color-panel);
   box-shadow: none;
 }
@@ -273,11 +273,52 @@
   overflow-wrap: anywhere;
 }
 
-.cloud-view .exact-cloud-grid {
+.cloud-view .cloud-workbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.46fr);
+  align-items: start;
   gap: 16px;
+}
+
+.cloud-view .cloud-primary,
+.cloud-view .cloud-aside {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.cloud-view .cloud-aside .cloud-risk-overview {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.cloud-view .cloud-aside .cloud-strategy-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cloud-view .cloud-management-tools {
+  margin-top: 14px;
+  border-top: 1px solid var(--cloud-line-soft);
+}
+
+.cloud-view .cloud-management-tools > summary {
+  padding: 12px 0;
+  color: var(--cloud-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cloud-view .cloud-chain-detail .cloud-status-content {
+  margin-top: 14px;
+}
+
+.cloud-view .cloud-chain-detail .cloud-chain {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cloud-view .cloud-chain-detail .cloud-chain-arrow {
+  display: none;
 }
 
 .cloud-view .exact-cloud-status {
@@ -435,20 +476,31 @@
 .cloud-view .cloud-stat-row {
   display: grid;
   min-width: 0;
-  margin-top: auto;
-  padding-top: 16px;
+  margin: 0;
+  padding: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 0;
+  border: 1px solid var(--cloud-line);
+  border-radius: 6px;
+  background: var(--app-color-panel);
 }
 
 .cloud-view .cloud-stat-row > span {
   display: grid;
   min-width: 0;
-  padding-top: 10px;
+  padding: 14px 18px;
   gap: 4px;
   color: var(--cloud-muted);
-  border-top: 1px solid var(--cloud-line-soft);
+  border-right: 1px solid var(--cloud-line-soft);
   overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-stat-row > span:last-child {
+  border-right: 0;
+}
+
+.cloud-view .cloud-stat-row small {
+  font-size: 11px;
 }
 
 .cloud-view .cloud-stat-row b {
@@ -500,7 +552,7 @@
 .cloud-view .cloud-metric-rail {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   border: 0;
   border-radius: 0;
@@ -519,6 +571,7 @@
   background: transparent;
 }
 
+.cloud-view .cloud-metric-rail .modao-property-item:nth-child(3n),
 .cloud-view .cloud-metric-rail .modao-property-item:last-child {
   border-right: 0;
 }
@@ -794,8 +847,8 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .cloud-view .exact-cloud-grid {
+@media (max-width: 1050px) {
+  .cloud-view .cloud-workbench {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -808,7 +861,7 @@
   }
 
   .cloud-view .cloud-metric-rail {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .cloud-view .cloud-strategy {
@@ -819,6 +872,10 @@
   }
 
   .cloud-view .cloud-metric-rail .modao-property-item:nth-child(4n) {
+    border-right: 1px solid var(--cloud-line-soft);
+  }
+
+  .cloud-view .cloud-metric-rail .modao-property-item:nth-child(3n) {
     border-right: 0;
   }
 }
@@ -865,12 +922,29 @@
     border-right: 1px solid var(--cloud-line-soft);
   }
 
+  .cloud-view .cloud-metric-rail .modao-property-item:nth-child(3n) {
+    border-right: 1px solid var(--cloud-line-soft);
+  }
+
   .cloud-view .cloud-metric-rail .modao-property-item:nth-child(2n) {
     border-right: 0;
   }
 
   .cloud-view .cloud-filter-field {
     width: 100%;
+  }
+
+  .cloud-view .cloud-stat-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cloud-view .cloud-stat-row > span {
+    border-right: 0;
+    border-bottom: 1px solid var(--cloud-line-soft);
+  }
+
+  .cloud-view .cloud-stat-row > span:last-child {
+    border-bottom: 0;
   }
 
   .cloud-view .cloud-table-scroll {

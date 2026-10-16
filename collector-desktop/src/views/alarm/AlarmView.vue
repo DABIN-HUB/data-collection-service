@@ -14,13 +14,7 @@
     <p class="alarm-page-note">分别查看告警级别与确认状态；确认记录不等同于告警恢复。</p>
 
     <div class="exact-page-body">
-      <div class="exact-diagnostic-cards alarm-summary-cards" aria-label="当前告警历史摘要">
-        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
-        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
-        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
-        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
-        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
-      </div>
+
       <div class="exact-toolbar">
         <div class="exact-toolbar-group exact-toolbar-filters">
           <label class="alarm-filter-field">
@@ -64,6 +58,8 @@
       <el-alert v-if="alarmReadStatusText" :title="alarmReadStatusText" :type="alarmReadStatusType" :closable="false" />
       <el-alert v-if="ackStatusWarning" :title="ackStatusWarning" type="warning" :closable="false" />
 
+      <div class="alarm-workspace">
+      <div class="alarm-primary">
       <section class="exact-table-card alarm-ack-table">
         <div class="alarm-records-head"><h2>告警历史记录</h2><span>级别 / 发生条件 / 处理记录</span></div>
         <div class="alarm-table-scroll" tabindex="0" role="region" aria-label="告警历史记录，可横向和纵向滚动">
@@ -113,6 +109,43 @@
         </div>
         <div v-if="alarms.length === 0" class="alarm-empty-state" role="status">{{ alarmEmptyText }}</div>
       </section>
+      <section class="alarm-context-panel alarm-trace-panel">
+        <div class="alarm-records-head"><h2>确认记录</h2><span>当前列表，不是操作历史</span></div>
+        <p class="alarm-context-note">确认状态查询与提交确认分开；确认不代表恢复。以下仅展示当前列表已有的确认记录。</p>
+        <div class="alarm-trace-list" tabindex="0" role="region" aria-label="当前列表的确认记录，可独立滚动">
+          <div v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)" class="alarm-trace-row">
+            <strong :title="buildAlarmIdentity(alarm)">{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointCode || alarm.pointId || '-' }}</strong>
+            <span class="status-badge" :class="alarmAckStatusClass(alarm)">{{ alarmAckStatusText(alarm) }}</span>
+            <p :title="alarmAckDetailText(alarm)">{{ alarmAckDetailText(alarm) }}</p>
+          </div>
+          <p v-if="alarms.length === 0" class="alarm-context-note">{{ alarmEmptyText }}；没有可展示的确认记录。</p>
+        </div>
+      </section>
+      </div>
+      <aside class="alarm-aside" aria-label="告警风险与读取上下文">
+        <section class="alarm-context-panel">
+          <div class="alarm-records-head"><h2>风险摘要</h2><span>不代表服务健康</span></div>
+          <div class="exact-diagnostic-cards alarm-summary-cards" aria-label="当前告警历史摘要">
+            <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
+            <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
+            <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
+            <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
+            <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
+          </div>
+        </section>
+        <section class="alarm-context-panel">
+          <div class="alarm-records-head"><h2>读取上下文</h2><span>历史 / 确认分开</span></div>
+          <dl class="alarm-context-list">
+            <div><dt>当前设备范围</dt><dd>{{ alarmScopeText }}</dd></div>
+            <div><dt>时间 / 上限</dt><dd>最近 {{ alarmHours }} 小时 / {{ alarmLimit }} 条</dd></div>
+            <div><dt>历史读取</dt><dd>{{ alarmReadStatusText || (alarmLastSuccessAt === null ? '尚无成功读取' : '已取得历史记录') }}</dd></div>
+            <div><dt>最后成功</dt><dd>{{ alarmLastSuccessAt === null ? '未知' : new Date(alarmLastSuccessAt).toLocaleString() }}</dd></div>
+            <div><dt>确认状态读取</dt><dd>{{ ackStatusLoading ? '查询中' : ackStatusUnavailable ? '读取不完整' : ackStatusInitialized ? '已查询' : '尚未查询' }}</dd></div>
+          </dl>
+          <p class="alarm-context-note">历史成功时间不证明确认状态查询成功；本页不提供独立确认查询成功时间。</p>
+        </section>
+      </aside>
+      </div>
 
       <div v-if="alarmAckDialogVisible" class="alarm-ack-backdrop" role="dialog" aria-modal="true" aria-labelledby="alarmAckTitle" @click.self="closeAlarmAcknowledgementDialog">
         <section class="alarm-ack-dialog">
@@ -893,8 +926,95 @@ function currentAlarmAcknowledgementRefreshContext() {
   outline-offset: 2px;
 }
 
+.alarm-workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 0.43fr);
+  align-items: start;
+  gap: 18px;
+}
+.alarm-primary,
+.alarm-aside {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 18px;
+}
+.alarm-context-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+.alarm-view .alarm-aside .alarm-summary-cards {
+  margin: 0;
+  padding: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  border: 0;
+}
+.alarm-context-list {
+  display: grid;
+  margin: 0;
+  padding: 0 18px;
+}
+.alarm-context-list > div {
+  display: grid;
+  padding: 13px 0;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--console-border);
+  font-size: 12px;
+}
+.alarm-context-list dt { color: var(--console-text-muted); }
+.alarm-context-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--console-text-primary);
+  overflow-wrap: anywhere;
+}
+.alarm-context-note {
+  margin: 0;
+  padding: 14px 18px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.alarm-trace-list {
+  max-height: 220px;
+  padding: 0 18px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.alarm-trace-row {
+  display: grid;
+  padding: 12px 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  border-top: 1px solid var(--console-border);
+  font-size: 12px;
+}
+.alarm-trace-row strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alarm-trace-row p {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--console-text-muted);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1280px) {
   .exact-page.alarm-view { padding: 24px; }
+}
+
+@media (max-width: 1000px) {
+  .alarm-workspace { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 600px) {

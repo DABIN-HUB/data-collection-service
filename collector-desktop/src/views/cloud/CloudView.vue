@@ -16,68 +16,14 @@
 
     <div class="exact-page-body cloud-body">
       <div v-if="error" class="cloud-error" role="alert">{{ cloudUnavailableText }}</div>
-      <div class="cloud-risk-overview" :data-risk="cloudRisks.length ? 'known' : 'unknown'" aria-label="风险与只读下一步">
-        <div><strong>{{ cloudRiskOverviewTitle }}</strong><p>{{ cloudRiskOverviewReason }}</p></div>
-        <div class="cloud-read-links">
-          <a v-if="cloudRisks.length" href="#cloud-risk-list" @click.prevent="scrollToCloudSection('#cloud-risk-list')">查看全部风险</a>
-          <template v-if="cloudRisks.length"><RouterLink v-if="cloudRisks[0].to" :to="cloudRisks[0].to">{{ cloudRisks[0].entry }}</RouterLink><a v-else :href="cloudRisks[0].href" @click.prevent="scrollToCloudSection(cloudRisks[0].href)">{{ cloudRisks[0].entry }}</a></template>
-          <RouterLink v-else to="/diagnostic">查看系统诊断</RouterLink>
-          <a v-if="!cloudRisks.length" href="#cloud-metric-source" @click.prevent="scrollToCloudSection('#cloud-metric-source')">查看指标来源</a>
-        </div>
-      </div>
-
-      <div class="exact-cloud-grid">
-        <section class="exact-surface exact-cloud-status">
-          <div class="exact-surface-head"><h2>上报链路</h2><span>指标状态，不等于投递结果</span></div>
-          <div class="cloud-status-content">
-            <strong class="cloud-status-title"><i aria-hidden="true"></i>{{ cloudOperationalState.text }}</strong>
-            <small class="cloud-enabled-text">{{ cloudEnabledText }}</small>
-            <small class="cloud-status-description">{{ cloudOperationalState.description }}</small>
-            <small v-if="cloudOperationalState.disabledEvidence" class="cloud-disabled-evidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
-          </div>
-          <div class="cloud-chain" aria-label="上报链路阶段">
-            <div class="cloud-chain-node">
-              <span class="cloud-chain-index">01</span>
-              <div><strong>采集数据</strong><small>{{ metricsSourceState === 'ready' ? '来源已读取' : metricsSourceState === 'loading' ? '读取中' : metricsSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div>
-            </div>
-            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
-            <div class="cloud-chain-node">
-              <span class="cloud-chain-index">02</span>
-              <div><strong>可靠发件箱</strong><small>{{ outboxSourceState === 'ready' ? '列表已读取' : outboxSourceState === 'loading' ? '读取中' : outboxSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div>
-            </div>
-            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
-            <div class="cloud-chain-node">
-              <span class="cloud-chain-index">03</span>
-              <div><strong>云端确认（ACK）</strong><small>{{ cloudRawStatusText || '确认状态未知' }}</small></div>
-            </div>
-          </div>
-          <div class="cloud-stat-row">
-            <span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}</span>
-          </div>
-        </section>
-
-        <section class="exact-surface cloud-strategy">
-          <div class="exact-surface-head">
-            <h2>上报策略</h2>
-            <span>来源：上报链路指标</span>
-          </div>
-          <div class="modao-property-grid cloud-strategy-grid">
-            <div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-          </div>
-        </section>
-      </div>
-
-      <section id="cloud-metrics" class="exact-surface cloud-metrics" tabindex="-1" aria-labelledby="cloud-metrics-title">
-        <div class="exact-surface-head">
-          <h2 id="cloud-metrics-title">可靠发件箱 / 云端确认指标</h2>
-          <span>{{ cloudMetricsRefreshText }}</span>
-        </div>
-        <OperationSourceStatus id="cloud-metric-source" tabindex="-1" :state="metricsSourceState" source="上报链路指标（Outbox / ACK）" :last-attempt-at="metricsLastAttemptAt" :last-success-at="metricsLastSuccess?.getTime()" :detail="metricsSourceDetail" />
-        <div class="modao-property-grid cloud-metric-rail">
-          <div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+      <section class="cloud-summary-strip" aria-label="上报链路摘要">
+        <div class="cloud-stat-row">
+          <span v-for="item in cloudSummaryCards" :key="item.label"><b>{{ item.value }}</b>{{ item.label }}<small>来源：上报链路指标</small></span>
         </div>
       </section>
 
+      <div class="cloud-workbench">
+      <div class="cloud-primary">
       <section id="cloud-outbox" class="exact-surface cloud-outbox" tabindex="-1" aria-labelledby="cloud-outbox-title">
         <div class="exact-surface-head"><h2 id="cloud-outbox-title">可靠发件箱消息（Outbox）</h2><span>{{ outboxLastSuccess ? `${outboxRows.length} 项` : '数量未知' }} · {{ outboxRefreshText }}</span></div>
         <OperationSourceStatus :state="outboxSourceState" source="可靠发件箱消息列表" :last-attempt-at="outboxLastAttemptAt" :last-success-at="outboxLastSuccess?.getTime()" :detail="outboxSourceDetail" />
@@ -110,24 +56,45 @@
         </div>
         <div v-if="appStore.capabilities?.cloud.monitoringAvailable && !loading && !outboxRows.length" class="cloud-empty">{{ outboxReadState === 'error' ? outboxLastSuccess ? '本次队列读取失败；上次成功列表为空，请刷新重试' : '队列读取失败，请刷新重试' : outboxLastSuccess ? '已读取：该次筛选暂无发件箱消息' : '队列尚未成功加载，请刷新重试' }}</div>
         <div v-if="actionError" class="cloud-error" role="alert">{{ actionError }}</div>
+        <details class="cloud-management-tools">
+          <summary>管理操作与链路测试</summary>
         <div class="cloud-management">
           <p class="cloud-operation-note">重新发送（Replay）会再次进入发送链路；调度到期消息（Flush）不代表云端已确认。</p>
           <div class="heading-actions cloud-management-actions"><button v-if="appStore.capabilities?.cloud.managementAvailable" class="cloud-risk-action" @click="flush">调度到期消息</button><button v-if="appStore.capabilities?.cloud.managementAvailable" @click="testLink">测试云链路</button><span v-if="testResult" class="cloud-test-result">{{ testResult.message }}</span></div>
         </div>
+        </details>
       </section>
 
-      <el-drawer v-model="detailVisible" class="cloud-detail-drawer" :title="`可靠发件箱消息 ${selectedMessageId}`" size="min(720px, 90vw)">
-        <div v-if="detailLoading">详情加载中…</div>
-        <div v-else-if="detailError" class="cloud-error" role="alert">{{ detailError }}</div>
-        <div v-else-if="!detail" class="cloud-empty">消息详情为空</div>
-        <template v-else>
-          <div class="modao-property-grid">
-            <div v-for="item in detailFields" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
-          </div>
-          <details class="exact-json-panel"><summary>查看上报快照 JSON</summary><pre class="json-view" tabindex="0" aria-label="完整上报快照 JSON，可滚动查看">{{ prettyJson(detail.reportData) }}</pre></details>
-          <details class="exact-json-panel"><summary>查看提交记录 JSON</summary><pre class="json-view" tabindex="0" aria-label="完整提交记录 JSON，可滚动查看">{{ prettyJson(detail.commits) }}</pre></details>
-        </template>
-      </el-drawer>
+      <section id="cloud-metrics" class="exact-surface cloud-metrics" tabindex="-1" aria-labelledby="cloud-metrics-title">
+        <div class="exact-surface-head">
+          <h2 id="cloud-metrics-title">可靠发件箱 / 云端确认指标</h2>
+          <span>{{ cloudMetricsRefreshText }}</span>
+        </div>
+        <OperationSourceStatus id="cloud-metric-source" tabindex="-1" :state="metricsSourceState" source="上报链路指标（Outbox / ACK）" :last-attempt-at="metricsLastAttemptAt" :last-success-at="metricsLastSuccess?.getTime()" :detail="metricsSourceDetail" />
+        <div class="modao-property-grid cloud-metric-rail">
+          <div v-for="item in cloudOperationalRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+        </div>
+      </section>
+      </div>
+
+      <aside class="cloud-aside" aria-label="策略与链路风险">
+      <div class="cloud-risk-overview" :data-risk="cloudRisks.length ? 'known' : 'unknown'" aria-label="风险与只读下一步">
+        <div><strong>{{ cloudRiskOverviewTitle }}</strong><p>{{ cloudRiskOverviewReason }}</p></div>
+        <div class="cloud-read-links">
+          <a v-if="cloudRisks.length" href="#cloud-risk-list" @click.prevent="scrollToCloudSection('#cloud-risk-list')">查看全部风险</a>
+          <template v-if="cloudRisks.length"><RouterLink v-if="cloudRisks[0].to" :to="cloudRisks[0].to">{{ cloudRisks[0].entry }}</RouterLink><a v-else :href="cloudRisks[0].href" @click.prevent="scrollToCloudSection(cloudRisks[0].href)">{{ cloudRisks[0].entry }}</a></template>
+          <RouterLink v-else to="/diagnostic">查看系统诊断</RouterLink>
+          <a v-if="!cloudRisks.length" href="#cloud-metric-source" @click.prevent="scrollToCloudSection('#cloud-metric-source')">查看指标来源</a>
+        </div>
+      </div>
+
+      <section class="exact-surface cloud-strategy">
+        <div class="exact-surface-head"><h2>上报策略</h2><span>来源：上报链路指标</span></div>
+        <div class="modao-property-grid cloud-strategy-grid">
+          <div v-for="item in cloudStrategyRows" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+        </div>
+      </section>
+
 
       <section id="cloud-risk-list" class="exact-surface cloud-risks" tabindex="-1" aria-labelledby="cloud-risk-title">
         <div class="exact-surface-head">
@@ -141,10 +108,45 @@
         </div>
       </section>
 
+      <details class="exact-json-panel cloud-chain-detail">
+        <summary>上报链路与读取说明</summary>
+        <section class="exact-cloud-status">
+          <div class="cloud-status-content">
+            <strong class="cloud-status-title"><i aria-hidden="true"></i>{{ cloudOperationalState.text }}</strong>
+            <small class="cloud-enabled-text">{{ cloudEnabledText }}</small>
+            <small class="cloud-status-description">{{ cloudOperationalState.description }}</small>
+            <small v-if="cloudOperationalState.disabledEvidence" class="cloud-disabled-evidence">禁用依据：{{ cloudOperationalState.disabledEvidence }}</small>
+          </div>
+          <div class="cloud-chain" aria-label="上报链路读取来源">
+            <div class="cloud-chain-node"><span class="cloud-chain-index">01</span><div><strong>采集数据</strong><small>{{ metricsSourceState === 'ready' ? '来源已读取' : metricsSourceState === 'loading' ? '读取中' : metricsSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div></div>
+            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
+            <div class="cloud-chain-node"><span class="cloud-chain-index">02</span><div><strong>可靠发件箱</strong><small>{{ outboxSourceState === 'ready' ? '列表已读取' : outboxSourceState === 'loading' ? '读取中' : outboxSourceState === 'error' ? '读取失败' : '状态未知' }}</small></div></div>
+            <span class="cloud-chain-arrow" aria-hidden="true">→</span>
+            <div class="cloud-chain-node"><span class="cloud-chain-index">03</span><div><strong>上报指标状态</strong><small>{{ cloudRawStatusText || '确认状态未知' }}</small></div></div>
+          </div>
+          <p class="cloud-operation-note">指标已读取、发送成功与云端确认是不同事实；云端 ACK 以独立指标为准。</p>
+        </section>
+      </details>
+
       <details class="exact-json-panel">
         <summary>查看原始上报链路 JSON</summary>
         <pre class="json-view" tabindex="0" aria-label="完整上报链路 JSON，可滚动查看">{{ prettyJson(reportMetrics) }}</pre>
       </details>
+      </aside>
+      </div>
+
+      <el-drawer v-model="detailVisible" class="cloud-detail-drawer" :title="`可靠发件箱消息 ${selectedMessageId}`" size="min(720px, 90vw)">
+        <div v-if="detailLoading">详情加载中…</div>
+        <div v-else-if="detailError" class="cloud-error" role="alert">{{ detailError }}</div>
+        <div v-else-if="!detail" class="cloud-empty">消息详情为空</div>
+        <template v-else>
+          <div class="modao-property-grid">
+            <div v-for="item in detailFields" :key="item.label" class="modao-property-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+          </div>
+          <details class="exact-json-panel"><summary>查看上报快照 JSON</summary><pre class="json-view" tabindex="0" aria-label="完整上报快照 JSON，可滚动查看">{{ prettyJson(detail.reportData) }}</pre></details>
+          <details class="exact-json-panel"><summary>查看提交记录 JSON</summary><pre class="json-view" tabindex="0" aria-label="完整提交记录 JSON，可滚动查看">{{ prettyJson(detail.commits) }}</pre></details>
+        </template>
+      </el-drawer>
     </div>
   </section>
 </template>

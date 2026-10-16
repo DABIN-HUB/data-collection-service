@@ -3,10 +3,10 @@
     <div class="section-heading diagnostic-heading">
       <div class="diagnostic-heading-copy">
         <div class="heading-title-line">
-          <h1>系统实时状态诊断</h1>
+          <h1>系统诊断</h1>
           <span class="diagnostic-sampling-label">{{ loading ? '诊断中' : lastRefresh ? '诊断快照' : '尚未成功读取' }}</span>
         </div>
-        <p>核对服务、连接与采集健康；部分数据不可用时，请结合告警与原始记录判断。</p>
+        <p>核对独立来源、管线与设备运行态；客户端就绪不代表服务健康。</p>
       </div>
       <div class="heading-actions">
         <span class="diagnostic-refresh-time">{{ lastRefreshText }}</span>
@@ -20,6 +20,21 @@
       <p v-if="error" class="diagnostic-message is-error" role="alert">{{ error }}</p>
       <p v-else-if="partialWarning" class="diagnostic-message" role="status">{{ partialWarning }}</p>
 
+      <section class="exact-surface diagnostic-summary-surface">
+        <div class="exact-surface-head diagnostic-panel-head"><h2>诊断上下文</h2><span>{{ diagnosticDeviceContextText }}</span></div>
+        <div class="diagnostic-client-state"><strong>{{ systemStatusText }}</strong><span>仅表示本地初始化，不作为服务健康依据</span></div>
+        <div class="exact-diagnostic-cards diagnostic-summary-rail">
+          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card diagnostic-summary-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small class="diagnostic-source-note">{{ item.sourceText }}</small></div>
+        </div>
+        <details class="diagnostic-source-ledger">
+          <summary>查看各来源读取状态与时间</summary>
+          <OperationSourceStatus v-for="(source, key) in diagnosticSources" :key="key" :state="diagnosticSourceState(source, loading)" :source="source.label" :last-attempt-at="source.lastAttemptAt" :last-success-at="source.lastSuccessAt" :detail="diagnosticSourceDetail(source)" />
+        </details>
+        <p class="diagnostic-summary-note">未知不计入异常或健康；成功零值保留。本轮结束时间不代表各来源成功时间。</p>
+      </section>
+
+      <div class="diagnostic-workbench">
+      <div class="diagnostic-primary">
       <section class="exact-surface diagnostic-risk-surface" aria-labelledby="diagnostic-risk-title">
         <div class="exact-surface-head diagnostic-panel-head"><h2 id="diagnostic-risk-title">优先关注</h2><span>读取失败 / 异常优先，其次警告与未知；同级保留原顺序</span></div>
         <div class="diagnostic-risk-counts" aria-label="诊断项严重性分布">
@@ -43,7 +58,7 @@
       </section>
 
       <section class="exact-table-card diagnostic-rows-table">
-        <div class="exact-table-title diagnostic-panel-head"><h2 id="diagnostic-rows-title">诊断项列表</h2><span>{{ diagnosticRows.length }} 项</span></div>
+        <div class="exact-table-title diagnostic-panel-head"><h2 id="diagnostic-rows-title">诊断项与读取来源</h2><span>{{ diagnosticRows.length }} 项</span></div>
         <div class="diagnostic-table-scroll" tabindex="0" role="region" aria-labelledby="diagnostic-rows-title">
           <table class="diagnostic-check-table">
             <colgroup><col class="diagnostic-col-name"><col class="diagnostic-col-status"><col class="diagnostic-col-current"><col class="diagnostic-col-advice"></colgroup>
@@ -67,17 +82,6 @@
         </div>
       </section>
 
-      <section class="exact-surface diagnostic-summary-surface">
-        <div class="exact-surface-head diagnostic-panel-head"><h2>常规诊断摘要</h2><span>{{ diagnosticDeviceContextText }}</span></div>
-        <div class="exact-diagnostic-cards diagnostic-summary-rail">
-          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card diagnostic-summary-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small class="diagnostic-source-note">{{ item.sourceText }}</small></div>
-        </div>
-        <details class="diagnostic-source-ledger">
-          <summary>查看各来源读取状态与时间</summary>
-          <OperationSourceStatus v-for="(source, key) in diagnosticSources" :key="key" :state="diagnosticSourceState(source, loading)" :source="source.label" :last-attempt-at="source.lastAttemptAt" :last-success-at="source.lastSuccessAt" :detail="diagnosticSourceDetail(source)" />
-        </details>
-        <p class="diagnostic-summary-note">未知不计入异常或健康；成功零值保留。本轮结束时间不代表各来源成功时间。</p>
-      </section>
 
       <DiagnosticDetailPanel
         :cache-metrics="cacheMetrics"
@@ -91,6 +95,18 @@
         @retry="runDiagnostic"
       />
 
+      <details class="exact-json-panel diagnostic-raw-panel">
+        <summary>查看原始诊断 JSON</summary>
+        <pre class="json-view" tabindex="0" aria-label="完整原始诊断 JSON">{{ prettyJson(diagnosticRaw) }}</pre>
+      </details>
+      </div>
+
+      <aside class="diagnostic-aside" aria-labelledby="diagnostic-device-title">
+      <section class="exact-surface diagnostic-device-context">
+        <div class="exact-surface-head diagnostic-panel-head"><h2 id="diagnostic-device-title">所选设备运行态</h2></div>
+        <p>{{ diagnosticDeviceContextText }}</p>
+        <p>单设备查询、全局快照和配置清单分别读取；未选择设备时不借用全局状态作为单设备结果。</p>
+      </section>
       <OperationSourceStatus :state="deviceStore.loading ? 'loading' : deviceStore.lastUpdatedAt ? 'ready' : deviceStore.error ? 'error' : 'unknown'" source="设备配置列表接口" :last-success-at="deviceStore.lastUpdatedAt || null" :detail="deviceStore.error ? '设备上下文部分不可用；此时间仅证明配置列表曾成功读取，不代表本轮运行快照成功。' : '此成功时间仅属于配置列表；设备运行快照、单设备查询沿用下方独立读取与状态。'">
         <button type="button" :disabled="loading" @click="runDiagnostic">重试完整诊断</button>
       </OperationSourceStatus>
@@ -100,11 +116,8 @@
         :inventory-count="deviceStore.lastUpdatedAt > 0 ? deviceStore.devices.length : null"
         @select-device="selectDevice"
       />
-
-      <details class="exact-json-panel diagnostic-raw-panel">
-        <summary>查看原始诊断 JSON</summary>
-        <pre class="json-view" tabindex="0" aria-label="完整原始诊断 JSON">{{ prettyJson(diagnosticRaw) }}</pre>
-      </details>
+      </aside>
+      </div>
     </div>
   </section>
 </template>

@@ -3,11 +3,7 @@
     <div class="sidebar-top">
       <div class="brand">
         <span class="brand-mark"><img :src="factoryIcon" alt="" /></span>
-        <div class="brand-copy"><strong>工业数据控制台</strong><small>数据采集工作台</small></div>
-      </div>
-      <div class="workspace-label">
-        <span class="node-square" aria-hidden="true"></span>
-        <div>本机采集节点<small>{{ appStore.platform === 'browser' ? '本地浏览器' : `Electron/${appStore.platform}` }} / {{ appStore.initialized ? '客户端就绪' : '初始化中' }}</small></div>
+        <div class="brand-copy"><strong>数据采集工作台</strong><small>工业数据控制台</small></div>
       </div>
       <nav class="section-nav" aria-label="控制台主导航">
         <div v-for="group in navigationGroups" :key="group.title" class="nav-group">
@@ -26,6 +22,10 @@
     </div>
 
     <div class="sidebar-bottom">
+      <div class="workspace-label">
+        <span class="node-square" aria-hidden="true"></span>
+        <div>本机采集节点<small>{{ appStore.platform === 'browser' ? '本地浏览器' : `Electron/${appStore.platform}` }} / {{ appStore.initialized ? '客户端就绪' : '初始化中' }}</small></div>
+      </div>
       <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}<small>仅客户端状态</small></span></div>
       <details class="sidebar-token-drawer">
         <summary>运维令牌与连接</summary>
@@ -83,7 +83,7 @@ function saveToken() {
   min-width: var(--app-sidebar-width);
   height: 100%;
   min-height: 0;
-  padding: 27px 17px 16px;
+  padding: 24px 14px 18px;
   flex-direction: column;
   justify-content: space-between;
   gap: 16px;
@@ -104,33 +104,36 @@ function saveToken() {
 .brand {
   display: flex;
   min-height: 42px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 5px 22px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 0 12px 25px;
+  border-bottom: 1px solid rgb(255 255 255 / 11%);
 }
 
 .brand-mark {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
-  color: #84c2c1;
-  border: 0;
-  border-radius: var(--console-radius-lg);
+  color: #9ee0d9;
+  border: 1px solid #7ac4c1;
+  border-radius: 0;
   background: transparent;
 }
 
 .brand-mark img {
   display: block;
-  width: 29px;
-  height: 29px;
+  width: 25px;
+  height: 25px;
 }
 
 .brand-copy strong {
   display: block;
   color: var(--console-text-primary);
   font-size: 16px;
-  line-height: 1.2;
+  font-weight: 650;
+  line-height: 1.4;
 }
 
 .brand-copy small {
@@ -142,13 +145,10 @@ function saveToken() {
 
 .workspace-label {
   display: flex;
-  padding: 11px 13px;
-  margin-bottom: 21px;
+  padding: 0 12px;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--console-border);
-  border-radius: 7px;
-  background: var(--console-panel);
+  color: var(--console-text-secondary);
   font-size: 12px;
 }
 
@@ -169,6 +169,7 @@ function saveToken() {
 .section-nav {
   display: block;
   min-height: 0;
+  padding-top: 18px;
   flex: 1 1 auto;
   overflow: auto;
 }
@@ -177,7 +178,7 @@ function saveToken() {
 .nav-group + .nav-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .nav-group + .nav-group {
@@ -197,40 +198,40 @@ function saveToken() {
   position: relative;
   display: flex;
   min-height: 39px;
-  padding: 0 13px;
+  padding: 0 12px;
   align-items: center;
   gap: 11px;
   color: var(--console-text-muted);
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 3px;
   text-decoration: none;
 }
 
 .section-nav a:hover {
   color: var(--console-text-primary);
-  border-color: var(--console-border-soft);
-  background: #283f4d;
+  border-color: transparent;
+  background: rgb(255 255 255 / 8%);
 }
 
 .section-nav a.is-active {
   color: var(--console-text-primary);
   border-color: transparent;
-  background: #345462;
+  background: rgb(255 255 255 / 8%);
 }
 
 .section-nav a.is-active::before {
   position: absolute;
-  inset: 10px auto 10px -2px;
-  width: 3px;
-  border-radius: 2px;
-  background: #92d1cd;
+  inset: 0 auto 0 -1px;
+  width: 2px;
+  border-radius: 0;
+  background: #65c5c0;
   content: "";
 }
 
 .nav-glyph {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 17px;
+  height: 17px;
   place-items: center;
 }
 

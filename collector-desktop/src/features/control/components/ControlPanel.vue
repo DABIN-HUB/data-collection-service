@@ -10,8 +10,9 @@
       </div>
     </section>
     <div class="control-grid">
+      <div class="control-main-column">
       <section class="operation-panel">
-        <header class="operation-head"><h3>控制操作</h3><span class="control-badge" :class="{ 'tone-warning': !canControl }">{{ canControl ? '可执行' : '不可执行' }}</span></header>
+        <header class="operation-head"><h3>命令编辑</h3><span class="muted">单点 · 批量 · 协议命令</span></header>
         <nav class="operation-tabs" aria-label="控制操作类型">
           <button v-for="mode in operationModes" :key="mode.key" type="button" :class="{ active: activeMode === mode.key }" :aria-pressed="activeMode === mode.key" @click="activeMode = mode.key">{{ mode.label }}</button>
         </nav>
@@ -79,8 +80,35 @@
         </footer>
       </section>
 
+      <section class="control-history-panel" aria-labelledby="control-history-title">
+        <header class="operation-head"><h3 id="control-history-title">最近完成记录</h3><span class="muted">当前面板</span></header>
+        <p class="control-history-note">仅保留最近一条已完成操作；不是设备历史查询，结果归属实际提交目标。</p>
+        <div class="control-history-scroll">
+          <table class="control-history-table">
+            <thead><tr><th scope="col">完成时间</th><th scope="col">操作</th><th scope="col">提交目标</th><th scope="col">返回状态</th></tr></thead>
+            <tbody>
+              <tr v-if="actionResult"><td>{{ formatActionTime(actionResult.completedAt) }}</td><td>{{ actionLabel(actionResult.target.action) }}</td><td><code :title="actionResult.target.deviceId || actionResult.target.target">{{ actionResult.target.deviceId || actionResult.target.target }}</code></td><td :class="`tone-${resultStatus.tone}`">{{ resultStatus.label }}</td></tr>
+              <tr v-else><td colspan="4" class="control-history-empty">尚无已完成操作；不会自动执行写入或命令。</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      </div>
+
+      <div class="control-side-column">
+      <section class="control-conditions-panel" aria-labelledby="control-conditions-title">
+        <header class="operation-head"><h3 id="control-conditions-title">执行条件</h3><span class="control-badge" :class="{ 'tone-warning': !canControl }">{{ canControl ? '可执行' : '不可执行' }}</span></header>
+        <dl class="control-conditions-list">
+          <div><dt>当前设备</dt><dd><code :title="deviceId">{{ deviceId || '未选择设备' }}</code></dd></div>
+          <div><dt>生命周期</dt><dd>{{ deviceStore.runtimeMap[deviceId]?.phase || '未知' }}</dd></div>
+          <div><dt>传输连接</dt><dd>{{ deviceStore.runtimeMap[deviceId]?.connected === true ? '已连接' : deviceStore.runtimeMap[deviceId]?.connected === false ? '未连接' : '未知' }}</dd></div>
+          <div><dt>协议就绪</dt><dd>{{ deviceStore.runtimeMap[deviceId]?.ready === true ? '就绪' : deviceStore.runtimeMap[deviceId]?.ready === false ? '未就绪' : '未知' }}</dd></div>
+          <div><dt>执行确认</dt><dd>提交前人工确认</dd></div>
+        </dl>
+        <p class="control-conditions-note">来源：当前设备运行快照。“可执行”仅表示运行条件满足，不证明协议支持命令，也不代表设备已接受。</p>
+      </section>
       <aside class="result-panel" aria-label="执行结果">
-        <header class="result-head"><h3>执行结果</h3><span class="control-badge" :class="`tone-${resultStatus.tone}`">{{ resultStatus.label }}</span></header>
+        <header class="result-head"><h3>执行回执</h3><span class="control-badge" :class="`tone-${resultStatus.tone}`">{{ resultStatus.label }}</span></header>
         <div class="result-body" :class="{ 'has-result': actionResult || pendingTargets.length }">
           <div v-if="pendingTargets.length" class="pending-notice" role="status">
             <strong>正在执行，等待返回</strong>
@@ -152,6 +180,7 @@
           </div>
         </div>
       </aside>
+      </div>
     </div>
     <p class="operation-note">切换操作标签保留草稿和结果；切换设备重置草稿，结果仍归属实际提交目标。</p>
   </div>
@@ -536,9 +565,95 @@ watch(() => props.deviceId, () => {
 
 .control-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.46fr);
   align-items: start;
-  gap: 18px;
+  gap: 16px;
+}
+
+.control-main-column,
+.control-side-column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+
+.control-history-note,
+.control-conditions-note {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.control-history-scroll {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.control-history-table {
+  width: 100%;
+  min-width: 550px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.control-history-table th,
+.control-history-table td {
+  padding: 10px 14px;
+  border-top: 1px solid var(--console-border-soft);
+  text-align: left;
+}
+
+.control-history-table th {
+  color: var(--console-text-muted);
+  background: var(--console-bg-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.control-history-table code {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-history-table .control-history-empty {
+  height: 82px;
+  color: var(--console-text-muted);
+  white-space: normal;
+}
+
+.control-history-table:has(.control-history-empty) {
+  min-width: 0;
+}
+
+.control-conditions-list {
+  display: grid;
+  margin: 0;
+  padding: 14px 16px 0;
+  gap: 10px;
+}
+
+.control-conditions-list > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.control-conditions-list dt {
+  color: var(--console-text-muted);
+}
+
+.control-conditions-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .control-risk {
@@ -577,11 +692,13 @@ watch(() => props.deviceId, () => {
 }
 
 .operation-panel,
-.result-panel {
+.result-panel,
+.control-conditions-panel,
+.control-history-panel {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
+  border-radius: 6px;
   background: var(--console-panel);
 }
 
@@ -882,14 +999,15 @@ watch(() => props.deviceId, () => {
 .control-workbench button.primary {
   max-width: 60%;
   overflow: hidden;
-  color: #fff;
-  border-color: var(--console-primary);
-  background: var(--console-primary);
+  color: var(--app-color-error);
+  border-color: color-mix(in srgb, var(--app-color-error) 38%, var(--console-border-soft));
+  background: var(--console-panel);
   text-overflow: ellipsis;
 }
 
 .control-workbench button.primary:hover:not(:disabled) {
-  background: var(--console-primary-hover);
+  border-color: var(--app-color-error);
+  background: var(--app-color-error-soft);
 }
 
 .control-workbench button.text-button {

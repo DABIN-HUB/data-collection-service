@@ -24,6 +24,8 @@
     <p class="point-workbench-note">表单、协议扩展和 JSON 编辑同一份点位配置；点位保存与设备连接配置保存相互独立。</p>
 
     <div class="point-workbench-grid">
+      <details class="point-table-disclosure">
+        <summary>点位矩阵<span>{{ points.length }} 个配置点位 · 展开选择或逐行编辑</span></summary>
       <section class="point-table-panel">
         <div class="point-table-meta">
           <span>点位数：{{ points.length }}</span>
@@ -83,6 +85,7 @@
           </el-table-column>
         </el-table>
       </section>
+      </details>
 
       <aside class="point-detail-panel">
         <template v-if="selectedPoint">
@@ -103,7 +106,7 @@
             <span>更新时间：{{ formatTime(runtimeOf(selectedPoint)?.timestamp || runtimeOf(selectedPoint)?.collectTime) }}</span>
           </div>
 
-          <el-tabs v-model="detailTab" class="point-detail-tabs">
+          <el-tabs v-model="detailTab" class="point-detail-tabs" tab-position="left">
             <el-tab-pane label="基础" name="basic">
               <div class="point-detail-form-grid">
                 <label>点位名称<el-input v-model="selectedPoint.pointName" /></label>
@@ -116,6 +119,15 @@
                 <label>读写<el-select v-model="selectedPoint.readWrite"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></label>
                 <label class="wide-field">备注<el-input v-model="selectedPoint.remark" type="textarea" :rows="2" /></label>
               </div>
+              <section class="point-build-reference" aria-label="只读构建字段">
+                <h4>只读构建字段</h4>
+                <dl>
+                  <div><dt>点位 ID</dt><dd>{{ selectedPoint.pointId ?? '-' }}</dd></div>
+                  <div><dt>设备 ID</dt><dd>{{ selectedPoint.deviceId ?? '-' }}</dd></div>
+                  <div><dt>基础采集周期</dt><dd>{{ selectedPoint.baseCollectionInterval ?? '-' }}<span v-if="selectedPoint.baseCollectionInterval != null"> ms</span></dd></div>
+                  <div><dt>当前采集周期</dt><dd>{{ selectedPoint.currentCollectionInterval ?? '-' }}<span v-if="selectedPoint.currentCollectionInterval != null"> ms</span></dd></div>
+                </dl>
+              </section>
             </el-tab-pane>
 
             <el-tab-pane label="数据处理" name="data">
@@ -592,6 +604,13 @@ onBeforeUnmount(() => {
   color: var(--console-text-secondary);
 }
 
+.point-toolbar,
+.point-workbench-note,
+.point-workbench-grid {
+  /* 嵌入宿主限制高度时保留内容自然尺寸，由宿主滚动，避免字段和章节被压缩裁切。 */
+  flex-shrink: 0;
+}
+
 .point-toolbar {
   display: flex;
   min-height: 42px;
@@ -626,11 +645,46 @@ onBeforeUnmount(() => {
 }
 
 .point-workbench-grid {
-  display: grid;
+  display: flex;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 400px;
+  flex-direction: column;
   gap: 16px;
+}
+
+.point-table-disclosure {
+  min-width: 0;
+  order: 1;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
+  background: var(--console-panel);
+}
+
+.point-table-disclosure > summary {
+  display: flex;
+  min-height: 44px;
+  padding: 12px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+
+.point-table-disclosure > summary span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.point-table-disclosure > summary:focus-visible {
+  outline: 2px solid var(--console-primary);
+  outline-offset: -3px;
+}
+
+.point-table-disclosure .point-table-panel {
+  border: 0;
+  border-top: 1px solid var(--console-border-soft);
+  border-radius: 0;
 }
 
 .point-table-panel,
@@ -667,11 +721,10 @@ onBeforeUnmount(() => {
 }
 
 .point-detail-panel {
-  position: sticky;
+  position: static;
   display: flex;
-  top: 0;
-  align-self: start;
-  max-height: min(680px, 76dvh);
+  order: 0;
+  max-height: none;
   flex-direction: column;
   overflow: hidden;
 }
@@ -717,22 +770,94 @@ onBeforeUnmount(() => {
 }
 
 .point-detail-tabs {
-  display: flex;
+  display: grid;
   min-width: 0;
   min-height: 0;
-  flex-direction: column;
+  grid-template-columns: 150px minmax(0, 1fr);
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
 }
 
 .point-detail-tabs :deep(.el-tabs__header) {
-  margin-bottom: 16px;
-  flex: none;
+  margin: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
+}
+
+.point-detail-tabs :deep(.el-tabs__nav-wrap::after),
+.point-detail-tabs :deep(.el-tabs__active-bar) {
+  display: none;
+}
+
+.point-detail-tabs :deep(.el-tabs__item.is-left) {
+  height: 40px;
+  margin-bottom: 3px;
+  padding: 0 11px;
+  justify-content: flex-start;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.point-detail-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--console-primary);
+  background: var(--app-color-success-soft);
+}
+
+.point-detail-tabs :deep(.el-tabs__item:focus-visible) {
+  outline: 2px solid var(--console-primary);
+  outline-offset: -2px;
 }
 
 .point-detail-tabs :deep(.el-tabs__content) {
-  min-height: 0;
-  padding-bottom: 4px;
+  min-width: 0;
+  min-height: 340px;
+  max-height: min(680px, 64dvh);
+  padding: 18px 20px;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.point-build-reference {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--console-border-soft);
+}
+
+.point-build-reference h4 {
+  margin: 0 0 12px;
+  color: var(--console-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.point-build-reference dl {
+  display: flex;
+  margin: 0;
+  gap: 12px 22px;
+  flex-wrap: wrap;
+}
+
+.point-build-reference dl > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.point-build-reference dt {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.point-build-reference dd {
+  margin: 5px 0 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.point-editor .point-detail-tabs :deep(.el-tab-pane) {
+  min-height: 0;
 }
 
 .point-detail-form-grid,
@@ -907,17 +1032,6 @@ onBeforeUnmount(() => {
   color: var(--console-text-muted);
 }
 
-@media (max-width: 1440px) {
-  .point-workbench-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .point-detail-panel {
-    position: static;
-    max-height: min(680px, 76dvh);
-  }
-}
-
 @media (max-width: 1080px) {
   .point-toolbar {
     align-items: flex-start;
@@ -957,6 +1071,36 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 600px) {
+  .point-detail-tabs {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__content) {
+    min-height: 260px;
+    padding: 14px 12px;
+    order: 0;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__header) {
+    max-width: 100%;
+    padding: 6px;
+    order: 1;
+    border-top: 1px solid var(--console-border-soft);
+    border-right: 0;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__item.is-left) {
+    height: 34px;
+    margin: 0;
+    padding: 0 9px;
+  }
+
   .point-table-panel,
   .point-detail-panel {
     padding: 12px;

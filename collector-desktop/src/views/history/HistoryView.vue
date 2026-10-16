@@ -65,6 +65,14 @@
       <el-alert v-if="historyReadStatusText" class="history-notice" :title="historyReadStatusText" :type="historyReadStatusType" :closable="false" />
       <el-alert v-if="historyPartialWarning" class="history-notice" :title="historyPartialWarning" type="warning" :closable="false" />
 
+      <div class="history-workspace">
+      <div v-if="historySummaryCards.length" class="history-primary-summary" aria-label="历史查询主摘要">
+        <article v-for="card in historySummaryCards.slice(0, 3)" :key="card.label">
+          <span>{{ card.label }}</span>
+          <strong :title="historyPresentation.hasResult ? card.value : historyPresentation.stateLabel">{{ historyPresentation.hasResult ? card.value : '—' }}</strong>
+          <small>{{ historyPresentation.hasResult ? card.detail : historyPresentation.stateLabel }}</small>
+        </article>
+      </div>
       <div class="history-trend-grid">
         <section class="history-panel history-curve-panel">
           <div class="history-panel-head">
@@ -124,7 +132,9 @@
 
       </div>
 
-      <div v-if="historySummaryCards.length" class="history-summary">
+      <details v-if="historySummaryCards.length" class="history-summary-details">
+        <summary>补充查询摘要 <span>全部曲线、告警与范围统计</span></summary>
+      <div class="history-summary">
         <article v-for="card in historySummaryCards" :key="card.label" :class="{ 'history-time-range': card.label === '时间范围', 'history-value-range': card.label === '数值范围' }">
           <span>{{ card.label }}</span>
           <strong :title="historyPresentation.hasResult || card.label === '时间范围' ? card.value : historyPresentation.stateLabel">
@@ -133,17 +143,34 @@
           <small>{{ historyPresentation.hasResult || card.label === '时间范围' ? card.detail : historyPresentation.stateLabel }}</small>
         </article>
       </div>
+      </details>
 
       <div class="history-context-grid">
-        <section class="history-panel history-json-panel">
-          <div class="history-panel-head">
-            <h2>查询结果 JSON</h2>
+        <section class="history-panel history-query-context">
+          <div class="history-panel-head"><h2>查询上下文</h2><span>当前条件</span></div>
+          <dl class="history-context-list">
+            <div><dt>设备</dt><dd :title="deviceId">{{ deviceStore.devices.find(device => device.normalizedId === deviceId)?.displayName || deviceId || '尚未选择' }}</dd></div>
+            <div><dt>主点位</dt><dd :title="pointRef">{{ selectedPointLabel || pointRef || '尚未选择' }}</dd></div>
+            <div><dt>时间范围</dt><dd>{{ historyTimeRangeText }}</dd></div>
+            <div><dt>查询上限</dt><dd>{{ limit }} 条 / 点位</dd></div>
+            <div><dt>已选对比</dt><dd>{{ comparePointRefs.length }} 个点位</dd></div>
+          </dl>
+          <div class="history-context-status" role="status">
+            <strong>{{ historyReadStatusText || historyPresentation.stateLabel }}</strong>
+            <p>{{ historyLastSuccessAt === null ? '尚无成功查询记录' : `最后成功 ${new Date(historyLastSuccessAt).toLocaleString()}` }}</p>
+            <p v-if="lastSuccessfulHistoryContext">已加载上下文：{{ lastSuccessfulHistoryContext.deviceId }} / {{ lastSuccessfulHistoryContext.pointRef }}</p>
+            <p>当前条件与已加载上下文分别显示；更改条件不代表新查询成功。</p>
+          </div>
+        </section>
+        <details class="history-panel history-json-panel">
+          <summary class="history-panel-head"><h2>查询结果 JSON</h2><span>完整原始结果</span></summary>
+          <div class="history-json-actions">
             <button type="button" class="history-button history-json-refresh" :disabled="historyQueryDisabled || !deviceId || !pointRef" @click="loadHistory">刷新</button>
           </div>
           <div class="history-json-body">
             <pre class="history-json-view" tabindex="0" aria-label="完整历史查询 JSON，可独立横向和纵向滚动">{{ historyExportText }}</pre>
           </div>
-        </section>
+        </details>
 
       <section class="history-panel history-alarm-panel">
         <div class="history-panel-head">
@@ -192,6 +219,7 @@
         </div>
         <div v-if="historyRows.length === 0" class="history-table-empty" role="status">{{ historyPresentation.dataEmpty }}</div>
       </section>
+      </div>
     </div>
   </section>
 </template>

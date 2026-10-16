@@ -27,7 +27,7 @@
 
     <div class="local-editor-layout">
       <div class="local-editor-body device-operation-body">
-        <div class="config-overview">
+        <div class="config-overview" aria-label="当前设备配置上下文">
           <dl class="config-overview-fields">
             <div><dt>设备分组</dt><dd>{{ deviceStore.selectedDevice?.displayGroup || '未分组' }}</dd></div>
             <div><dt>配置来源</dt><dd>{{ deviceStore.selectedDevice?.configSource || 'local' }}</dd></div>
