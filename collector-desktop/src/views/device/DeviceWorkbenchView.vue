@@ -83,7 +83,7 @@ function openWorkbenchRealtime(target: WorkbenchPointTarget) {
 
 .precision-config-view :deep(.device-config-workbench-pane) {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(248px, 300px) minmax(0, 1fr);
   align-items: start;
   gap: 14px 18px;
 }
@@ -91,15 +91,15 @@ function openWorkbenchRealtime(target: WorkbenchPointTarget) {
 .precision-config-view :deep(.run-control-card) {
   grid-column: 1;
   grid-row: 1;
-  padding: 16px;
-  align-items: flex-start;
-  gap: 16px;
+  display: grid;
+  padding: 14px;
+  gap: 12px;
   border-radius: 6px;
 }
 
 .precision-config-view :deep(.runtime-heading) {
   width: 100%;
-  padding: 0 0 12px;
+  padding: 0 0 10px;
   border-right: 0;
   border-bottom: 1px solid var(--console-border-soft);
 }
@@ -108,11 +108,23 @@ function openWorkbenchRealtime(target: WorkbenchPointTarget) {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 20px;
+  gap: 10px 12px;
 }
 
 .precision-config-view :deep(.run-control-actions) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-left: 0;
+  gap: 7px;
+}
+
+.precision-config-view :deep(.run-control-actions .el-button) {
+  width: 100%;
+  margin-left: 0;
+}
+
+.precision-config-view :deep(.run-control-actions .el-button:last-child) {
+  grid-column: 1 / -1;
 }
 
 .precision-config-view :deep(.runtime-note) {
@@ -162,7 +174,7 @@ function openWorkbenchRealtime(target: WorkbenchPointTarget) {
 }
 
 .precision-config-view :deep(.compact-point-detail) {
-  padding: 14px;
+  padding: 16px;
   border-top: 1px solid var(--console-border-soft);
   border-left: 0;
 }
@@ -180,7 +192,7 @@ function openWorkbenchRealtime(target: WorkbenchPointTarget) {
   overflow-x: auto;
 }
 
-@media (max-width: 1250px) {
+@media (max-width: 980px) {
   .precision-config-view :deep(.device-config-workbench-pane) {
     grid-template-columns: minmax(0, 1fr);
   }

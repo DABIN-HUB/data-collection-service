@@ -1,5 +1,14 @@
 # collector-desktop 前端架构重构进度
 
+## 最新请求：设备管理配置工作台主辅布局修正与9090重部署（2026-10-17）
+
+当前状态：`IMPLEMENTED / STATIC_GATES_PASS / READY_FOR_FRESH_RENDERER_REVIEW`。本轮只调整“设备管理 → 设备配置工作台”标签页的呈现布局：把原先占据较大空间的运行状态、协议连接配置收窄为左侧配置轨，把点位列表、实时数据、告警、日志和点位详情扩展为右侧主工作区；未修改 API、DTO、Store、Router、Schema、请求生命周期、默认值、业务 handler 或保存/执行边界。
+
+- `DeviceWorkbenchView.vue` 将工作台主辅比例调整为左侧 `248–300px`、右侧占用剩余宽度；运行状态卡压缩为窄栏上下结构，保留连接检查、启动采集和停止采集原操作；点位详情保持在主区下方，不改变字段、事件和真实空态。
+- 1280px 兼容断点不再提前堆叠为单列，仅在 `980px` 以下转为纵向；移动端继续主区优先、配置区下置，保留内部标签和表格滚动边界。
+- 已执行 `npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web`，均成功；构建 warning 为既有 Rollup PURE 注释和 chunk 体积提示，未升级依赖或放宽规则。未创建、修改或运行测试，未运行 `quality`/`verify`。
+- 当前尚未完成最终提交、隔离 Maven 无测试打包、9090 替换和新 renderer 真实只读复核；这些门禁必须基于本轮最终提交继续执行。设计预览和截图保存在外部 scratch，不进入生产提交。
+
 ## 最新请求：Precision Workbench 全站生产视觉改造与9090重部署（2026-10-15）
 
 用户确认按独立 Precision Workbench 示意图开始生产页面改造，并要求持续监督、重新编译并运行 9090。当前为 `POINT_EDITOR_CSS_DELTA_VERIFIED / FRONTEND_AND_JAVA17_BUILD_PASS / DEPLOYED_9090_BYTES_PASS / CURRENT_AUTH_CAPTURE_RECORDED / PIXEL_ACCEPTANCE_BLOCKED`。当前候选认证采集已完成150张PNG（84个默认路由状态、30个LocalDeviceEditor状态、36个PointEditor状态），入口为 `index-Bnw03rgX.js`，JAR SHA-256为 `5fb20c6d9e08ed6d3639f983a18adf972da83b33e51213080a1d755305c786b6`。当前候选与历史图严格分离；观察子集没有确证像素must-fix，但14路由及两个编辑器的完整criterion仍BLOCKED，未宣称用户接受。
