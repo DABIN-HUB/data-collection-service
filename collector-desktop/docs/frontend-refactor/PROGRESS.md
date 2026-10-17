@@ -2,12 +2,13 @@
 
 ## 最新请求：设备管理配置工作台主辅布局修正与9090重部署（2026-10-17）
 
-当前状态：`IMPLEMENTED / STATIC_GATES_PASS / READY_FOR_FRESH_RENDERER_REVIEW`。本轮只调整“设备管理 → 设备配置工作台”标签页的呈现布局：把原先占据较大空间的运行状态、协议连接配置收窄为左侧配置轨，把点位列表、实时数据、告警、日志和点位详情扩展为右侧主工作区；未修改 API、DTO、Store、Router、Schema、请求生命周期、默认值、业务 handler 或保存/执行边界。
+当前状态：`IMPLEMENTED / STATIC_GATES_PASS / DEPLOYED_9090 / SHELL_VISUAL_PASS / INNER_WORKBENCH_PIXEL_ACCEPTANCE_BLOCKED`。本轮只调整“设备管理 → 设备配置工作台”标签页的呈现布局：把原先占据较大空间的运行状态、协议连接配置收窄为左侧配置轨，把点位列表、实时数据、告警、日志和点位详情扩展为右侧主工作区；未修改 API、DTO、Store、Router、Schema、请求生命周期、默认值、业务 handler 或保存/执行边界。
 
 - `DeviceWorkbenchView.vue` 将工作台主辅比例调整为左侧 `248–300px`、右侧占用剩余宽度；运行状态卡压缩为窄栏上下结构，保留连接检查、启动采集和停止采集原操作；点位详情保持在主区下方，不改变字段、事件和真实空态。
 - 1280px 兼容断点不再提前堆叠为单列，仅在 `980px` 以下转为纵向；移动端继续主区优先、配置区下置，保留内部标签和表格滚动边界。
 - 已执行 `npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web`，均成功；构建 warning 为既有 Rollup PURE 注释和 chunk 体积提示，未升级依赖或放宽规则。未创建、修改或运行测试，未运行 `quality`/`verify`。
-- 当前尚未完成最终提交、隔离 Maven 无测试打包、9090 替换和新 renderer 真实只读复核；这些门禁必须基于本轮最终提交继续执行。设计预览和截图保存在外部 scratch，不进入生产提交。
+- 提交 `53da4f26` 已完成；`mvn.cmd -Dmaven.test.skip=true clean package` 已成功且未运行测试，最终 JAR 已部署并由 PID `12804` 监听 9090，入口 HTTP 200，liveness/readiness 已完成回读。JAR 内置 renderer 与源静态资源已逐项校验一致；设计预览、截图、审查报告和部署产物保存在外部 scratch，不进入生产提交。
+- 重启后的真实 packaged renderer 已在 1600×1000、1280×900、390×844 完成只读捕获；`/frontend-design` 逐图确认设备管理层级、三项顶层标签、桌面/移动端可见外壳通过，未发现明确像素 MUST-FIX。三张图均处于未认证/未选择设备空态，因此选中设备后的左窄右宽内层比例、点位/实时/告警/日志/详情内容及移动端内部滚动不能由当前证据签字，完整工作台验收保持 `BLOCKED`，不将业务空态误判为缺陷。
 
 ## 最新请求：Precision Workbench 全站生产视觉改造与9090重部署（2026-10-15）
 
