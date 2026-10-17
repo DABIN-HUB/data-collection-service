@@ -53,7 +53,7 @@
         </button>
       </nav>
 
-      <main class="local-editor-body">
+      <main ref="editorBody" class="local-editor-body">
         <el-alert v-if="error" :title="error" type="warning" :closable="false" />
 
         <section v-show="activeStep === 0" id="localEditorPane-setup" role="tabpanel" class="local-editor-pane" data-local-editor-pane="setup">
@@ -429,6 +429,7 @@ const props = defineProps<{ modelValue: boolean; editingBundle?: LocalDeviceBund
 const emit = defineEmits<{ "update:modelValue": [value: boolean]; saved: [deviceId: string] }>();
 
 const editorPanel = ref<HTMLElement | null>(null);
+const editorBody = ref<HTMLElement | null>(null);
 const pointDetails = ref<HTMLDetailsElement | null>(null);
 let editorReturnFocus: HTMLElement | null = null;
 let focusGeneration = 0;
@@ -585,7 +586,16 @@ const connectionAddressSummary = computed(() => String(connectionModel.value.hos
 
 function normalizePointsForEditor(rawPoints: DataPoint[], currentDeviceId: string, currentProtocol: string): DataPoint[] { return normalizeInitialPoints(rawPoints, currentDeviceId, currentProtocol, { adaptive: { ...adaptive }, pointDataTypes: pointDataTypes.value }); }
 function buildDefaultPoint(currentDeviceId: string, currentProtocol: string, overrides: Partial<DataPoint> = {}): DataPoint { return defaultPointTemplate(currentDeviceId, currentProtocol, overrides, { adaptive: { ...adaptive }, pointDataTypes: pointDataTypes.value }); }
-function setActiveStep(index: number) { completedSteps.value = new Set([...completedSteps.value, activeStep.value]); activeStep.value = Math.max(0, Math.min(localEditorSteps.length - 1, index)); if (activeStep.value === 4) syncJsonFromState(); }
+function setActiveStep(index: number) {
+  completedSteps.value = new Set([...completedSteps.value, activeStep.value]);
+  activeStep.value = Math.max(0, Math.min(localEditorSteps.length - 1, index));
+  if (activeStep.value === 4) syncJsonFromState();
+  void nextTick(() => {
+    if (editorBody.value) {
+      editorBody.value.scrollTop = 0;
+    }
+  });
+}
 function moveStep(delta: number) { setActiveStep(activeStep.value + delta); }
 function reset(bundle: LocalDeviceBundle | null = null) {
   editorSession += 1;

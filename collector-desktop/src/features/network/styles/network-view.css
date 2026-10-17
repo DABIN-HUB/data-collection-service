@@ -615,14 +615,36 @@
   box-sizing: border-box;
   display: flex;
   min-width: 0;
-  min-height: 88px;
+  min-height: 140px;
   margin: 0;
   padding: 16px;
   align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-direction: column;
   border-top: 1px solid var(--app-color-border);
   color: var(--network-muted);
   font-size: 13px;
+  text-align: center;
   overflow-wrap: anywhere;
+}
+
+.page-root.exact-page.network-view .network-history-empty svg {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  color: var(--app-color-text-muted);
+}
+
+.page-root.exact-page.network-view .network-history-empty strong,
+.page-root.exact-page.network-view .network-history-empty p {
+  max-width: 520px;
+  margin: 0;
+}
+
+.page-root.exact-page.network-view .network-history-empty p {
+  color: var(--network-muted);
+  font-size: 12px;
 }
 
 .page-root.exact-page.network-view .status-badge {

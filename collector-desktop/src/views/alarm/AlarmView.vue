@@ -62,7 +62,7 @@
       <div class="alarm-primary">
       <section class="exact-table-card alarm-ack-table">
         <div class="alarm-records-head"><h2>告警历史记录</h2><span>级别 / 发生条件 / 处理记录</span></div>
-        <div class="alarm-table-scroll" tabindex="0" role="region" aria-label="告警历史记录，可横向和纵向滚动">
+        <div v-if="alarms.length" class="alarm-table-scroll" tabindex="0" role="region" aria-label="告警历史记录，可横向和纵向滚动">
         <table>
           <thead>
             <tr>
@@ -78,9 +78,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="alarms.length === 0">
-              <td colspan="9" class="exact-empty">{{ alarmEmptyText }}</td>
-            </tr>
             <tr v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)">
               <td>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</td>
               <td>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</td>
@@ -107,7 +104,7 @@
           </tbody>
         </table>
         </div>
-        <div v-if="alarms.length === 0" class="alarm-empty-state" role="status">{{ alarmEmptyText }}</div>
+        <div v-else class="alarm-empty-state" role="status">{{ alarmEmptyText }}</div>
       </section>
       <section class="alarm-context-panel alarm-trace-panel">
         <div class="alarm-records-head"><h2>确认记录</h2><span>当前列表，不是操作历史</span></div>

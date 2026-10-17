@@ -318,9 +318,14 @@
   gap: 18px;
 }
 
-.history-view .history-alarm-panel {
+.history-view .history-query-context {
   grid-column: 1;
   grid-row: 1;
+}
+
+.history-view .history-alarm-panel {
+  grid-column: 1 / -1;
+  grid-row: 2;
 }
 
 .history-view .history-chart-wrap {

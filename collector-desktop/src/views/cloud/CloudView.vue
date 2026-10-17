@@ -42,7 +42,7 @@
           <button type="button" :disabled="loading" @click="loadCloud">筛选</button>
         </div>
         <div v-if="!appStore.capabilities?.cloud.monitoringAvailable" class="cloud-error">{{ appStore.capabilities?.cloud.monitoringAvailable === false ? '当前监控能力未开放，未发起指标或队列请求。' : '监控能力未知，请检查接口访问权限或连接。' }}</div>
-        <div v-else class="cloud-table-scroll" tabindex="0" role="region" aria-label="可靠发件箱消息队列，可横向和纵向滚动">
+        <div v-else-if="outboxRows.length" class="cloud-table-scroll" tabindex="0" role="region" aria-label="可靠发件箱消息队列，可横向和纵向滚动">
           <table class="runtime-table cloud-table" aria-label="可靠发件箱消息">
             <colgroup><col class="cloud-col-message" /><col class="cloud-col-device" /><col class="cloud-col-status" /><col class="cloud-col-retry" /><col class="cloud-col-time" /><col class="cloud-col-time" /><col class="cloud-col-error" /><col class="cloud-col-actions" /></colgroup>
             <thead><tr><th scope="col">消息</th><th scope="col">设备</th><th scope="col">状态</th><th scope="col">重试</th><th scope="col">创建时间</th><th scope="col">下次尝试</th><th scope="col">错误</th><th scope="col">操作</th></tr></thead>
@@ -54,7 +54,7 @@
             </tbody>
           </table>
         </div>
-        <div v-if="appStore.capabilities?.cloud.monitoringAvailable && !loading && !outboxRows.length" class="cloud-empty">{{ outboxReadState === 'error' ? outboxLastSuccess ? '本次队列读取失败；上次成功列表为空，请刷新重试' : '队列读取失败，请刷新重试' : outboxLastSuccess ? '已读取：该次筛选暂无发件箱消息' : '队列尚未成功加载，请刷新重试' }}</div>
+        <div v-else-if="appStore.capabilities?.cloud.monitoringAvailable && !loading" class="cloud-empty">{{ outboxReadState === 'error' ? outboxLastSuccess ? '本次队列读取失败；上次成功列表为空，请刷新重试' : '队列读取失败，请刷新重试' : outboxLastSuccess ? '已读取：该次筛选暂无发件箱消息' : '队列尚未成功加载，请刷新重试' }}</div>
         <div v-if="actionError" class="cloud-error" role="alert">{{ actionError }}</div>
         <details class="cloud-management-tools">
           <summary>管理操作与链路测试</summary>

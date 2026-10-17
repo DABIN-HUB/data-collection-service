@@ -366,6 +366,38 @@
   table-layout: auto;
 }
 
+/* 横向查看完整字段时，身份和操作仍固定在可视区边缘。 */
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table td:first-child,
+.realtime-view .realtime-data-table th:nth-child(2),
+.realtime-view .realtime-data-table td:nth-child(2) {
+  position: sticky;
+  z-index: 2;
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table td:first-child {
+  left: 0;
+}
+
+.realtime-view .realtime-data-table th:nth-child(2),
+.realtime-view .realtime-data-table td:nth-child(2) {
+  left: 130px;
+  box-shadow: 1px 0 0 var(--realtime-line);
+}
+
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table th:nth-child(2) {
+  z-index: 4;
+  background: var(--app-color-panel-soft);
+}
+
+.realtime-view .realtime-data-table tbody tr:hover td:first-child,
+.realtime-view .realtime-data-table tbody tr:hover td:nth-child(2) {
+  background: var(--app-control-bg-hover);
+}
+
 .realtime-view .realtime-col-point { width: 130px; }
 .realtime-view .realtime-col-device { width: 125px; }
 .realtime-view .realtime-col-type { width: 68px; }

@@ -612,13 +612,17 @@ onBeforeUnmount(() => {
 }
 
 .point-toolbar {
+  position: sticky;
+  z-index: 3;
   display: flex;
   min-height: 42px;
-  padding: 0;
+  padding: 8px 0;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--console-border-soft);
+  background: var(--console-bg);
 }
 
 .point-toolbar-left,
@@ -776,6 +780,7 @@ onBeforeUnmount(() => {
   grid-template-columns: 150px minmax(0, 1fr);
   border: 1px solid var(--console-border-soft);
   border-radius: 5px;
+  overflow: hidden;
 }
 
 .point-detail-tabs :deep(.el-tabs__header) {
@@ -966,7 +971,7 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  min-height: 220px;
+  min-height: 280px;
   padding: 10px;
   color: var(--console-code-text);
   border: 1px solid var(--console-border-soft);
@@ -1104,6 +1109,10 @@ onBeforeUnmount(() => {
   .point-table-panel,
   .point-detail-panel {
     padding: 12px;
+  }
+
+  .point-json-textarea {
+    min-height: 220px;
   }
 
   .point-detail-form-grid,

@@ -276,7 +276,7 @@
 .cloud-view .cloud-workbench {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.46fr);
+  grid-template-columns: minmax(0, 1.28fr) minmax(280px, 0.42fr);
   align-items: start;
   gap: 16px;
 }
