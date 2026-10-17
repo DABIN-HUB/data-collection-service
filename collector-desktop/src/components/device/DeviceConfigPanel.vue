@@ -1,51 +1,53 @@
 <template>
   <section class="local-editor-pane device-config-workbench-pane">
     <template v-if="device">
-      <section class="local-section-card run-control-card" aria-label="设备运行状态">
-        <div class="runtime-heading"><h3>运行状态</h3><span>设备当前运行态</span></div>
-        <dl class="control-status-row">
-          <div class="state-pill"><dt>生命周期</dt><dd :class="statusToneClass(runtimeView.lifecycle)"><i></i>{{ runtimeView.lifecycle }}</dd></div>
-          <div class="state-pill"><dt>传输 / 协议</dt><dd>{{ runtimeView.transportProtocol }}</dd></div>
-          <div class="state-pill"><dt>采集健康</dt><dd :class="statusToneClass(runtimeView.health)">{{ runtimeView.health }}</dd></div>
-          <div class="state-pill"><dt>最近有效数据</dt><dd>{{ runtimeView.lastValid }}</dd></div>
-        </dl>
-        <div class="run-control-actions">
-          <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
-          <el-button type="primary" :disabled="savingConnection" @click="$emit('start', device.normalizedId)">启动采集</el-button>
-          <el-button type="danger" plain :disabled="savingConnection" @click="$emit('stop', device.normalizedId)">停止采集</el-button>
-        </div>
-      </section>
-      <div class="runtime-note" role="status">
-        <span>{{ runtimeView.points }}</span>
-        <span v-if="runtimeView.reason">最近消息：{{ runtimeView.reason }}</span>
-      </div>
-      <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
-      <details :key="`${device.normalizedId}:${protocolKey}`" class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
-        <summary>
-          <span>协议连接配置</span>
-          <button v-if="protocolSchema" type="button" class="protocol-name-badge" title="查看协议说明与能力" @click.stop.prevent="protocolDetailsVisible = true">{{ protocolSchema.title || protocolSchema.protocol }}</button>
-          <span v-if="protocolSchema" class="protocol-field-count">{{ protocolFields.length }} 个连接字段</span>
-          <small :class="protocolValidationTone">{{ protocolValidationText }}</small>
-        </summary>
-        <el-alert v-if="protocolError" :title="protocolError" type="warning" :closable="false" />
-        <WorkbenchProtocolForm
-          v-if="protocolSchema"
-          :key="`${device.normalizedId}:${protocolKey}`"
-          v-model="protocolModel"
-          :fields="protocolFields"
-          :protocol="protocolSchema.protocol"
-          :disabled="protocolLoading || savingConnection"
-          @validate="protocolErrors = $event"
-        />
-        <div class="schema-actions">
-          <div class="schema-message"><span>保存更新协议连接配置；点位修改请在点位编辑中保存。</span><span v-if="connectionMessage" role="status">{{ connectionMessage }}</span></div>
-          <div class="schema-toolbar">
-            <el-button :loading="protocolLoading" :disabled="savingConnection" @click="loadProtocolConfig">读取连接配置</el-button>
-            <el-button @click="showDiff">查看配置差异</el-button>
-            <el-button type="primary" :loading="savingConnection" :disabled="protocolLoading || !configBundle || !protocolSchema" @click="saveProtocolConfig">保存协议配置</el-button>
+      <div class="workbench-config-rail">
+        <section class="local-section-card run-control-card" aria-label="设备运行状态">
+          <div class="runtime-heading"><h3>运行状态</h3><span>设备当前运行态</span></div>
+          <dl class="control-status-row">
+            <div class="state-pill"><dt>生命周期</dt><dd :class="statusToneClass(runtimeView.lifecycle)"><i></i>{{ runtimeView.lifecycle }}</dd></div>
+            <div class="state-pill"><dt>传输 / 协议</dt><dd>{{ runtimeView.transportProtocol }}</dd></div>
+            <div class="state-pill"><dt>采集健康</dt><dd :class="statusToneClass(runtimeView.health)">{{ runtimeView.health }}</dd></div>
+            <div class="state-pill"><dt>最近有效数据</dt><dd>{{ runtimeView.lastValid }}</dd></div>
+          </dl>
+          <div class="run-control-actions">
+            <el-button :loading="statusLoading" @click="loadConnectionStatus">{{ statusLoading ? '检查中' : '连接检查' }}</el-button>
+            <el-button type="primary" :disabled="savingConnection" @click="$emit('start', device.normalizedId)">启动采集</el-button>
+            <el-button type="danger" plain :disabled="savingConnection" @click="$emit('stop', device.normalizedId)">停止采集</el-button>
           </div>
-        </div>
-      </details>
+          <div class="runtime-note" role="status">
+            <span>{{ runtimeView.points }}</span>
+            <span v-if="runtimeView.reason">最近消息：{{ runtimeView.reason }}</span>
+          </div>
+        </section>
+        <el-alert v-if="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" :title="deviceStore.runtimeErrors[device.normalizedId] || deviceStore.deviceErrors[device.normalizedId]" type="warning" :closable="false" />
+        <details :key="`${device.normalizedId}:${protocolKey}`" class="protocol-schema-card local-section-card protocol-config-card protocol-config-collapse">
+          <summary>
+            <span>协议连接配置</span>
+            <button v-if="protocolSchema" type="button" class="protocol-name-badge" title="查看协议说明与能力" @click.stop.prevent="protocolDetailsVisible = true">{{ protocolSchema.title || protocolSchema.protocol }}</button>
+            <span v-if="protocolSchema" class="protocol-field-count">{{ protocolFields.length }} 个连接字段</span>
+            <small :class="protocolValidationTone">{{ protocolValidationText }}</small>
+          </summary>
+          <el-alert v-if="protocolError" :title="protocolError" type="warning" :closable="false" />
+          <WorkbenchProtocolForm
+            v-if="protocolSchema"
+            :key="`${device.normalizedId}:${protocolKey}`"
+            v-model="protocolModel"
+            :fields="protocolFields"
+            :protocol="protocolSchema.protocol"
+            :disabled="protocolLoading || savingConnection"
+            @validate="protocolErrors = $event"
+          />
+          <div class="schema-actions">
+            <div class="schema-message"><span>保存更新协议连接配置；点位修改请在点位编辑中保存。</span><span v-if="connectionMessage" role="status">{{ connectionMessage }}</span></div>
+            <div class="schema-toolbar">
+              <el-button :loading="protocolLoading" :disabled="savingConnection" @click="loadProtocolConfig">读取连接配置</el-button>
+              <el-button @click="showDiff">查看配置差异</el-button>
+              <el-button type="primary" :loading="savingConnection" :disabled="protocolLoading || !configBundle || !protocolSchema" @click="saveProtocolConfig">保存协议配置</el-button>
+            </div>
+          </div>
+        </details>
+      </div>
 
       <section class="local-section-card device-data-panel">
         <div class="device-data-topline">
@@ -60,7 +62,7 @@
               @click="setActiveTab(tab.key)"
             >
               {{ tab.label }}
-              <span v-if="tab.key === 'points'" class="tab-count">{{ pointRows.length }}</span>
+              <span v-if="tab.key === 'points' && !workbenchRowsLoading && !workbenchRowsError" class="tab-count">{{ pointRows.length }}</span>
             </button>
           </nav>
           <div class="schema-toolbar data-toolbar">
@@ -73,15 +75,15 @@
 
         <template v-if="activeTab === 'points'">
           <div class="point-data-meta-row">
-            <span>共 {{ pointRows.length }} 个点位</span>
+            <span>{{ pointRowsMetaSummary }}</span>
             <span>当前设备：{{ device.normalizedId }}</span>
             <span v-if="selectedWorkbenchPoint" class="selected-point-label">已选择 {{ selectedWorkbenchPoint.pointName || selectedWorkbenchPoint.pointCode }}</span>
           </div>
           <div class="point-content point-data-grid">
             <div class="point-data-table-column table-area">
               <div class="table-scroll">
-                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" :row-key="pointRowKey" :row-class-name="pointRowClassName" class="industrial-point-table" max-height="360" highlight-current-row empty-text="暂无点位运行数据，可刷新数据或打开点位编辑查看配置" @row-click="selectWorkbenchPoint">
-                  <el-table-column prop="pointCode" label="点位编码" min-width="140" />
+                <el-table v-loading="workbenchRowsLoading" :data="pagedPointRows" :row-key="pointRowKey" :row-class-name="pointRowClassName" class="industrial-point-table" max-height="340" highlight-current-row empty-text="暂无点位运行数据，可刷新数据或打开点位编辑查看配置" @row-click="selectWorkbenchPoint">
+                  <el-table-column prop="pointCode" label="点位编码" min-width="140" fixed="left" />
                   <el-table-column prop="pointName" label="点位名称" min-width="140" />
                   <el-table-column prop="address" label="地址" min-width="96" />
                   <el-table-column prop="dataType" label="数据类型" width="96" />
@@ -93,7 +95,7 @@
                 </el-table>
               </div>
               <div class="industrial-pagination-row">
-                <span>共 {{ pointRows.length }} 条</span>
+                <span>{{ pointRowsSummary }}</span>
                 <el-pagination
                   v-model:current-page="currentPage"
                   v-model:page-size="pageSize"
@@ -104,29 +106,30 @@
                   small
                 />
               </div>
+              <div class="point-table-scroll-hint">窄窗口可横向滚动；点位编码和操作列固定，完整字段可在详情查看。</div>
             </div>
             <aside class="compact-point-detail">
               <div class="compact-detail-head">
-                <h3>点位详情</h3>
-                <button type="button" @click="pointEditVisible = !pointEditVisible">{{ pointEditVisible ? '收起' : '完整编辑' }}</button>
+                <div class="compact-detail-title">
+                  <h3>点位详情</h3>
+                  <p v-if="selectedWorkbenchPoint">{{ selectedWorkbenchPoint.pointName || selectedWorkbenchPoint.pointCode || '未命名点位' }} <code>/ {{ selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointId || '-' }}</code></p>
+                </div>
+                <div class="compact-detail-actions">
+                  <button type="button" @click="pointEditVisible = !pointEditVisible">{{ pointEditVisible ? '收起' : '完整编辑' }}</button>
+                  <template v-if="selectedWorkbenchPoint">
+                    <button type="button" @click="openPointRealtime(selectedWorkbenchPoint)">查看实时</button>
+                    <button type="button" @click="$emit('open-history', { deviceId: device.normalizedId, pointRef: String(selectedWorkbenchPoint.pointId || selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.address || ''), pointName: selectedWorkbenchPoint.pointName, pointLabel: selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointName })">查看历史</button>
+                  </template>
+                </div>
               </div>
               <template v-if="selectedWorkbenchPoint">
-                <strong>{{ selectedWorkbenchPoint.pointName || selectedWorkbenchPoint.pointCode || '未命名点位' }}</strong>
-                <p>{{ selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointId || '-' }}</p>
-                <div class="point-value-display">
-                  <div><span>当前值</span><span class="quality-dot" :class="qualityToneClass(selectedWorkbenchPoint)"><i></i>{{ qualityText(selectedWorkbenchPoint) }}</span></div>
-                  <strong>{{ displayPointValue(selectedWorkbenchPoint) }}<small v-if="selectedWorkbenchPoint.unit">{{ selectedWorkbenchPoint.unit }}</small></strong>
-                </div>
-                <dl class="compact-detail-grid">
-                  <dt>地址</dt><dd>{{ selectedWorkbenchPoint.address || '-' }}</dd>
-                  <dt>数据类型</dt><dd>{{ selectedWorkbenchPoint.dataType || '-' }}</dd>
-                  <dt>读写权限</dt><dd>{{ selectedWorkbenchPoint.readWrite || '-' }}</dd>
-                  <dt>更新时间</dt><dd>{{ formatPointTime(selectedWorkbenchPoint) }}</dd>
+                <dl class="compact-detail-fields">
+                  <div><dt>当前值 <span class="quality-dot" :class="qualityToneClass(selectedWorkbenchPoint)"><i></i>{{ qualityText(selectedWorkbenchPoint) }}</span></dt><dd class="point-detail-value">{{ displayPointValue(selectedWorkbenchPoint) }}<small v-if="selectedWorkbenchPoint.unit">{{ selectedWorkbenchPoint.unit }}</small></dd></div>
+                  <div><dt>地址</dt><dd>{{ selectedWorkbenchPoint.address || '-' }}</dd></div>
+                  <div><dt>数据类型</dt><dd>{{ selectedWorkbenchPoint.dataType || '-' }}</dd></div>
+                  <div><dt>读写权限</dt><dd>{{ selectedWorkbenchPoint.readWrite || '-' }}</dd></div>
+                  <div><dt>更新时间</dt><dd>{{ formatPointTime(selectedWorkbenchPoint) }}</dd></div>
                 </dl>
-                <div class="compact-detail-actions">
-                  <button type="button" @click="openPointRealtime(selectedWorkbenchPoint)">查看实时</button>
-                  <button type="button" @click="$emit('open-history', { deviceId: device.normalizedId, pointRef: String(selectedWorkbenchPoint.pointId || selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.address || ''), pointName: selectedWorkbenchPoint.pointName, pointLabel: selectedWorkbenchPoint.pointCode || selectedWorkbenchPoint.pointName })">查看历史</button>
-                </div>
               </template>
               <el-empty v-else description="点击表格行查看点位详情" />
             </aside>
@@ -252,6 +255,16 @@ const diffOwner = createLatestRequestOwner(isSameDeviceRequestContext);
 const protocolKey = computed(() => String(props.device?.protocolType || props.device?.connectionType || ""));
 const protocolFields = computed(() => protocolSchema.value?.connectionFields || []);
 const pointRows = computed(() => workbenchRows.value);
+const pointRowsSummary = computed(() => {
+  if (workbenchRowsLoading.value) return "点位数据读取中";
+  if (workbenchRowsError.value) return "点位数据读取失败";
+  return `共 ${pointRows.value.length} 条`;
+});
+const pointRowsMetaSummary = computed(() => {
+  if (workbenchRowsLoading.value) return "点位数据读取中";
+  if (workbenchRowsError.value) return "点位数据读取失败";
+  return `共 ${pointRows.value.length} 个点位`;
+});
 const pagedPointRows = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
   return pointRows.value.slice(start, start + pageSize.value);
@@ -670,6 +683,13 @@ onBeforeUnmount(() => {
   gap: 17px;
 }
 
+.workbench-config-rail {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  align-content: start;
+}
+
 .local-section-card {
   min-width: 0;
   color: var(--console-text-secondary);
@@ -1083,7 +1103,8 @@ onBeforeUnmount(() => {
 }
 
 .compact-detail-head {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  align-items: flex-start;
 }
 
 .compact-detail-head h3 {
@@ -1091,6 +1112,24 @@ onBeforeUnmount(() => {
   color: var(--console-text-muted);
   font-size: 12px;
   font-weight: 400;
+}
+
+.compact-detail-title {
+  min-width: 0;
+}
+
+.compact-detail-title p {
+  margin: 4px 0 0;
+  color: var(--console-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.compact-detail-title code {
+  color: var(--console-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
 }
 
 .compact-detail-head button {
@@ -1101,80 +1140,66 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.compact-point-detail > strong {
-  display: block;
-  color: var(--console-text-primary);
-  font-size: 15px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.compact-point-detail > p {
-  margin: 4px 0 16px;
-  color: var(--console-text-muted);
-  font-size: 11px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.compact-detail-grid {
+.compact-detail-fields {
   display: grid;
-  margin: 18px 0;
-  grid-template-columns: 70px minmax(0, 1fr);
-  gap: 12px 10px;
+  margin: 0;
+  padding: 12px;
+  grid-template-columns: minmax(180px, 1.3fr) repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: var(--console-radius-md);
+  background: var(--console-panel);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.compact-detail-grid dt {
-  color: var(--console-text-muted);
+.compact-detail-fields > div {
+  min-width: 0;
 }
 
-.compact-detail-grid dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.point-value-display {
-  padding: 14px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
-}
-
-.point-value-display > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
+.compact-detail-fields dt {
   color: var(--console-text-muted);
   font-size: 11px;
 }
 
-.point-value-display > strong {
-  display: block;
-  margin-top: 12px;
-  color: var(--console-text-primary);
-  font-size: 26px;
-  font-weight: 500;
-  line-height: 1.4;
+.compact-detail-fields dd {
+  margin: 7px 0 0;
+  color: var(--console-text-secondary);
   overflow-wrap: anywhere;
 }
 
-.point-value-display small {
+.point-detail-value {
+  color: var(--console-text-primary) !important;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.point-detail-value small {
   margin-left: 8px;
   color: var(--console-text-muted);
+  font-family: var(--app-font-family);
   font-size: 12px;
   font-weight: 400;
 }
 
 .compact-detail-actions {
-  margin: 18px 0 0;
-  justify-content: flex-start;
+  justify-content: flex-end;
 }
 
 .industrial-pagination-row :deep(.el-pagination) {
   max-width: 100%;
   overflow-x: auto;
+}
+
+.point-table-scroll-hint {
+  padding: 6px 14px;
+  color: var(--console-text-muted);
+  border-top: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 :global(.el-dialog.device-operation-dialog) {
@@ -1206,14 +1231,16 @@ onBeforeUnmount(() => {
     border-left: 0;
   }
 
+  .compact-detail-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
 }
 
 @media (max-width: 760px) {
   .control-status-row {
     display: grid;
-    flex-basis: 100%;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .run-control-actions {
