@@ -18,6 +18,11 @@ server:
     accept-count: 100
 
 management:
+  health:
+    db:
+      # TDengine is an optional persistence dependency in the default dev profile.
+      # Do not make the aggregate Actuator health fail when that profile is disabled.
+      enabled: ${COLLECTOR_TDENGINE_ENABLED:false}
   endpoints:
     web:
       exposure:
