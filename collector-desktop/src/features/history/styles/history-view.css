@@ -935,3 +935,362 @@
   .history-view .history-summary { row-gap: 18px; }
   .history-view .history-stat-row { gap: 10px 16px; }
 }
+
+/* Approved history-trend direction: query first, chart-led work area, bounded raw-data regions. */
+.app-shell__main .exact-page.history-view {
+  width: 100%;
+  max-width: 1460px;
+  margin: 0 auto;
+  padding: 24px 28px 42px;
+}
+
+.app-shell__main .history-view .history-heading {
+  display: flex;
+  margin-bottom: 18px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.app-shell__main .history-view .history-heading h1 {
+  font-size: 25px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.app-shell__main .history-view .history-heading p {
+  margin-top: 6px;
+}
+
+.app-shell__main .history-view .history-heading-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--history-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.app-shell__main .history-view .history-heading-count {
+  color: var(--app-color-text-secondary);
+  font-family: var(--app-font-family);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-shell__main .history-view .history-panel {
+  box-shadow: 0 10px 28px rgb(20 38 51 / 6%);
+}
+
+.app-shell__main .history-view .history-query-panel {
+  margin-bottom: 0;
+}
+
+.app-shell__main .history-view .history-query-head {
+  display: flex;
+  padding: 13px 18px 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell__main .history-view .history-query-head h2 {
+  margin: 0;
+  color: var(--history-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.app-shell__main .history-view .history-query-head span {
+  color: var(--history-muted);
+  font-size: 11px;
+}
+
+.app-shell__main .history-view .history-query-fields {
+  grid-template-columns: minmax(200px, 1.18fr) minmax(180px, 1fr) 180px 180px 82px auto;
+  align-items: end;
+  padding: 14px 18px 16px;
+}
+
+.app-shell__main .history-view .history-field > span {
+  margin-bottom: 0;
+}
+
+.app-shell__main .history-view .history-field input,
+.app-shell__main .history-view .history-field select {
+  border-radius: 4px;
+}
+
+.app-shell__main .history-view .history-query-actions {
+  margin-left: 0;
+}
+
+.app-shell__main .history-view .history-compare-row {
+  display: flex;
+  min-width: 0;
+  padding: 10px 18px 12px;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-shell__main .history-view .history-compare-field {
+  width: auto;
+  flex: 0 1 430px;
+}
+
+.app-shell__main .history-view .history-compare-field select {
+  width: 220px;
+  min-width: 0;
+  height: 52px;
+  border-radius: 4px;
+}
+
+.app-shell__main .history-view .history-compare-row p {
+  min-width: 0;
+  margin-left: auto;
+}
+
+.app-shell__main .history-view .history-notice {
+  margin-bottom: 0;
+}
+
+.app-shell__main .history-view .history-workspace {
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.75fr);
+  grid-template-areas: "metrics context" "curve context" "extra context";
+  gap: 17px;
+}
+
+.app-shell__main .history-view .history-primary-summary {
+  margin-bottom: 0;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgb(20 38 51 / 6%);
+}
+
+.app-shell__main .history-view .history-primary-summary article {
+  margin: 13px 0;
+  padding: 0 18px;
+}
+
+.app-shell__main .history-view .history-primary-summary article > strong {
+  font-family: var(--app-font-family);
+  font-size: 21px;
+  letter-spacing: -0.04em;
+}
+
+.app-shell__main .history-view .history-trend-grid {
+  gap: 0;
+}
+
+.app-shell__main .history-view .history-context-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 17px;
+}
+
+.app-shell__main .history-view .history-query-context,
+.app-shell__main .history-view .history-json-panel {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.app-shell__main .history-view .history-json-panel {
+  min-height: 0;
+}
+
+.app-shell__main .history-view .history-json-panel[open] {
+  min-height: 0;
+}
+
+.app-shell__main .history-view .history-json-body {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-shell__main .history-view .history-json-view {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 154px;
+  max-height: 154px;
+  border-radius: 4px;
+}
+
+.app-shell__main .history-view .history-mobile-access-note {
+  display: none;
+  margin: 6px 0 0;
+  color: var(--history-dim);
+  font-size: 10px;
+}
+
+.app-shell__main .history-view .history-summary-details {
+  grid-area: extra;
+  box-shadow: 0 10px 28px rgb(20 38 51 / 6%);
+}
+
+.app-shell__main .history-view .history-lower-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  align-items: start;
+  gap: 17px;
+}
+
+.app-shell__main .history-view .history-lower-grid .history-alarm-panel,
+.app-shell__main .history-view .history-lower-grid .history-data-panel {
+  grid-column: auto;
+  grid-row: auto;
+}
+
+.app-shell__main .history-view .history-table-note {
+  display: block;
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--history-line);
+  color: var(--history-muted);
+  font-size: 10px;
+}
+
+.app-shell__main .history-view .history-table-note + .history-table-empty {
+  padding-top: 20px;
+}
+
+.app-shell__main .history-view .history-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.app-shell__main .history-view .history-alarm-table {
+  min-width: 640px;
+}
+
+.app-shell__main .history-view .history-data-table {
+  min-width: 900px;
+}
+
+@media (max-width: 1340px) {
+  .app-shell__main .history-view .history-query-fields {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .app-shell__main .history-view .history-query-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 1100px) {
+  .app-shell__main .history-view .history-workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+  }
+
+  .app-shell__main .history-view .history-lower-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell__main .exact-page.history-view {
+    padding: 18px 14px 30px;
+  }
+
+  .app-shell__main .history-view .history-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .app-shell__main .history-view .history-heading-meta {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .app-shell__main .history-view .history-query-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell__main .history-view .history-query-actions {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+  }
+
+  .app-shell__main .history-view .history-query-actions .history-button {
+    flex: 1 1 0;
+  }
+
+  .app-shell__main .history-view .history-compare-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .app-shell__main .history-view .history-compare-field {
+    width: 100%;
+    flex-basis: auto;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .app-shell__main .history-view .history-compare-field select {
+    width: 100%;
+  }
+
+  .app-shell__main .history-view .history-compare-row p {
+    margin-left: 0;
+  }
+
+  .app-shell__main .history-view .history-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "metrics" "curve" "context" "extra";
+  }
+
+  .app-shell__main .history-view .history-mobile-access-note {
+    display: block;
+  }
+
+  .app-shell__main .history-view .history-table-scroll {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-shell__main .history-view .history-query-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell__main .history-view .history-query-actions {
+    grid-column: auto;
+  }
+
+  .app-shell__main .history-view .history-compare-field {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-shell__main .history-view .history-heading-meta {
+    gap: 6px;
+    font-size: 11px;
+  }
+
+  .app-shell__main .history-view .history-panel-head {
+    padding: 13px 14px;
+  }
+
+  .app-shell__main .history-view .history-chart-svg {
+    min-height: 235px;
+  }
+}
+
+.app-shell__main .history-view .history-table-scroll table.history-alarm-table {
+  width: 640px;
+  min-width: 640px;
+  max-width: none;
+}
+
+.app-shell__main .history-view .history-table-scroll table.history-data-table {
+  width: 900px;
+  min-width: 900px;
+  max-width: none;
+}

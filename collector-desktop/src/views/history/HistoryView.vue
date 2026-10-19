@@ -1,17 +1,29 @@
 <template>
   <section class="exact-page history-view">
     <header class="history-heading">
-      <div class="history-title-line">
-        <h1>历史趋势</h1>
+      <div>
+        <div class="history-title-line">
+          <h1>历史趋势</h1>
+        </div>
+        <p>围绕同一设备，查询主点位并保留完整记录、告警和原始结果。</p>
+      </div>
+      <div class="history-heading-meta">
+        <span>当前查询</span>
+        <span class="history-heading-count">{{ historyPresentation.recordCount }} 条</span>
+        <span aria-hidden="true">·</span>
+        <span>对比 {{ comparePointRefs.length }} 个点位</span>
         <span class="history-badge" :class="{ 'is-warning': Boolean(historyError || historyPartialWarning) }">
-          {{ historyPresentation.recordCount }} 条 · 对比 {{ comparePointRefs.length }} 个点位
+          {{ historyPresentation.stateLabel }}
         </span>
       </div>
-      <p>围绕同一设备，查询主点位并对比其他点位</p>
     </header>
 
     <div class="history-page-body">
       <section class="history-panel history-query-panel" aria-label="历史查询条件">
+        <div class="history-query-head">
+          <h2>查询条件</h2>
+          <span>先选设备和主点位，再调整时间范围</span>
+        </div>
         <div class="history-query-fields">
           <label class="history-field">
             <span>设备</span>
@@ -169,9 +181,14 @@
           </div>
           <div class="history-json-body">
             <pre class="history-json-view" tabindex="0" aria-label="完整历史查询 JSON，可独立横向和纵向滚动">{{ historyExportText }}</pre>
+            <p class="history-mobile-access-note">移动端：左右滑动查看完整原始结果</p>
           </div>
         </details>
 
+      </div>
+      </div>
+
+      <div class="history-lower-grid">
       <section class="history-panel history-alarm-panel">
         <div class="history-panel-head">
           <h2>相关告警</h2>
@@ -193,9 +210,9 @@
             </tbody>
           </table>
         </div>
+        <p class="history-table-note">完整表格可横向滚动</p>
         <div v-if="relatedAlarms.length === 0" class="history-table-empty" role="status">{{ historyPresentation.alarmEmpty }}</div>
       </section>
-      </div>
 
       <section class="history-panel history-data-panel">
         <div class="history-panel-head">
@@ -217,6 +234,7 @@
             </tbody>
           </table>
         </div>
+        <p class="history-table-note">完整表格可横向滚动 · 长值不截断</p>
         <div v-if="historyRows.length === 0" class="history-table-empty" role="status">{{ historyPresentation.dataEmpty }}</div>
       </section>
       </div>
