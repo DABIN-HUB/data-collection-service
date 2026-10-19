@@ -18,6 +18,11 @@ server:
     accept-count: 100
 
 management:
+  health:
+    db:
+      # TDengine is an optional persistence dependency in the default dev profile.
+      # Do not make the aggregate Actuator health fail when that profile is disabled.
+      enabled: ${COLLECTOR_TDENGINE_ENABLED:false}
   endpoints:
     web:
       exposure:
@@ -50,7 +55,7 @@ spring:
     timeout-per-shutdown-phase: 35s
   datasource:
     driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
-    url: ${TDENGINE_DATASOURCE_URL:jdbc:TAOS-RS://127.0.0.1:6041/wangbin_collector}
+    url: ${TDENGINE_DATASOURCE_URL:jdbc:TAOS-RS://100.93.189.63:6041/wangbin_collector}
     username: ${TDENGINE_USERNAME:root}
     password: ${TDENGINE_PASSWORD:taosdata}
     hikari:
@@ -61,7 +66,7 @@ spring:
       max-lifetime: 1800000
   data:
     redis:
-      host: 127.0.0.1
+      host: 100.93.189.63
       port: 6379
       database: 0
       timeout: 3000

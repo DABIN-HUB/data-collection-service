@@ -113,7 +113,7 @@ public class TdengineProperties {
         private long aggregationWaitMs = 5L;
 
         /**
-         * WebSocket STMT 专用 JDBC URL；未配置时使用本地 6041 和当前数据库名。
+         * WebSocket STMT 专用 JDBC URL；未配置时使用默认 TDengine 地址和当前数据库名。
          */
         private String websocketUrl;
 

@@ -489,7 +489,7 @@ class CollectionSchedulingCadenceTest {
                     executionCoordinator,
                     configCoordinator,
                     maintenanceCoordinator,
-                    configRestartCoordinator);
+                    configRestartCoordinator, new com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker(new CollectionTaskGuard()));
         }
 
         private DeviceBatchTask addTask(String deviceId, long intervalMs) {

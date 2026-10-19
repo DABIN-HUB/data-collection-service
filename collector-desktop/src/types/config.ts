@@ -1,5 +1,5 @@
 import type { DataPoint } from "./point";
-import type { DeviceInfo } from "./device";
+import type { DeviceInfo, DeviceRuntimeSnapshot } from "./device";
 
 export interface ConfigCacheStatsResponse {
   deviceCount: number;
@@ -130,6 +130,13 @@ export interface LocalDeviceConfigResponse {
   configSource?: string;
   temporaryConfig?: boolean;
   bundle?: ConfigBundle;
+  saved?: boolean;
+  changed?: boolean;
+  configVersion?: number;
+  startRequested?: boolean;
+  startStatus?: "NOT_REQUESTED" | "ALREADY_RUNNING" | "ACCEPTED" | "RESTART_PENDING" | "STOP_SUPERSEDED" | "FAILED";
+  startError?: string;
+  runtime?: DeviceRuntimeSnapshot;
   started?: boolean;
   pointCount?: number;
   [key: string]: unknown;

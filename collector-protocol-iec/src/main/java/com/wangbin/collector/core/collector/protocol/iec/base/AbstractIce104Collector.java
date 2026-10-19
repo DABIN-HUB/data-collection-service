@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractIce104Collector extends ConnectionBackedCollector {
 
     @Getter
-    protected Connection connection;
+    protected volatile Connection connection;
 
     protected String host;
     protected int port = 2404;
@@ -37,6 +37,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     protected Iec104IoaEncodingMode ioaEncodingMode = Iec104IoaEncodingMode.STANDARD;
     protected boolean timeTag = true;
     protected CollectorProperties.Iec104Config iec104Config;
+    /** 当前设备的读取策略，AUTO 保持历史行为。 */
+    protected String readMode = "AUTO";
+    protected boolean generalInterrogationOnConnect = true;
+    protected boolean singleInterrogationOnReadMiss = true;
+    protected long generalInterrogationInterval;
+    protected long cacheTtl;
+    protected int generalInterrogationQualifier = 20;
 
     protected volatile boolean dataTransferStopped = true;
 
@@ -81,6 +88,18 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                 : new CollectorProperties.Iec104Config();
 
         DeviceConnection connectionConfig = requireConnectionConfig();
+        this.readMode = resolveReadMode(connectionConfig.getString("generalInterrogationMode", "AUTO"));
+        this.generalInterrogationOnConnect = Boolean.TRUE.equals(connectionConfig.getBool(
+                "generalInterrogationOnConnect", iec104Config.isGeneralInterrogationOnConnect()));
+        this.singleInterrogationOnReadMiss = Boolean.TRUE.equals(connectionConfig.getBool(
+                "singleInterrogationOnReadMiss", iec104Config.isSingleInterrogationOnReadMiss()));
+        this.cacheTtl = resolveLongConfig(connectionConfig, "cacheTtl", iec104Config.getCacheTtl());
+        this.generalInterrogationQualifier = resolveIntConfig(connectionConfig,
+                "generalInterrogationQualifier", 20);
+        long configuredInterrogationInterval = resolveLongConfig(connectionConfig,
+                "generalInterrogationInterval", iec104Config.getGeneralInterrogationInterval());
+        this.generalInterrogationInterval = resolveInterrogationInterval(
+                configuredInterrogationInterval, cacheTtl);
         this.host = connectionConfig.getHost() != null && !connectionConfig.getHost().isBlank()
                 ? connectionConfig.getHost() : deviceInfo.getIpAddress();
         this.port = connectionConfig.getPort() != null ? connectionConfig.getPort()
@@ -144,7 +163,11 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             }
 
             if (asdu.isNegativeConfirm() || isErrorCause(cot)) {
-                failAllPending(new IOException("IEC104 error: " + cot));
+                failPendingAsdu(asdu, new IOException("IEC104 error: " + cot));
+                return result;
+            }
+
+            if (asdu.isTestFrame() || type == null || !Iec104Utils.isReadType(type.getId())) {
                 return result;
             }
 
@@ -169,8 +192,10 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
                             ? parseValue(type, elements[i]) : null;
                     Object normalized = normalizeValue(value);
                     boolean pendingRead = hasPendingRequest(commonAddr, typeId, ioa);
-                    cacheValue(commonAddr, typeId, ioa, normalized);
-                    completeRequest(commonAddr, typeId, ioa, normalized);
+                    CacheEntry sample = createSample(normalized, type,
+                            elements != null && i < elements.length ? elements[i] : new InformationElement[0]);
+                    cacheValue(commonAddr, typeId, ioa, sample);
+                    completeRequest(commonAddr, typeId, ioa, sample);
                     if (!isResponse || (type != null && type.name().startsWith("M_")
                             && normalized != null && !pendingRead)) {
                         handleSpontaneous(commonAddr, typeId, ioa, type, normalized, asdu);
@@ -219,14 +244,55 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         pendingRequests.clear();
     }
 
+    /** 否定单点读只影响原公共地址和IOA，不抹掉其他点位的真实结果。 */
+    private void failPendingAsdu(ASdu asdu, Exception failure) {
+        Set<Integer> addresses = new HashSet<>();
+        InformationObject[] objects = asdu.getInformationObjects();
+        if (objects != null) {
+            for (InformationObject object : objects) {
+                addresses.add(fromWireIoa(object.getInformationObjectAddress()));
+            }
+        }
+        pendingRequests.forEach((key, futures) -> {
+            if (key.commonAddress() == asdu.getCommonAddress() && addresses.contains(key.ioAddress())) {
+                futures.forEach(future -> future.completeExceptionally(failure));
+            }
+        });
+    }
+
+    /** 保留线上的质量位与原时间；无有效CP56时只记录真实本地收包时间。 */
+    private CacheEntry createSample(Object value, ASduType type, InformationElement[] elements) {
+        long observedAt = System.currentTimeMillis();
+        int quality = 0;
+        Long sourceTime = null;
+        for (InformationElement element : elements) {
+            if (element instanceof IeQuality q) {
+                quality |= qualityBits(q.isBlocked(), q.isSubstituted(), q.isNotTopical(), q.isInvalid())
+                        | (q.isOverflow() ? 1 : 0);
+            } else if (element instanceof IeSinglePointWithQuality q) {
+                quality |= qualityBits(q.isBlocked(), q.isSubstituted(), q.isNotTopical(), q.isInvalid());
+            } else if (element instanceof IeDoublePointWithQuality q) {
+                quality |= qualityBits(q.isBlocked(), q.isSubstituted(), q.isNotTopical(), q.isInvalid());
+            } else if (element instanceof IeTime56 time && !time.isInvalid()) {
+                long timestamp = time.getTimestamp();
+                if (timestamp > 0 && timestamp <= observedAt) sourceTime = timestamp;
+            }
+        }
+        return new CacheEntry(value, sourceTime != null ? sourceTime : observedAt,
+                observedAt, quality, type.getId(), sourceTime);
+    }
+
+    private int qualityBits(boolean blocked, boolean substituted, boolean notTopical, boolean invalid) {
+        return (blocked ? 16 : 0) | (substituted ? 32 : 0) | (notTopical ? 64 : 0) | (invalid ? 128 : 0);
+    }
+
     /**
      * 执行当前业务逻辑。
      */
-    private void cacheValue(int commonAddress, Integer typeId, int ioa, Object value) {
-        if (value == null) {
+    private void cacheValue(int commonAddress, Integer typeId, int ioa, CacheEntry entry) {
+        if (entry.value() == null) {
             return;
         }
-        CacheEntry entry = new CacheEntry(value, System.currentTimeMillis());
         if (typeId != null) {
             valueCache.put(new Iec104Key(commonAddress, typeId, ioa), entry);
         }
@@ -234,11 +300,13 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     }
 
     protected Object getCachedValue(int commonAddress, Integer typeId, int ioa) {
+        CacheEntry entry = getCachedSample(commonAddress, typeId, ioa);
+        return entry != null ? entry.value() : null;
+    }
+
+    protected CacheEntry getCachedSample(int commonAddress, Integer typeId, int ioa) {
         CacheEntry entry = getCacheEntry(commonAddress, typeId, ioa);
-        if (entry == null) {
-            return null;
-        }
-        return resolveCacheValue(commonAddress, typeId, ioa, entry);
+        return entry != null && resolveCacheValue(commonAddress, typeId, ioa, entry) != null ? entry : null;
     }
 
     /**
@@ -267,11 +335,11 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 解析或转换业务数据。
      */
     private Object resolveCacheValue(int commonAddress, Integer typeId, int ioa, CacheEntry entry) {
-        long ttl = iec104Config != null ? iec104Config.getCacheTtl() : 0;
+        long ttl = cacheTtl;
         if (ttl <= 0) {
             return entry.value();
         }
-        if (System.currentTimeMillis() - entry.timestamp() <= ttl) {
+        if (System.currentTimeMillis() - entry.observedAt() <= ttl) {
             return entry.value();
         }
         if (typeId != null) {
@@ -398,13 +466,14 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
             return list;
         });
 
-        resolveProtocolScheduler().schedule(() -> {
-            if (future.completeExceptionally(
-                    new TimeoutException("IEC104 wait timeout for ca/type/ioa="
-                            + commonAddress + "/" + (typeId != null ? typeId : "*") + "/" + ioAddress))) {
-                removePendingFuture(key, future);
-            }
-        }, requestTimeoutMillis(), TimeUnit.MILLISECONDS);
+        ScheduledFuture<?> deadline = resolveProtocolScheduler().schedule(() ->
+                future.completeExceptionally(new TimeoutException("IEC104 wait timeout for ca/type/ioa="
+                        + commonAddress + "/" + (typeId != null ? typeId : "*") + "/" + ioAddress)),
+                requestTimeoutMillis(), TimeUnit.MILLISECONDS);
+        future.whenComplete((value, failure) -> {
+            removePendingFuture(key, future);
+            deadline.cancel(false);
+        });
         return future;
     }
 
@@ -497,9 +566,47 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
      * 执行当前业务逻辑。
      */
     protected void maybeTriggerGeneralInterrogation(String reason) {
-        if (iec104Config != null && iec104Config.isGeneralInterrogationOnConnect()) {
-            triggerInterrogation(commonAddress, 20, reason);
+        if (generalInterrogationOnConnect) {
+            triggerInterrogation(commonAddress, generalInterrogationQualifier, reason);
         }
+    }
+
+    protected boolean isGeneralInterrogationOnly() {
+        return "GENERAL_INTERROGATION".equals(readMode);
+    }
+
+    protected boolean isSingleInterrogationOnReadMiss() {
+        return singleInterrogationOnReadMiss;
+    }
+
+    protected int getGeneralInterrogationQualifier() {
+        return generalInterrogationQualifier;
+    }
+
+    private String resolveReadMode(String raw) {
+        String normalized = raw == null || raw.isBlank() ? "AUTO" : raw.trim().toUpperCase(Locale.ROOT);
+        if (Set.of("AUTO", "READ_COMMAND", "GENERAL_INTERROGATION", "SPONTANEOUS").contains(normalized)) {
+            return normalized;
+        }
+        throw new IllegalArgumentException("Unsupported IEC104 generalInterrogationMode: " + raw);
+    }
+
+    private long resolveLongConfig(DeviceConnection connectionConfig, String key, long defaultValue) {
+        Long value = connectionConfig.getLong(key, defaultValue);
+        return value != null ? value : defaultValue;
+    }
+
+    private int resolveIntConfig(DeviceConnection connectionConfig, String key, int defaultValue) {
+        Integer value = connectionConfig.getInt(key, defaultValue);
+        return value != null ? value : defaultValue;
+    }
+
+    private long resolveInterrogationInterval(long configuredInterval, long effectiveCacheTtl) {
+        if (!isGeneralInterrogationOnly() || effectiveCacheTtl <= 0) {
+            return configuredInterval;
+        }
+        long safeInterval = Math.max(1000L, effectiveCacheTtl / 2L);
+        return configuredInterval <= 0 ? safeInterval : Math.min(configuredInterval, safeInterval);
     }
 
     /**
@@ -509,13 +616,14 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
         if (iec104Config == null || interrogationScheduler == null) {
             return;
         }
-        long interval = iec104Config.getGeneralInterrogationInterval();
+        long interval = generalInterrogationInterval;
         if (interval <= 0) {
             return;
         }
         cancelGeneralInterrogationTask();
+        Connection scheduledConnection = connection;
         generalInterrogationTask = interrogationScheduler.scheduleAtFixedRate(() -> {
-            if (!isConnected() || connection == null || dataTransferStopped) {
+            if (!isConnected() || connection != scheduledConnection || dataTransferStopped) {
                 return;
             }
             triggerInterrogation(commonAddress, 20, "scheduled");
@@ -646,7 +754,8 @@ public abstract class AbstractIce104Collector extends ConnectionBackedCollector 
     /**
      * 定义当前模块的不可变数据记录。
      */
-    protected record CacheEntry(Object value, long timestamp) {}
+    protected record CacheEntry(Object value, long timestamp, long observedAt, int qualityBits,
+                                Integer rawTypeId, Long sourceTime) {}
 
     /**
      * 定义当前模块的不可变数据记录。

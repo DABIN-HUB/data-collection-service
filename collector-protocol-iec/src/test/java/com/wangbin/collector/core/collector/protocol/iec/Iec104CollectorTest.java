@@ -84,7 +84,7 @@ class Iec104CollectorTest {
     }
 
     @Test
-    void pollingInterrogationMeasurementDoesNotDuplicateTelemetry() {
+    void pollingInterrogationWithoutPendingReadEntersTelemetry() {
         RecordingCollector collector = new RecordingCollector();
         DataPoint point = createWritablePoint("M_ME_NC_1:4001");
         point.setCollectionMode("POLLING");
@@ -93,7 +93,7 @@ class Iec104CollectorTest {
         collector.receive(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
 
-        assertFalse(collector.published.containsKey(point.getPointId()));
+        assertEquals(17.25f, collector.published.get(point.getPointId()));
     }
 
     @Test

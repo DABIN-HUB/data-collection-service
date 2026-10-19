@@ -38,9 +38,11 @@ public final class BacnetSubscribeCovCodec {
                 | (request.getObjectInstance() & 0x3FFFFF);
         BacnetTagSupport.writeUnsigned(service, objectIdentifier, 4);
 
-        BacnetTagSupport.writeTag(service, 2, true, request.isIssueConfirmedNotifications() ? 1 : 0);
-
         if (request.getLifetimeSeconds() != null) {
+            // 取消订阅同时省略确认标志和租期；租期 0 表示永久订阅。
+            // Context Boolean 的长度固定为 1，布尔值位于数据字节，而非 tag 的 LVT。
+            BacnetTagSupport.writeTag(service, 2, true, 1);
+            service.write(request.isIssueConfirmedNotifications() ? 1 : 0);
             int lifetimeLength = BacnetTagSupport.unsignedLength(request.getLifetimeSeconds());
             BacnetTagSupport.writeTag(service, 3, true, lifetimeLength);
             BacnetTagSupport.writeUnsigned(service, request.getLifetimeSeconds(), lifetimeLength);

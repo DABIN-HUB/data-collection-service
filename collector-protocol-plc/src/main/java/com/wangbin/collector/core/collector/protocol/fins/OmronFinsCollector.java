@@ -4,6 +4,7 @@ package com.wangbin.collector.core.collector.protocol.fins;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.fins.codec.FinsDataCodec;
@@ -151,29 +152,39 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         try {
+            checkConnection();
+            validateReadPointOwnership(point);
             FinsAddress address = requireAddress(point);
             Object rawValue = doReadPoint(point);
             ProcessResult processResult = address.isScalar()
                     ? buildScalarProcessResult(point, address, rawValue)
                     : buildArrayProcessResult(point, address, rawValue, "array pass-through read");
-            lastProcessResults.put(point.getPointId(), processResult);
+            ProcessResult snapshot = completeReadProcessResult(point, processResult, rawValue, startTime);
+            addInvocationProcessResult(point.getPointId(), snapshot);
+            if (!processResult.isSuccess()) {
+                reportPointFailure(point, rawValue == null ? "NO_VALUE" : "QUALITY_BAD");
+            }
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
             return processResult.getFinalValue();
         } catch (CollectorException e) {
+            clearInvocationProcessResults();
             throw e;
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, point);
             invalidateConnectionIfNeeded(e);
             throw new CollectorException("FINS point read failed", deviceInfo.getDeviceId(),
                     point != null ? point.getPointId() : null, e);
+        } finally {
+            finishInvocationProcessResults();
         }
     }
 
@@ -182,20 +193,36 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
      */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         Map<String, Object> results = new LinkedHashMap<>();
+        Map<String, ProcessResult> invocationResults = new LinkedHashMap<>();
         try {
+            checkConnection();
             List<DataPoint> validPoints = points == null
                     ? Collections.emptyList()
                     : points.stream().filter(point -> point != null && point.isEnabled()).collect(Collectors.toList());
-            if (validPoints.isEmpty()) {
-                return results;
+            List<DataPoint> readablePoints = new ArrayList<>();
+            for (DataPoint point : validPoints) {
+                try {
+                    validateReadPointOwnership(point);
+                    requireAddress(point);
+                    readablePoints.add(point);
+                } catch (Exception e) {
+                    recordException(e, point);
+                    reportPointFailure(point, "CONFIG_ERROR");
+                    if (point.getPointId() != null && deviceInfo.getDeviceId().equals(point.getDeviceId())) {
+                        ProcessResult failure = ProcessResult.error(null, "点位归属或地址配置无效",
+                                DataQuality.CONFIG_ERROR);
+                        invocationResults.put(point.getPointId(), completeReadProcessResult(point, failure, null, startTime));
+                        results.put(point.getPointId(), null);
+                    }
+                }
             }
 
-            Map<String, Object> rawValues = doReadPoints(validPoints);
-            for (DataPoint point : validPoints) {
+            Map<String, Object> rawValues = doReadPoints(readablePoints);
+            for (DataPoint point : readablePoints) {
                 String pointId = point.getPointId();
                 if (pointId == null) {
                     continue;
@@ -203,18 +230,17 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                 try {
                     FinsAddress address = requireAddress(point);
                     Object rawValue = rawValues.get(pointId);
-                    if (rawValue == null) {
-                        results.put(pointId, null);
-                        continue;
-                    }
-                    ProcessResult processResult = address.isScalar()
+                    ProcessResult processResult = rawValue instanceof ProcessResult failure ? failure : address.isScalar()
                             ? buildScalarProcessResult(point, address, rawValue)
                             : buildArrayProcessResult(point, address, rawValue, "array pass-through batch read");
-                    lastProcessResults.put(pointId, processResult);
+                    invocationResults.put(pointId, completeReadProcessResult(point, processResult,
+                            rawValue instanceof ProcessResult ? null : rawValue, startTime));
                     results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
                     log.error("FINS 批量 点位 处理失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), pointId, e);
                     recordException(e, point);
+                    ProcessResult failure = failedProtocolReadResult(e);
+                    invocationResults.put(pointId, completeReadProcessResult(point, failure, null, startTime));
                     results.put(pointId, null);
                 }
             }
@@ -222,13 +248,17 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
             totalReadCount.addAndGet(validPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
+            setInvocationProcessResults(invocationResults);
             return results;
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, null);
             invalidateConnectionIfNeeded(e);
             throw new CollectorException("FINS batch point read failed", deviceInfo.getDeviceId(), null, e);
+        } finally {
+            finishInvocationProcessResults();
         }
     }
 
@@ -339,7 +369,13 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
 
         if (!requireFinsConfig().isBatchReadEnabled()) {
             for (DataPoint point : validPoints) {
-                results.put(point.getPointId(), doReadPoint(point));
+                try {
+                    results.put(point.getPointId(), doReadPoint(point));
+                } catch (Exception e) {
+                    recordException(e, point);
+                    invalidateConnectionIfNeeded(e);
+                    results.put(point.getPointId(), failedProtocolReadResult(e));
+                }
             }
             return results;
         }
@@ -365,6 +401,10 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                         completed.add(point.getPointId());
                     } catch (Exception singleError) {
                         log.warn("FINS 单点降级 失败, 设备={}, 点位={}", deviceInfo.getDeviceId(), point.getPointId(), singleError);
+                        recordException(singleError, point);
+                        invalidateConnectionIfNeeded(singleError);
+                        results.put(point.getPointId(), failedProtocolReadResult(singleError));
+                        completed.add(point.getPointId());
                     }
                 }
             }
@@ -372,7 +412,13 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
 
         for (DataPoint point : validPoints) {
             if (!completed.contains(point.getPointId())) {
-                results.put(point.getPointId(), doReadPoint(point));
+                try {
+                    results.put(point.getPointId(), doReadPoint(point));
+                } catch (Exception e) {
+                    recordException(e, point);
+                    invalidateConnectionIfNeeded(e);
+                    results.put(point.getPointId(), failedProtocolReadResult(e));
+                }
             }
         }
         return results;
@@ -1131,10 +1177,9 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
                                                   FinsAddress address,
                                                   Object rawValue,
                                                   String message) {
-        if (!(rawValue instanceof Collection<?>) && !(rawValue != null && rawValue.getClass().isArray())) {
-            throw new IllegalArgumentException("FINS array point did not produce collection payload: " + point.getPointId());
-        }
-        ProcessResult processResult = ProcessResult.success(rawValue, rawValue, message);
+        ProcessResult processResult = rawValue == null
+                ? ProcessResult.error(null, "本轮数组读取没有返回值", DataQuality.BAD)
+                : processArrayQuality(point, rawValue, address.getElementCount());
         processResult.addMetadata("arrayValue", true);
         processResult.addMetadata("arraySize", address.getElementCount());
         processResult.addMetadata(CommonMapKeys.ADDRESS, address.getCanonicalAddress());
@@ -1191,6 +1236,25 @@ public class OmronFinsCollector extends ConnectionBackedCollector {
     /**
      * 执行当前业务逻辑。
      */
+    @Override
+    protected ProcessResult failedProtocolReadResult(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof FinsTransportException transportFailure) {
+                DataQuality quality = switch (transportFailure.getCode()) {
+                    case CONNECT_TIMEOUT, SEND_TIMEOUT, READ_TIMEOUT -> DataQuality.TIMEOUT;
+                    case TCP_FRAME_ERROR, FRAME_TOO_LARGE, FINS_TCP_ERROR_CODE -> DataQuality.VALUE_INVALID;
+                    default -> DataQuality.DEVICE_ERROR;
+                };
+                ProcessResult result = ProcessResult.error(null,
+                        "本轮 FINS 读取失败: " + transportFailure.getCode(), quality);
+                result.setErrorCode(transportFailure.getCode().name());
+                return result;
+            }
+        }
+        return super.failedProtocolReadResult(failure);
+    }
+
+    /** 传输故障使当前会话失效，不改变地址解码或业务 EndCode 的既有语义。 */
     private void invalidateConnectionIfNeeded(Throwable throwable) {
         for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
             if (cause instanceof FinsTransportException || cause instanceof SocketTimeoutException

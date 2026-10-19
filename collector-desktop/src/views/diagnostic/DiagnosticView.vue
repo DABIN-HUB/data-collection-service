@@ -1,9 +1,12 @@
 <template>
   <section class="exact-page diagnostic-view">
-    <div class="section-heading">
-      <div class="heading-title-line">
-        <h1>系统实时状态诊断</h1>
-        <span class="heading-online"><i></i>{{ loading ? '诊断中' : '运行数据' }}</span>
+    <div class="section-heading diagnostic-heading">
+      <div class="diagnostic-heading-copy">
+        <div class="heading-title-line">
+          <h1>系统诊断</h1>
+          <span class="diagnostic-sampling-label">{{ loading ? '诊断中' : lastRefresh ? '诊断快照' : '尚未成功读取' }}</span>
+        </div>
+        <p>核对独立来源、管线与设备运行态；客户端就绪不代表服务健康。</p>
       </div>
       <div class="heading-actions">
         <span class="diagnostic-refresh-time">{{ lastRefreshText }}</span>
@@ -12,27 +15,73 @@
       </div>
     </div>
 
-    <div class="exact-page-body">
-      <p v-if="exportMessage" class="diagnostic-message" :class="{ 'is-error': exportMessageType === 'error' }">{{ exportMessage }}</p>
-      <p v-if="error" class="diagnostic-message is-error">{{ error }}</p>
-      <p v-else-if="partialWarning" class="diagnostic-message">{{ partialWarning }}</p>
+    <div class="exact-page-body diagnostic-body">
+      <p v-if="exportMessage" class="diagnostic-message" :class="{ 'is-error': exportMessageType === 'error' }" role="status">{{ exportMessage }}</p>
+      <p v-if="error" class="diagnostic-message is-error" role="alert">{{ error }}</p>
+      <p v-else-if="partialWarning" class="diagnostic-message" role="status">{{ partialWarning }}</p>
 
       <section class="exact-surface diagnostic-summary-surface">
-        <div class="exact-surface-head"><h2>诊断摘要</h2><span>{{ deviceStore.devices.length }} 台设备，{{ deviceStore.totalPointCount }} 个点位</span></div>
-        <div class="exact-diagnostic-cards">
-          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+        <div class="exact-surface-head diagnostic-panel-head"><h2>诊断上下文</h2><span>{{ diagnosticDeviceContextText }}</span></div>
+        <div class="diagnostic-client-state"><strong>{{ systemStatusText }}</strong><span>仅表示本地初始化，不作为服务健康依据</span></div>
+        <div class="exact-diagnostic-cards diagnostic-summary-rail">
+          <div v-for="item in diagnosticCards" :key="item.label" class="exact-diagnostic-card diagnostic-summary-item"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small class="diagnostic-source-note">{{ item.sourceText }}</small></div>
         </div>
+        <details class="diagnostic-source-ledger">
+          <summary>查看各来源读取状态与时间</summary>
+          <OperationSourceStatus v-for="(source, key) in diagnosticSources" :key="key" :state="diagnosticSourceState(source, loading)" :source="source.label" :last-attempt-at="source.lastAttemptAt" :last-success-at="source.lastSuccessAt" :detail="diagnosticSourceDetail(source)" />
+        </details>
+        <p class="diagnostic-summary-note">未知不计入异常或健康；成功零值保留。本轮结束时间不代表各来源成功时间。</p>
+      </section>
+
+      <div class="diagnostic-workbench">
+      <div class="diagnostic-primary">
+      <section class="exact-surface diagnostic-risk-surface" aria-labelledby="diagnostic-risk-title">
+        <div class="exact-surface-head diagnostic-panel-head"><h2 id="diagnostic-risk-title">优先关注</h2><span>读取失败 / 异常优先，其次警告与未知；同级保留原顺序</span></div>
+        <div class="diagnostic-risk-counts" aria-label="诊断项严重性分布">
+          <span class="is-error">异常 <strong>{{ diagnosticRiskCounts.abnormal }}</strong> 项</span>
+          <span class="is-warning">警告 <strong>{{ diagnosticRiskCounts.warning }}</strong> 项</span>
+          <span class="is-unknown">未知 <strong>{{ diagnosticRiskCounts.unknown }}</strong> 项</span>
+          <span>正常 / 未启用 <strong>{{ diagnosticRiskCounts.normal }}</strong> 项</span>
+        </div>
+        <div v-if="priorityRow" class="diagnostic-priority" :class="priorityRow.tone">
+          <div class="diagnostic-priority-copy">
+            <p><span class="status-badge" :class="priorityRow.tone">{{ priorityRow.status }}</span><span v-if="priorityRow.readFailed" class="status-badge is-error">来源读取失败</span><strong>{{ priorityRow.name }}</strong></p>
+            <p>{{ priorityRow.readFailed ? '先恢复对应来源读取；未读取项不作健康判断。' : priorityRow.reason }}</p>
+            <p class="diagnostic-source-note">来源：{{ diagnosticRowSourceNames(priorityRow.sourceKeys) }}；读取时间与详情见下方对应项。</p>
+          </div>
+          <div class="diagnostic-recovery-actions">
+            <button type="button" @click="focusDiagnosticRow(priorityRow.id)">查看该项</button>
+            <button type="button" :disabled="loading" @click="runDiagnostic">重试完整诊断</button>
+          </div>
+        </div>
+        <p v-else class="diagnostic-summary-note">当前诊断项未发现已知异常；已读取不代表所有业务均健康，仍请核对来源与明细。</p>
       </section>
 
       <section class="exact-table-card diagnostic-rows-table">
-        <div class="exact-table-title"><h2>诊断项列表</h2><span>{{ diagnosticRows.length }} 项</span></div>
-        <table>
-          <thead><tr><th>诊断项</th><th>状态</th><th>当前值</th><th>处理建议</th></tr></thead>
-          <tbody>
-            <tr v-for="row in diagnosticRows" :key="row.name"><td>{{ row.name }}</td><td><span class="status-badge" :class="row.tone">{{ row.status }}</span></td><td>{{ row.current }}</td><td>{{ row.suggestion }}</td></tr>
-          </tbody>
-        </table>
+        <div class="exact-table-title diagnostic-panel-head"><h2 id="diagnostic-rows-title">诊断项与读取来源</h2><span>{{ diagnosticRows.length }} 项</span></div>
+        <div class="diagnostic-table-scroll" tabindex="0" role="region" aria-labelledby="diagnostic-rows-title">
+          <table class="diagnostic-check-table">
+            <colgroup><col class="diagnostic-col-name"><col class="diagnostic-col-status"><col class="diagnostic-col-current"><col class="diagnostic-col-advice"></colgroup>
+            <thead><tr><th scope="col">诊断项</th><th scope="col">状态</th><th scope="col">当前值</th><th scope="col">处理建议</th></tr></thead>
+            <tbody>
+              <tr v-for="row in diagnosticRows" :id="row.id" :key="row.id" tabindex="-1">
+                <td>{{ row.name }}<small v-if="row.name === '管线背压'" class="diagnostic-source-note">Pipeline Backpressure</small></td>
+                <td><span v-if="row.readFailed" class="status-badge is-error">来源读取失败</span><span class="status-badge" :class="row.tone">{{ row.status }}</span><small v-if="row.retained" class="diagnostic-source-note">上次成功数据</small></td>
+                <td>
+                  {{ row.current }}<small class="diagnostic-source-note">{{ diagnosticRowSourceNames(row.sourceKeys) }}</small>
+                  <details class="diagnostic-row-source">
+                    <summary>读取时间与详情</summary>
+                    <p class="diagnostic-row-reason">{{ row.reason }}</p>
+                    <OperationSourceStatus v-for="key in row.sourceKeys" :key="key" :state="diagnosticSourceState(diagnosticSources[key], loading)" :source="diagnosticSources[key].label" :last-attempt-at="diagnosticSources[key].lastAttemptAt" :last-success-at="diagnosticSources[key].lastSuccessAt" :detail="diagnosticSourceDetail(diagnosticSources[key])" />
+                  </details>
+                </td>
+                <td>{{ row.readFailed ? '查看来源详情，再重试完整诊断。' : row.suggestion }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
+
 
       <DiagnosticDetailPanel
         :cache-metrics="cacheMetrics"
@@ -41,18 +90,34 @@
         :exception-stats="exceptionStats"
         :storage-metrics="storageMetrics"
         :pipeline-metrics="pipelineMetrics"
+        :sources="diagnosticSources"
+        :loading="loading"
+        @retry="runDiagnostic"
       />
 
+      <details class="exact-json-panel diagnostic-raw-panel">
+        <summary>查看原始诊断 JSON</summary>
+        <pre class="json-view" tabindex="0" aria-label="完整原始诊断 JSON">{{ prettyJson(diagnosticRaw) }}</pre>
+      </details>
+      </div>
+
+      <aside class="diagnostic-aside" aria-labelledby="diagnostic-device-title">
+      <section class="exact-surface diagnostic-device-context">
+        <div class="exact-surface-head diagnostic-panel-head"><h2 id="diagnostic-device-title">所选设备运行态</h2></div>
+        <p>{{ diagnosticDeviceContextText }}</p>
+        <p>单设备查询、全局快照和配置清单分别读取；未选择设备时不借用全局状态作为单设备结果。</p>
+      </section>
+      <OperationSourceStatus :state="deviceStore.loading ? 'loading' : deviceStore.lastUpdatedAt ? 'ready' : deviceStore.error ? 'error' : 'unknown'" source="设备配置列表接口" :last-success-at="deviceStore.lastUpdatedAt || null" :detail="deviceStore.error ? '设备上下文部分不可用；此时间仅证明配置列表曾成功读取，不代表本轮运行快照成功。' : '此成功时间仅属于配置列表；设备运行快照、单设备查询沿用下方独立读取与状态。'">
+        <button type="button" :disabled="loading" @click="runDiagnostic">重试完整诊断</button>
+      </OperationSourceStatus>
       <DeviceRuntimePanel
         :devices="deviceStore.devices"
         :selected-device-id="deviceStore.selectedDeviceId"
+        :inventory-count="deviceStore.lastUpdatedAt > 0 ? deviceStore.devices.length : null"
         @select-device="selectDevice"
       />
-
-      <details class="exact-json-panel" open>
-        <summary>查看原始诊断 JSON</summary>
-        <pre class="json-view">{{ prettyJson(diagnosticRaw) }}</pre>
-      </details>
+      </aside>
+      </div>
     </div>
   </section>
 </template>
@@ -79,6 +144,13 @@ import {
 import { getOpsLogs, normalizeLogRows } from "@/api/ops.api";
 import DiagnosticDetailPanel from "@/features/diagnostic/components/DiagnosticDetailPanel.vue";
 import DeviceRuntimePanel from "@/features/diagnostic/components/DeviceRuntimePanel.vue";
+import OperationSourceStatus from "@/components/ui/OperationSourceStatus.vue";
+import {
+  buildDisplayDiagnosticRows, createDiagnosticSources, diagnosticField, diagnosticNumber, diagnosticRecord,
+  diagnosticSourceDetail, diagnosticSourceStamp, diagnosticSourceState, hasDiagnosticNumber
+} from "@/features/operations/diagnostic-presentation";
+import type { DiagnosticSourceKey } from "@/features/operations/diagnostic-presentation";
+import { knownInventoryPointCount } from "@/features/operations/inventory-presentation";
 import {
   buildDiagnosticCards,
   buildDiagnosticExportWarning,
@@ -118,27 +190,53 @@ const exportMessage = ref("");
 const exportMessageType = ref<"success" | "warning" | "error">("success");
 const lastRefresh = ref<Date | null>(null);
 
-type DiagnosticSnapshotKey = "runtimeStatus" | "systemResource" | "reportMetrics" | "configSummary" | "cacheMetrics" | "deviceConnectionMetrics" | "collectorPerformance" | "exceptionStats" | "storageMetrics" | "performanceDetail" | "pipelineMetrics";
+type DiagnosticSnapshotKey = DiagnosticSourceKey;
+const diagnosticSources = ref(createDiagnosticSources());
 
-const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
+const systemStatusText = computed(() => appStore.initialized ? "客户端就绪" : "初始化中");
 const resourceSummary = computed(() => buildResourceSummary({
   systemResource: systemResource.value,
   reportMetrics: reportMetrics.value,
   performanceDetail: performanceDetail.value
 }));
-const diagnosticCards = computed(() => buildDiagnosticCards({
-  systemResource: systemResource.value,
-  configSummary: configSummary.value,
-  deviceConnectionMetrics: deviceConnectionMetrics.value,
-  cacheMetrics: cacheMetrics.value,
-  runtimeStatus: runtimeStatus.value,
-  exceptionStats: exceptionStats.value,
-  pipelineMetrics: pipelineMetrics.value,
-  devices: deviceStore.devices,
-  onlineCount: deviceStore.onlineCount,
-  totalPointCount: deviceStore.totalPointCount
-}));
-const diagnosticRows = computed(() => buildDiagnosticRows({
+const diagnosticCards = computed(() => {
+  const cards = buildDiagnosticCards({
+    systemResource: systemResource.value,
+    configSummary: configSummary.value,
+    deviceConnectionMetrics: deviceConnectionMetrics.value,
+    cacheMetrics: cacheMetrics.value,
+    runtimeStatus: runtimeStatus.value,
+    exceptionStats: exceptionStats.value,
+    pipelineMetrics: pipelineMetrics.value,
+    devices: deviceStore.devices,
+    onlineCount: deviceStore.onlineCount,
+    totalPointCount: deviceStore.totalPointCount
+  });
+  const unknownText = loading.value ? "加载中" : "未知";
+  return cards.map((card) => {
+    const stats = diagnosticRecord(diagnosticRecord(configSummary.value).cacheStats);
+    let known: boolean;
+    let valueText = card.value;
+    let sourceText: string;
+    if (card.label === "设备配置总数" || card.label === "点位总数") {
+      const key = card.label === "设备配置总数" ? "deviceCount" : "pointCount";
+      const fromSummary = Boolean(diagnosticSources.value.configSummary.lastSuccessAt) && hasDiagnosticNumber(stats, [key]);
+      known = fromSummary || hasKnownInventoryCount(key);
+      if (!fromSummary && known) valueText = key === "deviceCount" ? `${deviceStore.devices.length} 台` : `${deviceStore.totalPointCount} 个`;
+      sourceText = fromSummary ? diagnosticSourceStamp(diagnosticSources.value.configSummary) : deviceStore.lastUpdatedAt ? `设备配置列表接口 · 最后成功 ${new Date(deviceStore.lastUpdatedAt).toLocaleString("zh-CN", { hour12: false })}${deviceStore.error ? " · 设备上下文部分不可用" : ""}` : "设备配置列表 / 配置摘要 · 尚未成功读取";
+    } else {
+      const cacheKeys = ["totalHitRate", "cacheHitRatio", "hitRatio", "cacheHitRate"];
+      const cacheSource = diagnosticField(cacheMetrics.value, cacheKeys) !== undefined ? "cacheMetrics" : "runtimeStatus";
+      const key = card.label === "系统运行时间" ? "systemResource" : card.label === "活跃连接" ? "deviceConnectionMetrics" : card.label === "异常统计" ? "exceptionStats" : cacheSource;
+      const fields = card.label === "系统运行时间" ? ["uptimeMillis", "uptime"] : card.label === "活跃连接" ? ["activeConnections", "connectedCount", "onlineCount"] : card.label === "异常统计" ? ["totalExceptions", "totalCount", "exceptionCount", "errorCount"] : key === "runtimeStatus" ? ["cacheHitRatio", "hitRatio", "cacheHitRate"] : cacheKeys;
+      const value = key === "systemResource" ? systemResource.value : key === "deviceConnectionMetrics" ? deviceConnectionMetrics.value : key === "exceptionStats" ? exceptionStats.value : key === "cacheMetrics" ? cacheMetrics.value : runtimeStatus.value;
+      known = Boolean(diagnosticSources.value[key].lastSuccessAt) && hasDiagnosticNumber(value, fields);
+      sourceText = diagnosticSourceStamp(diagnosticSources.value[key]);
+    }
+    return { ...card, value: known ? valueText : unknownText, sourceText };
+  });
+});
+const diagnosticBaseRows = computed(() => buildDiagnosticRows({
   appInitialized: appStore.initialized,
   systemStatusText: systemStatusText.value,
   resourceSummary: resourceSummary.value,
@@ -153,7 +251,55 @@ const diagnosticRows = computed(() => buildDiagnosticRows({
   devices: deviceStore.devices,
   onlineCount: deviceStore.onlineCount
 }));
-const lastRefreshText = computed(() => lastRefresh.value ? `刷新时间 ${lastRefresh.value.toLocaleTimeString()}` : "尚未刷新");
+const diagnosticRows = computed(() => buildDisplayDiagnosticRows({
+  rows: diagnosticBaseRows.value,
+  sources: diagnosticSources.value,
+  resourceSummary: resourceSummary.value,
+  values: {
+    runtimeStatus: runtimeStatus.value, systemResource: systemResource.value, reportMetrics: reportMetrics.value,
+    configSummary: configSummary.value, cacheMetrics: cacheMetrics.value, deviceConnectionMetrics: deviceConnectionMetrics.value,
+    collectorPerformance: collectorPerformance.value, exceptionStats: exceptionStats.value, storageMetrics: storageMetrics.value,
+    performanceDetail: performanceDetail.value, pipelineMetrics: pipelineMetrics.value
+  }
+}));
+const diagnosticRiskCounts = computed(() => ({
+  abnormal: diagnosticRows.value.filter((row) => row.status === "异常").length,
+  warning: diagnosticRows.value.filter((row) => row.status === "警告").length,
+  unknown: diagnosticRows.value.filter((row) => row.status === "未知").length,
+  normal: diagnosticRows.value.filter((row) => row.status === "正常" || row.status === "未启用").length
+}));
+const priorityRow = computed(() => diagnosticRows.value.find((row) => row.status !== "正常" && row.status !== "未启用"));
+function diagnosticRowSourceNames(keys: DiagnosticSourceKey[]): string {
+  return keys.map((key) => diagnosticSources.value[key].label).join("、");
+}
+const lastRefreshText = computed(() => lastRefresh.value ? `本轮诊断结束 ${lastRefresh.value.toLocaleString("zh-CN", { hour12: false })}` : "本轮尚未结束");
+const diagnosticDeviceContextText = computed(() => {
+  if (deviceStore.lastUpdatedAt > 0) {
+    const prefix = deviceStore.error ? "上次已加载：" : "设备上下文：";
+    return `${prefix}${deviceStore.devices.length} 台设备，${hasKnownInventoryCount("pointCount") ? `${deviceStore.totalPointCount} 个点位` : "点位数量未知"}`;
+  }
+  return deviceStore.loading ? "设备上下文加载中" : "设备上下文未知";
+});
+
+function focusDiagnosticRow(id: string) {
+  const row = document.getElementById(id);
+  row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  row?.focus({ preventScroll: true });
+}
+
+function hasKnownInventoryCount(key: "deviceCount" | "pointCount"): boolean {
+  if (deviceStore.lastUpdatedAt > 0) {
+    if (key === "deviceCount") return true;
+    return knownInventoryPointCount(deviceStore.devices) !== null;
+  }
+  if (!diagnosticSources.value.configSummary.lastSuccessAt) return false;
+  const summary = configSummary.value;
+  if (!summary || typeof summary !== "object" || !("cacheStats" in summary)) return false;
+  const stats = summary.cacheStats;
+  if (!stats || typeof stats !== "object") return false;
+  const value = key === "deviceCount" ? ("deviceCount" in stats ? stats.deviceCount : null) : ("pointCount" in stats ? stats.pointCount : null);
+  return diagnosticNumber(value) !== null;
+}
 
 async function loadDiagnostic() {
   loading.value = true;
@@ -179,8 +325,9 @@ async function loadDiagnostic() {
       { key: "exceptionStats", label: "异常统计", run: getExceptionStats },
       { key: "storageMetrics", label: "历史存储", run: getStorageMetrics },
       { key: "performanceDetail", label: "性能详情", run: getPerformanceDetail },
-      { key: "pipelineMetrics", label: "Pipeline", run: getPipelineBackpressure }
+      { key: "pipelineMetrics", label: "管线背压", run: getPipelineBackpressure }
     ];
+    requests.forEach((request) => { diagnosticSources.value[request.key].lastAttemptAt = Date.now(); });
     const [deviceResult, ...metricResults] = await Promise.allSettled([deviceStore.refresh(), ...requests.map((request) => request.run())]);
 
     if (deviceResult.status === "rejected" || deviceStore.error) {
@@ -190,8 +337,11 @@ async function loadDiagnostic() {
       const request = requests[index];
       if (result.status === "fulfilled") {
         applyDiagnosticValue(request.key, result.value);
+        diagnosticSources.value[request.key].lastSuccessAt = Date.now();
+        diagnosticSources.value[request.key].failed = false;
         return;
       }
+      diagnosticSources.value[request.key].failed = true;
       failures.push(request.label);
     });
     applyRouteDeviceId();
@@ -201,7 +351,7 @@ async function loadDiagnostic() {
       partialWarning.value = buildDiagnosticPartialWarning(failures);
     }
     if (metricResults.every((result) => result.status === "rejected") && deviceStore.error) {
-      error.value = "无法连接采集服务，请检查服务地址和后端是否已启动";
+      error.value = "诊断读取失败，请检查接口访问权限或连接";
     }
   } finally {
     loading.value = false;
@@ -340,36 +490,4 @@ onMounted(() => {
 });
 </script>
 
-<style scoped>
-.diagnostic-view .diagnostic-refresh-time {
-  color: var(--exact-dim);
-  font-size: 12px;
-}
-
-.diagnostic-view .diagnostic-message {
-  padding: 10px 14px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  border-radius: 12px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
-  font-size: 13px;
-}
-
-.diagnostic-view .diagnostic-message.is-error {
-  border-color: rgba(248, 113, 113, 0.45);
-  background: rgba(248, 113, 113, 0.1);
-  color: #fecaca;
-}
-
-.diagnostic-view .diagnostic-summary-surface .exact-diagnostic-cards {
-  padding: 16px;
-}
-
-.diagnostic-view .diagnostic-rows-table {
-  margin-top: 14px;
-}
-
-.diagnostic-view .exact-json-panel {
-  margin-top: 16px;
-}
-</style>
+<style scoped src="@/features/diagnostic/styles/diagnostic-view.css"></style>

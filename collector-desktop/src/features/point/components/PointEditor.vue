@@ -21,7 +21,11 @@
     <el-alert v-if="pointError" :title="pointError" type="warning" :closable="false" />
     <el-alert v-if="realtimeError" :title="realtimeError" type="info" :closable="false" />
 
+    <p class="point-workbench-note">表单、协议扩展和 JSON 编辑同一份点位配置；点位保存与设备连接配置保存相互独立。</p>
+
     <div class="point-workbench-grid">
+      <details class="point-table-disclosure">
+        <summary>点位矩阵<span>{{ points.length }} 个配置点位 · 展开选择或逐行编辑</span></summary>
       <section class="point-table-panel">
         <div class="point-table-meta">
           <span>点位数：{{ points.length }}</span>
@@ -81,6 +85,7 @@
           </el-table-column>
         </el-table>
       </section>
+      </details>
 
       <aside class="point-detail-panel">
         <template v-if="selectedPoint">
@@ -101,19 +106,28 @@
             <span>更新时间：{{ formatTime(runtimeOf(selectedPoint)?.timestamp || runtimeOf(selectedPoint)?.collectTime) }}</span>
           </div>
 
-          <el-tabs v-model="detailTab" class="point-detail-tabs">
+          <el-tabs v-model="detailTab" class="point-detail-tabs" tab-position="left">
             <el-tab-pane label="基础" name="basic">
               <div class="point-detail-form-grid">
                 <label>点位名称<el-input v-model="selectedPoint.pointName" /></label>
                 <label>点位编码<el-input v-model="selectedPoint.pointCode" /></label>
                 <label>别名<el-input v-model="selectedPoint.pointAlias" /></label>
-                <label>地址<el-input v-model="selectedPoint.address" /></label>
+                <label class="long-field">地址<el-input v-model="selectedPoint.address" /></label>
                 <label>分组<el-input v-model="selectedPoint.groupId" /></label>
                 <label>单位<el-input v-model="selectedPoint.unit" /></label>
                 <label>数据类型<el-select v-model="selectedPoint.dataType" filterable><el-option v-for="item in dataTypes" :key="item" :label="item" :value="item" /></el-select></label>
                 <label>读写<el-select v-model="selectedPoint.readWrite"><el-option label="只读 R" value="R" /><el-option label="只写 W" value="W" /><el-option label="读写 RW" value="RW" /></el-select></label>
                 <label class="wide-field">备注<el-input v-model="selectedPoint.remark" type="textarea" :rows="2" /></label>
               </div>
+              <section class="point-build-reference" aria-label="只读构建字段">
+                <h4>只读构建字段</h4>
+                <dl>
+                  <div><dt>点位 ID</dt><dd>{{ selectedPoint.pointId ?? '-' }}</dd></div>
+                  <div><dt>设备 ID</dt><dd>{{ selectedPoint.deviceId ?? '-' }}</dd></div>
+                  <div><dt>基础采集周期</dt><dd>{{ selectedPoint.baseCollectionInterval ?? '-' }}<span v-if="selectedPoint.baseCollectionInterval != null"> ms</span></dd></div>
+                  <div><dt>当前采集周期</dt><dd>{{ selectedPoint.currentCollectionInterval ?? '-' }}<span v-if="selectedPoint.currentCollectionInterval != null"> ms</span></dd></div>
+                </dl>
+              </section>
             </el-tab-pane>
 
             <el-tab-pane label="数据处理" name="data">
@@ -147,7 +161,7 @@
             <el-tab-pane label="协议扩展" name="protocol">
               <el-alert v-if="pointFields.length === 0" title="当前协议没有 pointFields 动态字段" type="info" :closable="false" />
               <div v-else class="protocol-form-grid">
-                <el-form-item v-for="field in pointFields" :key="field.name" :label="field.label || field.name" :required="field.required">
+                <el-form-item v-for="field in pointFields" :key="field.name" :label="field.label || field.name" :required="field.required" class="point-protocol-field" :class="{ 'is-number': field.type === 'number' || field.type === 'integer', 'is-select': Boolean(field.options?.length), 'is-long': field.type === 'object' || field.type === 'textarea' || /address|url|topic|path|node|identifier|connectionstring/i.test(field.name) }" :data-field="field.name" :style="{ '--option-width': `${Math.max(160, Math.min(560, Math.max(...(field.options || []).map(option => Array.from(option).reduce((width, char) => width + ((char.codePointAt(0) || 0) > 255 ? 13 : 7.5), 0))) + 48))}px` }">
                   <el-switch v-if="field.type === 'boolean'" v-model="pointExtraModel[field.name]" @change="applyExtraModel" />
                   <el-select v-else-if="field.options?.length" v-model="pointExtraModel[field.name]" clearable filterable @change="applyExtraModel">
                     <el-option v-for="option in field.options" :key="option" :label="option" :value="option" />
@@ -188,7 +202,7 @@
     <PointBatchEditDialog v-model="batchDialogVisible" :selected-count="selectedIds.length" @apply="pointStore.applyBatch(deviceId, $event)" />
     <PointGenerateDialog v-model="generateDialogVisible" @generate="pointStore.appendGeneratedPoints(deviceId, $event)" />
 
-    <el-dialog v-model="importPreviewVisible" title="点位导入预览" width="920px" class="point-import-preview-dialog">
+    <el-dialog v-model="importPreviewVisible" title="点位导入预览" width="min(920px, calc(100vw - 32px))" class="point-import-preview-dialog">
       <div class="point-import-preview-head">
         <div>
           <strong>{{ importPreviewLabel || '导入文件' }}</strong>
@@ -590,14 +604,25 @@ onBeforeUnmount(() => {
   color: var(--console-text-secondary);
 }
 
+.point-toolbar,
+.point-workbench-note,
+.point-workbench-grid {
+  /* 嵌入宿主限制高度时保留内容自然尺寸，由宿主滚动，避免字段和章节被压缩裁切。 */
+  flex-shrink: 0;
+}
+
 .point-toolbar {
+  position: sticky;
+  z-index: 3;
   display: flex;
   min-height: 42px;
-  padding: 0;
+  padding: 8px 0;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--console-border-soft);
+  background: var(--console-bg);
 }
 
 .point-toolbar-left,
@@ -624,11 +649,46 @@ onBeforeUnmount(() => {
 }
 
 .point-workbench-grid {
-  display: grid;
+  display: flex;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 10px;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.point-table-disclosure {
+  min-width: 0;
+  order: 1;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
+  background: var(--console-panel);
+}
+
+.point-table-disclosure > summary {
+  display: flex;
+  min-height: 44px;
+  padding: 12px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+
+.point-table-disclosure > summary span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.point-table-disclosure > summary:focus-visible {
+  outline: 2px solid var(--console-primary);
+  outline-offset: -3px;
+}
+
+.point-table-disclosure .point-table-panel {
+  border: 0;
+  border-top: 1px solid var(--console-border-soft);
+  border-radius: 0;
 }
 
 .point-table-panel,
@@ -637,13 +697,13 @@ onBeforeUnmount(() => {
   color: var(--console-text-secondary);
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-panel);
-  background: var(--console-bg-soft);
+  background: var(--console-panel);
 }
 
 .point-table-panel,
 .point-detail-panel {
   min-width: 0;
-  padding: 8px;
+  padding: 16px;
 }
 
 .point-table-meta,
@@ -665,11 +725,12 @@ onBeforeUnmount(() => {
 }
 
 .point-detail-panel {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  max-height: 560px;
-  overflow: auto;
+  position: static;
+  display: flex;
+  order: 0;
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .point-detail-head {
@@ -679,6 +740,8 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
 }
 
 .point-detail-head h3,
@@ -693,6 +756,7 @@ onBeforeUnmount(() => {
 .point-import-preview-head p {
   margin: 3px 0 0;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .point-runtime-strip {
@@ -704,38 +768,198 @@ onBeforeUnmount(() => {
   gap: 12px;
   flex-wrap: wrap;
   font-size: 12px;
+  flex: none;
+  background: var(--console-bg-soft);
+  overflow-wrap: anywhere;
 }
 
 .point-detail-tabs {
+  display: grid;
   min-width: 0;
+  min-height: 0;
+  grid-template-columns: 150px minmax(0, 1fr);
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.point-detail-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--console-border-soft);
+  background: var(--console-bg-soft);
+}
+
+.point-detail-tabs :deep(.el-tabs__nav-wrap::after),
+.point-detail-tabs :deep(.el-tabs__active-bar) {
+  display: none;
+}
+
+.point-detail-tabs :deep(.el-tabs__item.is-left) {
+  height: 40px;
+  margin-bottom: 3px;
+  padding: 0 11px;
+  justify-content: flex-start;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.point-detail-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--console-primary);
+  background: var(--app-color-success-soft);
+}
+
+.point-detail-tabs :deep(.el-tabs__item:focus-visible) {
+  outline: 2px solid var(--console-primary);
+  outline-offset: -2px;
+}
+
+.point-detail-tabs :deep(.el-tabs__content) {
+  min-width: 0;
+  min-height: 340px;
+  max-height: min(680px, 64dvh);
+  padding: 18px 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.point-build-reference {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--console-border-soft);
+}
+
+.point-build-reference h4 {
+  margin: 0 0 12px;
+  color: var(--console-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.point-build-reference dl {
+  display: flex;
+  margin: 0;
+  gap: 12px 22px;
+  flex-wrap: wrap;
+}
+
+.point-build-reference dl > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.point-build-reference dt {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.point-build-reference dd {
+  margin: 5px 0 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.point-editor .point-detail-tabs :deep(.el-tab-pane) {
+  min-height: 0;
 }
 
 .point-detail-form-grid,
 .protocol-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 20px;
 }
 
 .point-detail-form-grid label {
   display: flex;
+  width: min(240px, 100%);
   min-width: 0;
+  max-width: 100%;
+  flex: none;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   font-size: 12px;
 }
 
-.wide-field {
-  grid-column: 1 / -1;
+.point-detail-form-grid label:has(.el-input-number),
+.point-detail-form-grid label:has(.el-switch) {
+  width: min(160px, 100%);
+}
+
+.point-detail-form-grid label:has(.el-select) {
+  width: min(200px, 100%);
+}
+
+.point-detail-form-grid label.long-field {
+  width: min(360px, 100%);
+}
+
+.point-detail-form-grid label.wide-field {
+  width: 100%;
+}
+
+.point-detail-form-grid :deep(.el-input),
+.point-detail-form-grid :deep(.el-select),
+.point-detail-form-grid :deep(.el-input-number) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .protocol-form-grid :deep(.el-form-item) {
-  margin-bottom: 8px;
+  --field-width: 240px;
+  display: flex;
+  width: min(var(--field-width), 100%);
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.protocol-form-grid :deep(.point-protocol-field.is-long) {
+  --field-width: 560px;
+}
+
+.protocol-form-grid :deep(.point-protocol-field.is-number) {
+  --field-width: 160px;
+}
+
+.protocol-form-grid :deep(.point-protocol-field.is-select) {
+  --field-width: var(--option-width);
+}
+
+.protocol-form-grid :deep(.el-form-item__content) {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.7;
+}
+
+.protocol-form-grid :deep(.el-input),
+.protocol-form-grid :deep(.el-select),
+.protocol-form-grid :deep(.el-input-number) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .protocol-form-grid :deep(.el-form-item__label) {
-  color: var(--console-text-muted);
+  height: auto;
+  padding: 0 0 6px;
+  color: var(--console-text-secondary);
   font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .json-panel-actions {
@@ -744,14 +968,16 @@ onBeforeUnmount(() => {
 }
 
 .point-json-textarea {
+  box-sizing: border-box;
   width: 100%;
-  min-height: 220px;
+  max-width: 100%;
+  min-height: 280px;
   padding: 10px;
-  color: #dbeafe;
-  border: 1px solid #1e3a5f;
+  color: var(--console-code-text);
+  border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-lg);
-  background: #0f172a;
-  font-family: "JetBrains Mono", Consolas, monospace;
+  background: var(--console-code-bg);
+  font-family: var(--app-font-family);
   font-size: 12px;
   line-height: 1.6;
   resize: vertical;
@@ -788,6 +1014,7 @@ onBeforeUnmount(() => {
 
 .point-import-preview-table table {
   width: 100%;
+  min-width: 700px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -800,6 +1027,8 @@ onBeforeUnmount(() => {
 }
 
 .point-import-preview-table th {
+  position: sticky;
+  top: 0;
   color: var(--console-text-primary);
   background: var(--console-bg-soft);
 }
@@ -808,26 +1037,100 @@ onBeforeUnmount(() => {
   color: var(--console-text-muted);
 }
 
-@media (max-width: 1440px) {
-  .point-workbench-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .point-detail-panel {
-    position: static;
-    max-height: none;
-  }
-}
-
 @media (max-width: 1080px) {
   .point-toolbar {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .point-toolbar-right {
+    width: 100%;
+    flex: auto;
+    justify-content: flex-start;
+  }
+}
+
+.point-workbench-note {
+  margin: 0;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+:global(.point-import-preview-dialog.el-dialog) {
+  display: flex;
+  max-height: 90dvh;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:global(.point-import-preview-dialog .el-dialog__header),
+:global(.point-import-preview-dialog .el-dialog__footer) {
+  flex: none;
+}
+
+:global(.point-import-preview-dialog .el-dialog__body) {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 600px) {
+  .point-detail-tabs {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__content) {
+    min-height: 260px;
+    padding: 14px 12px;
+    order: 0;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__header) {
+    max-width: 100%;
+    padding: 6px;
+    order: 1;
+    border-top: 1px solid var(--console-border-soft);
+    border-right: 0;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__nav) {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .point-detail-tabs :deep(.el-tabs__item.is-left) {
+    height: 34px;
+    margin: 0;
+    padding: 0 9px;
+  }
+
+  .point-table-panel,
+  .point-detail-panel {
+    padding: 12px;
+  }
+
+  .point-json-textarea {
+    min-height: 220px;
+  }
+
   .point-detail-form-grid,
   .protocol-form-grid {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .point-toolbar-right :deep(.el-input) {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .point-toolbar :deep(.el-button) {
+    margin-left: 0;
+  }
+
+  .point-import-preview-head {
+    flex-direction: column;
   }
 }
 </style>

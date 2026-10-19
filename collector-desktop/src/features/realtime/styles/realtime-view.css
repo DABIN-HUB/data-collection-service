@@ -1,0 +1,870 @@
+.exact-page.realtime-view {
+  --realtime-line: var(--app-color-border);
+  --realtime-text: var(--app-color-text-primary);
+  --realtime-muted: var(--app-color-text-muted);
+  --realtime-good: var(--app-color-success);
+  --realtime-warning: var(--app-color-warning);
+  --realtime-error: var(--app-color-danger);
+
+  padding: 24px 28px 34px;
+  gap: 20px;
+  color: var(--realtime-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.realtime-view .realtime-body {
+  gap: 17px;
+}
+
+.realtime-view .realtime-body > * {
+  flex: 0 0 auto;
+}
+
+.exact-page.realtime-view button:not(.el-button) {
+  display: inline-flex;
+  min-height: 35px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--app-control-border);
+  border-radius: 6px;
+  color: var(--realtime-text);
+  background: var(--app-control-bg);
+  font: inherit;
+  font-weight: 400;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.exact-page.realtime-view button:not(.el-button):hover {
+  border-color: var(--app-control-border-hover);
+  background: var(--app-control-bg-hover);
+}
+
+.exact-page.realtime-view button:not(.el-button).primary {
+  border-color: var(--app-color-primary);
+  color: #ffffff;
+  background: var(--app-color-primary);
+}
+
+.exact-page.realtime-view button:not(.el-button).primary:hover {
+  background: var(--app-color-primary-hover);
+}
+
+.exact-page.realtime-view button:not(.el-button):disabled {
+  border-color: var(--app-control-border-disabled);
+  color: var(--app-control-text-disabled);
+  background: var(--app-control-bg-disabled);
+  cursor: not-allowed;
+}
+
+.realtime-view input,
+.realtime-view select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  font-size: 13px;
+}
+
+.exact-page.realtime-view button:not(.el-button):focus-visible,
+.realtime-view input:focus-visible,
+.realtime-view select:focus-visible,
+.realtime-view .realtime-table-scroll:focus-visible,
+.realtime-view .realtime-single-result:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 3px;
+}
+
+.realtime-view .realtime-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.realtime-view .realtime-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.realtime-view h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.realtime-view .realtime-heading p {
+  margin: 6px 0 0;
+  color: var(--realtime-muted);
+  font-size: 12px;
+}
+
+.realtime-view .realtime-heading-badge {
+  padding: 3px 8px;
+  border: 1px solid var(--realtime-line);
+  border-radius: 5px;
+  color: var(--realtime-muted);
+  background: var(--app-color-panel-soft);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.realtime-view .realtime-heading-actions,
+.realtime-view .realtime-query-toolbar,
+.realtime-view .realtime-auto-group,
+.realtime-view .realtime-filters {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.realtime-view .realtime-heading-actions {
+  flex-shrink: 0;
+}
+
+.realtime-view .realtime-query-toolbar {
+  padding: 17px 19px;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 15px;
+  border: 1px solid var(--realtime-line);
+  border-radius: 6px;
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-auto-group {
+  flex-shrink: 0;
+  padding-bottom: 2px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.realtime-view .realtime-auto-group small {
+  color: var(--realtime-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.realtime-view .realtime-filters {
+  gap: 10px;
+}
+
+.exact-page.realtime-view button.realtime-auto {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+.exact-page.realtime-view button.realtime-auto:not(:disabled):hover {
+  background: transparent;
+}
+
+.realtime-view .realtime-toggle-track {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 17px;
+  flex-shrink: 0;
+  border-radius: 20px;
+  background: var(--app-color-text-dim);
+}
+
+.realtime-view .realtime-toggle-track i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-auto.is-active .realtime-toggle-track {
+  background: var(--app-color-primary-hover);
+}
+
+.realtime-view .realtime-auto.is-active .realtime-toggle-track i {
+  left: 15px;
+}
+
+.realtime-view .realtime-device-filter {
+  width: 205px;
+}
+
+.realtime-view .realtime-search {
+  width: 295px;
+}
+
+.realtime-view .realtime-notice {
+  display: flex;
+  min-width: 0;
+  padding: 10px 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  border: 1px solid var(--realtime-line);
+  border-radius: 6px;
+  color: var(--app-color-info-text);
+  background: var(--app-color-info-soft);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.realtime-view .realtime-notice strong {
+  font-weight: 600;
+}
+
+.realtime-view .realtime-notice-warning {
+  border-color: var(--realtime-line);
+  color: var(--realtime-warning);
+  background: var(--app-color-warning-soft);
+}
+
+.realtime-view .realtime-notice-error {
+  border-color: var(--realtime-line);
+  color: var(--realtime-error);
+  background: var(--app-color-danger-soft);
+}
+
+.realtime-view .realtime-health-strip {
+  display: flex;
+  min-width: 0;
+  padding: 12px 16px;
+  align-items: center;
+  gap: 20px;
+  border: 1px solid var(--realtime-line);
+  border-radius: 6px;
+  background: var(--app-color-panel-soft);
+}
+
+.realtime-view .realtime-health-title {
+  display: block;
+  flex-shrink: 0;
+  color: var(--realtime-text);
+  font-size: 12px;
+}
+
+.realtime-view .realtime-health-title small {
+  display: block;
+  margin-top: 2px;
+  color: var(--realtime-muted);
+  font-size: 10px;
+}
+
+.realtime-view .realtime-health-levels,
+.realtime-view .realtime-device-health {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 26px;
+  color: var(--realtime-muted);
+  font-size: 11px;
+}
+
+.realtime-view .realtime-health-levels b {
+  padding-left: 4px;
+  color: var(--realtime-text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.realtime-view .realtime-device-health {
+  gap: 8px 18px;
+}
+
+.realtime-view .realtime-device-health strong {
+  font-weight: 500;
+}
+
+.realtime-view .realtime-health-unavailable {
+  color: var(--realtime-muted);
+  font-size: 12px;
+}
+
+.realtime-view .realtime-summary {
+  display: flex;
+  min-width: 0;
+  padding: 0 2px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+}
+
+.realtime-view .realtime-summary > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.realtime-view .realtime-summary > div + div {
+  padding-left: 0;
+}
+
+.realtime-view .realtime-summary span {
+  color: var(--realtime-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.realtime-view .realtime-summary strong {
+  font-size: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.realtime-view .realtime-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--realtime-line);
+  border-radius: 6px;
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-panel-head {
+  display: flex;
+  min-height: 55px;
+  padding: 15px 19px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--realtime-line);
+}
+
+.realtime-view h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.realtime-view .realtime-panel-head > span {
+  color: var(--realtime-muted);
+  font-size: 12px;
+}
+
+/* 只限制渲染区高度，不切割当前页记录；完整字段通过表内横纵滚动可达。 */
+.realtime-view .realtime-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.realtime-view .realtime-data-table {
+  width: 100%;
+  min-width: 1276px;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* 横向查看完整字段时，身份和操作仍固定在可视区边缘。 */
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table td:first-child,
+.realtime-view .realtime-data-table th:nth-child(2),
+.realtime-view .realtime-data-table td:nth-child(2) {
+  position: sticky;
+  z-index: 2;
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table td:first-child {
+  left: 0;
+}
+
+.realtime-view .realtime-data-table th:nth-child(2),
+.realtime-view .realtime-data-table td:nth-child(2) {
+  left: 130px;
+  box-shadow: 1px 0 0 var(--realtime-line);
+}
+
+.realtime-view .realtime-data-table th:first-child,
+.realtime-view .realtime-data-table th:nth-child(2) {
+  z-index: 4;
+  background: var(--app-color-panel-soft);
+}
+
+.realtime-view .realtime-data-table tbody tr:hover td:first-child,
+.realtime-view .realtime-data-table tbody tr:hover td:nth-child(2) {
+  background: var(--app-control-bg-hover);
+}
+
+.realtime-view .realtime-col-point { width: 130px; }
+.realtime-view .realtime-col-device { width: 125px; }
+.realtime-view .realtime-col-type { width: 68px; }
+.realtime-view .realtime-col-address { width: 92px; }
+.realtime-view .realtime-col-access { width: 52px; }
+.realtime-view .realtime-col-scale { width: 52px; }
+.realtime-view .realtime-col-value { width: 119px; }
+.realtime-view .realtime-col-unit { width: 45px; }
+.realtime-view .realtime-col-time { width: 130px; }
+.realtime-view .realtime-col-quality { width: 80px; }
+.realtime-view .realtime-col-status { width: 130px; }
+.realtime-view .realtime-col-cost { width: 85px; }
+.realtime-view .realtime-col-action { width: 68px; }
+
+.realtime-view .realtime-data-table th,
+.realtime-view .realtime-data-table td {
+  padding: 11px 9px;
+  border-bottom: 1px solid var(--realtime-line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.realtime-view .realtime-data-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--realtime-muted);
+  background: var(--app-color-panel-soft);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.realtime-view .realtime-data-table td {
+  height: 53px;
+  font-size: 12px;
+}
+
+.realtime-view .realtime-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.realtime-view .realtime-data-table tbody tr:hover {
+  background: var(--app-control-bg-hover);
+}
+
+.realtime-view .realtime-row-warning {
+  background: var(--app-color-warning-soft);
+}
+
+.realtime-view .realtime-point-name strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.realtime-view .realtime-data-table td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--realtime-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.realtime-view .realtime-point-status > span,
+.realtime-view .realtime-point-status > small {
+  display: block;
+  min-width: 112px;
+  max-width: 260px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.realtime-view .realtime-value strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.realtime-view .realtime-time {
+  color: var(--app-color-text-secondary);
+}
+
+.realtime-view .realtime-mono,
+.realtime-view code,
+.realtime-view pre {
+  font-family: var(--app-font-family);
+  font-variant-numeric: tabular-nums;
+}
+
+.realtime-view .quality-badge {
+  display: inline-flex;
+  min-height: 0;
+  padding: 3px 0;
+  align-items: center;
+  gap: 5px;
+  border-radius: 0;
+  color: var(--realtime-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.realtime-view .quality-badge i {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.realtime-view .quality-badge.is-good {
+  color: var(--realtime-good);
+  background: transparent;
+}
+
+.realtime-view .quality-badge.is-bad {
+  color: var(--realtime-error);
+  background: transparent;
+}
+
+.realtime-view .realtime-good {
+  color: var(--realtime-good);
+}
+
+.realtime-view .realtime-warning {
+  color: var(--realtime-warning);
+}
+
+.exact-page.realtime-view button.realtime-point-action {
+  min-height: 28px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--app-color-primary);
+  background: transparent;
+  font-size: 11px;
+}
+
+.exact-page.realtime-view button.realtime-point-action:not(:disabled):hover {
+  border-color: transparent;
+  background: transparent;
+  text-decoration: underline;
+}
+
+.realtime-view .realtime-empty {
+  display: flex;
+  min-height: 170px;
+  padding: 32px 24px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--realtime-muted);
+  text-align: center;
+}
+
+.realtime-view .realtime-empty strong {
+  color: var(--realtime-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.realtime-view .realtime-empty p {
+  max-width: 500px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.realtime-view .realtime-pagination {
+  display: flex;
+  min-width: 0;
+  min-height: 50px;
+  padding: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid var(--realtime-line);
+  color: var(--realtime-muted);
+  background: var(--app-color-panel-soft);
+  font-size: 11px;
+}
+
+.realtime-view .realtime-page-count,
+.realtime-view .realtime-page-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.realtime-view .realtime-page-count {
+  gap: 10px;
+}
+
+.realtime-view .realtime-page-count small {
+  font-size: 11px;
+}
+
+.exact-page.realtime-view .realtime-page-actions button,
+.realtime-view .realtime-page-actions select {
+  min-height: 29px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.realtime-view .realtime-page-actions select {
+  height: 29px;
+}
+
+.realtime-view .realtime-single-body {
+  display: grid;
+  min-width: 0;
+  padding: 14px 16px;
+  grid-template-columns: minmax(430px, 0.9fr) minmax(0, 1.1fr);
+  align-items: start;
+  gap: 22px;
+}
+
+.realtime-view .realtime-single-form {
+  display: grid;
+  min-width: 0;
+  padding-top: 1px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.realtime-view .realtime-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.realtime-view .realtime-field > span {
+  color: var(--realtime-muted);
+  font-size: 12px;
+}
+
+.realtime-view .realtime-field input,
+.realtime-view .realtime-field select {
+  width: 100%;
+}
+
+.realtime-view .realtime-single-form button {
+  height: 36px;
+}
+
+.realtime-view .realtime-single-error {
+  grid-column: 1 / -1;
+}
+
+.realtime-view .realtime-single-result {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 91px;
+  max-height: 190px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--app-code-border);
+  border-radius: 6px;
+  color: var(--app-code-text);
+  background: var(--app-code-bg);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.realtime-body > .realtime-query-toolbar { order: 0; }
+.realtime-body > .realtime-notice { order: 1; }
+.realtime-body > .realtime-table-panel { order: 2; }
+.realtime-body > .realtime-health-strip { order: 3; }
+.realtime-body > .realtime-summary { order: 4; }
+.realtime-body > .realtime-source-context { order: 5; }
+.realtime-body > .realtime-single-panel { order: 6; }
+.realtime-source-context {
+  padding: 14px 18px;
+  border: 1px solid var(--realtime-line);
+  border-left: 3px solid var(--app-color-primary);
+  border-radius: 5px;
+  color: var(--realtime-muted);
+  background: var(--app-color-panel);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.realtime-source-context strong {
+  color: var(--realtime-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.realtime-source-context p { margin: 6px 0; }
+.realtime-single-panel > summary { cursor: pointer; }
+.realtime-single-panel > summary::after {
+  margin-left: auto;
+  color: var(--realtime-muted);
+  content: '+';
+}
+.realtime-single-panel[open] > summary::after { content: '−'; }
+.realtime-single-panel > summary:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: -2px;
+}
+
+@media (max-width: 1440px) {
+  .exact-page.realtime-view {
+    padding: 20px 22px 24px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .realtime-view .realtime-heading,
+  .realtime-view .realtime-query-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .realtime-view .realtime-filters {
+    flex: 1;
+    justify-content: flex-start;
+  }
+
+  .realtime-view .realtime-device-filter {
+    width: 185px;
+  }
+
+  .realtime-view .realtime-search {
+    width: 250px;
+  }
+
+  .realtime-view .realtime-single-body {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .exact-page.realtime-view {
+    padding: 18px 20px 22px;
+  }
+}
+
+@media (max-width: 950px) {
+  .realtime-view .realtime-filters {
+    width: 100%;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .realtime-view .realtime-device-filter {
+    width: 100%;
+  }
+
+  .realtime-view .realtime-search {
+    width: 100%;
+  }
+
+  .realtime-view .realtime-health-strip {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .realtime-view .realtime-health-levels {
+    gap: 8px 20px;
+  }
+
+  .realtime-view .realtime-summary {
+    gap: 16px;
+  }
+
+  .realtime-view .realtime-summary > div {
+    gap: 8px;
+  }
+
+  .realtime-view .realtime-summary > div + div {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .exact-page.realtime-view {
+    padding: 18px 14px 20px;
+  }
+
+  .realtime-view h1 {
+    font-size: 20px;
+  }
+
+  .realtime-view .realtime-summary {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .realtime-view .realtime-summary strong {
+    font-size: 18px;
+  }
+
+  .realtime-view .realtime-summary span {
+    font-size: 11px;
+  }
+
+  .realtime-view .realtime-summary > div + div {
+    padding-left: 0;
+  }
+
+  .realtime-view .realtime-single-form {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .realtime-view .realtime-single-form button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .realtime-view .realtime-single-body,
+  .realtime-view .realtime-panel-head {
+    padding: 12px;
+  }
+
+  .realtime-view .realtime-pagination {
+    padding: 10px 12px;
+  }
+
+  .realtime-view .realtime-health-levels {
+    gap: 8px 14px;
+  }
+}
+
+/* 操作列保留在横滚容器右侧，不替代其余十二个业务字段。 */
+.realtime-view .realtime-data-table th:last-child,
+.realtime-view .realtime-data-table td:last-child {
+  position: sticky;
+  right: 0;
+  border-left: 1px solid var(--realtime-line);
+  background: var(--app-color-panel);
+}
+
+.realtime-view .realtime-data-table th:last-child {
+  z-index: 2;
+  background: var(--app-color-panel-soft);
+}
+
+.realtime-view .realtime-row-warning td:last-child {
+  background: var(--app-color-warning-soft);
+}
+
+.realtime-view .realtime-data-table tr:hover td:last-child {
+  background: var(--app-control-bg-hover);
+}
+
+@media (max-width: 600px) {
+  .exact-page.realtime-view {
+    padding: 20px 14px;
+    gap: 16px;
+  }
+  .realtime-view .realtime-query-toolbar { padding: 15px; }
+  .realtime-view .realtime-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .realtime-view .realtime-filters .realtime-field { width: 100%; }
+  .realtime-view .realtime-panel-head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .realtime-view .realtime-single-form { grid-template-columns: minmax(0, 1fr); }
+  .realtime-view .realtime-single-form button { width: 100%; }
+  .realtime-view .realtime-page-actions { gap: 6px; }
+  .realtime-view .realtime-table-scroll { max-height: 360px; }
+}

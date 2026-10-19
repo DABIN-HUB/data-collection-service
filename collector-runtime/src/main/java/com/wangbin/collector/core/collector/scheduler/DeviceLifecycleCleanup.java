@@ -65,35 +65,25 @@ public class DeviceLifecycleCleanup {
         boolean clearedGeneration = collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
         boolean removedRuntimeState = runtimeState.removeDeviceIfGeneration(deviceId, generation);
         cleanupStep(deviceId, "移除启动失败调度任务", () -> runtimeState.removeDeviceTasksIfGeneration(deviceId, generation));
+        cleanupStep(deviceId, "清理所属代次启动失败采集器", () -> collectionManager.cleanupDeviceIfGeneration(deviceId, generation));
         if (!clearedGeneration && !removedRuntimeState) {
             return false;
         }
         cleanupStep(deviceId, "清理启动失败点位运行态", () -> pointRuntimeStateService.removeDevice(deviceId));
         cleanupStep(deviceId, "清理启动失败重连状态", () -> reconnectCoordinator.clear(deviceId));
-        cleanupStep(deviceId, "清理启动失败采集器", () -> collectionManager.cleanupDevice(deviceId));
+
         return true;
     }
 
     void discardStaleStart(String deviceId, long generation) {
         runtimeState.clearStartingIfGeneration(deviceId, generation);
         cleanupStep(deviceId, "移除旧代次启动调度任务", () -> runtimeState.removeDeviceTasksIfGeneration(deviceId, generation));
+        cleanupStep(deviceId, "释放旧代次采集器", () -> collectionManager.cleanupDeviceIfGeneration(deviceId, generation));
     }
 
     private DeviceCleanupResult disconnectOrCleanupDevice(String deviceId, boolean wasRunning, boolean wasStarting) {
-        if (!wasRunning && !wasStarting) {
-            return DeviceCleanupResult.success();
-        }
-        if (wasStarting && !wasRunning) {
-            return cleanupStep(deviceId, "清理启动中采集器", true, () -> collectionManager.cleanupDevice(deviceId));
-        }
-        try {
-            collectionManager.disconnectDevice(deviceId);
-            return DeviceCleanupResult.success();
-        } catch (Exception e) {
-            log.warn("断开采集器失败，尝试清理采集器防止旧实例污染后续启动, 设备={}", deviceId, e);
-            cleanupStep(deviceId, "断开失败后的采集器兜底清理", true, () -> collectionManager.cleanupDevice(deviceId));
-            return new DeviceCleanupResult(false, true);
-        }
+        // 即使运行态已失效，仍需重试释放登记中或上次清理失败的所属实例。
+        return cleanupStep(deviceId, "注销停止设备的采集器", true, () -> collectionManager.cleanupDevice(deviceId));
     }
 
     private void cleanupStep(String deviceId, String action, CleanupStep cleanupStep) {

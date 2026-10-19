@@ -16,6 +16,11 @@ public class RuntimeInstanceIdentity {
     /**
      * Spring 生产装配使用，每次应用启动生成新的运行实例标识。
      */
+    @org.springframework.beans.factory.annotation.Autowired
+    public RuntimeInstanceIdentity(com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard guard) {
+        this(guard.runtimeId());
+    }
+
     public RuntimeInstanceIdentity() {
         this(UUID.randomUUID().toString());
     }

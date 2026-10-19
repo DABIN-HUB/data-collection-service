@@ -6,6 +6,9 @@ import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferMetrics;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferResult;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,8 +25,16 @@ import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TelemetryEntryOverloadReliabilityTest {
+
+    private final CollectionTaskGuard guard = new CollectionTaskGuard();
+    private final AcquisitionRuntimeTracker tracker = new AcquisitionRuntimeTracker(guard);
+    private final ConfigManager configManager = mock(ConfigManager.class);
 
     private ThreadPoolExecutor entryExecutor;
 
@@ -39,13 +50,15 @@ class TelemetryEntryOverloadReliabilityTest {
         RecordingIngressBuffer buffer = new RecordingIngressBuffer();
         CollectorDataPostProcessor processor = processor(stage, buffer);
         String deviceId = "entry-overload-dev";
+        long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 4);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         assertTrue(stage.awaitEntered());
-        processor.saveBatchAsync(deviceId, points, values, null);
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
+        saveBatch(processor, deviceId, generation, points, values);
 
         waitUntil(() -> buffer.rejectedTasks() == 1L && buffer.rejectedItems() == 4L);
         assertEquals(4L, buffer.redisBufferedItems());
@@ -64,14 +77,16 @@ class TelemetryEntryOverloadReliabilityTest {
         RecordingIngressBuffer buffer = new RecordingIngressBuffer();
         CollectorDataPostProcessor processor = processor(stage, buffer);
         String deviceId = "entry-thread-dev";
+        long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 3);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         assertTrue(stage.awaitEntered());
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         Thread caller = new Thread(
-                () -> processor.saveBatchAsync(deviceId, points, values, null),
+                () -> saveBatch(processor, deviceId, generation, points, values),
                 "collector-read-caller");
         caller.start();
         caller.join(2_000L);
@@ -93,13 +108,15 @@ class TelemetryEntryOverloadReliabilityTest {
         RecordingIngressBuffer buffer = new RecordingIngressBuffer();
         CollectorDataPostProcessor processor = processor(stage, buffer);
         String deviceId = "entry-accounting-dev";
+        long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 5);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         assertTrue(stage.awaitEntered());
-        processor.saveBatchAsync(deviceId, points, values, null);
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
+        saveBatch(processor, deviceId, generation, points, values);
 
         waitUntil(() -> buffer.rejectedTasks() == 1L);
         assertEquals(1L, buffer.rejectedTasks());
@@ -116,13 +133,15 @@ class TelemetryEntryOverloadReliabilityTest {
         ThrowingIngressBuffer buffer = new ThrowingIngressBuffer();
         CollectorDataPostProcessor processor = processor(stage, buffer);
         String deviceId = "entry-defer-error-dev";
+        long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 4);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         assertTrue(stage.awaitEntered());
-        processor.saveBatchAsync(deviceId, points, values, null);
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
+        saveBatch(processor, deviceId, generation, points, values);
 
         waitUntil(() -> buffer.deferAttempts() == 1L && buffer.droppedItems() == 4L);
 
@@ -137,13 +156,15 @@ class TelemetryEntryOverloadReliabilityTest {
         RecordingIngressBuffer buffer = new RecordingIngressBuffer();
         CollectorDataPostProcessor processor = processor(stage, buffer);
         String deviceId = "entry-log-limit-dev";
+        long generation = guard.activateNextGeneration(deviceId);
         List<DataPoint> points = points(deviceId, 3);
+        registerPoints(deviceId, generation, points);
         Map<String, Object> values = values(points);
 
-        processor.saveBatchAsync(deviceId, points, values, null);
+        saveBatch(processor, deviceId, generation, points, values);
         assertTrue(stage.awaitEntered());
         for (int index = 0; index < 12; index++) {
-            processor.saveBatchAsync(deviceId, points, values, null);
+            saveBatch(processor, deviceId, generation, points, values);
         }
 
         waitUntil(() -> buffer.rejectedTasks() == 11L && buffer.rejectedItems() == 33L);
@@ -165,9 +186,39 @@ class TelemetryEntryOverloadReliabilityTest {
                         Runnable::run,
                         Runnable::run,
                         Runnable::run,
-                        Runnable::run),
-                new CollectionTaskGuard(),
+                        Runnable::run,
+                        tracker,
+                        (deviceId, generation, sampleAt) -> {},
+                        configManager),
+                guard,
                 buffer);
+    }
+
+    private void saveBatch(CollectorDataPostProcessor processor, String deviceId, long generation,
+                           List<DataPoint> points, Map<String, Object> values) {
+        guard.runWithContext(deviceId, generation,
+                () -> processor.saveBatchAsync(deviceId, points, values, null));
+    }
+
+    private void registerPoints(String deviceId, long generation, List<DataPoint> points) {
+        tracker.open(deviceId, generation, points);
+        for (DataPoint point : points) {
+            when(configManager.getDataPointByPointId(deviceId, point.getPointId())).thenReturn(point);
+        }
+        when(configManager.runIfConfigurationCurrent(eq(deviceId), eq(1L), any(Runnable.class)))
+                .thenAnswer(invocation -> {
+                    invocation.getArgument(2, Runnable.class).run();
+                    return true;
+                });
+    }
+
+    private ProcessResult result(Object value) {
+        ProcessResult result = ProcessResult.success(value, value);
+        result.setQuality(100);
+        result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, System.currentTimeMillis());
+        result.addMetadata(ProcessResultMetadataKeys.SOURCE, "POLLING");
+        result.addMetadata(ProcessResultMetadataKeys.CONFIG_VERSION, 1L);
+        return result;
     }
 
     private List<DataPoint> points(String deviceId, int count) {
@@ -187,7 +238,7 @@ class TelemetryEntryOverloadReliabilityTest {
     private Map<String, Object> values(List<DataPoint> points) {
         java.util.LinkedHashMap<String, Object> values = new java.util.LinkedHashMap<>();
         for (int index = 0; index < points.size(); index++) {
-            values.put(points.get(index).getPointId(), index);
+            values.put(points.get(index).getPointId(), result(index));
         }
         return values;
     }

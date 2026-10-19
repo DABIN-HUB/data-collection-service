@@ -4,6 +4,10 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
+import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeState;
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.manager.ConfigManager;
@@ -52,6 +56,8 @@ public class CollectionSchedulerTest {
     private SystemResourceProbe systemResourceProbe;
     private ScheduledExecutorService timeSliceScheduler;
     private CollectionScheduler scheduler;
+    private CollectionTaskGuard sampleGuard;
+    private AcquisitionRuntimeTracker sampleTracker;
 
     @BeforeEach
     void setUp() {
@@ -70,6 +76,8 @@ public class CollectionSchedulerTest {
         reconnectCoordinator = mock(ReconnectCoordinator.class);
         systemResourceProbe = mock(SystemResourceProbe.class);
         timeSliceScheduler = Executors.newSingleThreadScheduledExecutor();
+        sampleGuard = new CollectionTaskGuard();
+        sampleTracker = new AcquisitionRuntimeTracker(sampleGuard);
         scheduler = schedulerWithExecutor(timeSliceScheduler, new AtomicLong(System.nanoTime()));
     }
 
@@ -99,19 +107,43 @@ public class CollectionSchedulerTest {
                 executionCoordinator,
                 configCoordinator,
                 maintenanceCoordinator,
-                restartCoordinator);
+                restartCoordinator, sampleTracker);
 
         localScheduler.destroy();
 
-        InOrder inOrder = inOrder(restartCoordinator, lifecycleCoordinator);
+        InOrder inOrder = inOrder(restartCoordinator, lifecycleCoordinator, maintenanceCoordinator, schedulingCoordinator);
+        inOrder.verify(lifecycleCoordinator).beginShutdown();
         inOrder.verify(restartCoordinator).cancelAll();
+        inOrder.verify(maintenanceCoordinator).cancel();
+        inOrder.verify(schedulingCoordinator).cancelTimeSliceScheduling();
         inOrder.verify(lifecycleCoordinator).stopAllDevices();
+    }
+
+    @Test
+    void reloadMustRefreshConfigurationWithoutGlobalStopOrStart() {
+        ConfigRestartCoordinator restart = mock(ConfigRestartCoordinator.class);
+        SchedulerMaintenanceCoordinator maintenance = mock(SchedulerMaintenanceCoordinator.class);
+        CollectionScheduler localScheduler = new CollectionScheduler(collectionManager, mock(CollectionStatistics.class),
+                runtimeState, performanceMonitor, lifecycleCoordinator, batchExecutor, reconnectCoordinator,
+                mock(TimeSliceSchedulingCoordinator.class), mock(TimeSliceExecutionCoordinator.class),
+                mock(TimeSliceConfigCoordinator.class), maintenance, restart, sampleTracker);
+        localScheduler.setConfigManager(configManager);
+        when(configManager.getAllDeviceIds()).thenReturn(List.of("dev-reload-a", "dev-reload-b"));
+        localScheduler.reloadAllDevices();
+        verify(configManager).refreshDeviceConfig("dev-reload-a");
+        verify(configManager).refreshDeviceConfig("dev-reload-b");
+        verify(restart).reloadChangedDevices();
+        verify(lifecycleCoordinator, never()).stopAllDevices();
+        verify(lifecycleCoordinator, never()).startAllDevices();
+        verify(maintenance, never()).scheduleStartAllDevices(anyLong(), any(TimeUnit.class));
     }
 
     @Test
     void runtimeReadyRequiresOnlinePhaseWithoutErasingFirstSample() {
         String deviceId = "dev-runtime-ready";
-        long generation = 7L;
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        DataPoint samplePoint = point(deviceId, "sample");
+        sampleTracker.open(deviceId, generation, List.of(samplePoint));
         runtimeState.markRunning(deviceId, generation);
         performanceMonitor.resetDeviceRuntimeWindow(deviceId, generation);
         when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
@@ -122,6 +154,9 @@ public class CollectionSchedulerTest {
         assertTrue(waiting.connected());
 
         performanceMonitor.recordBatchSuccess(deviceId, generation, 1, 10L);
+        assertEquals(0L, scheduler.getDeviceRuntimeSnapshot(deviceId).firstSampleAt(), "批次统计不能替代核心处理事实");
+        sampleTracker.recordCoreProcessedPoint(deviceId, samplePoint, generation, true, 100, System.currentTimeMillis(), "POLLING");
+        sampleTracker.recordProtocolReady(deviceId, generation);
         DeviceRuntimeSnapshot online = scheduler.getDeviceRuntimeSnapshot(deviceId);
         assertEquals(DeviceRuntimePhase.ONLINE, online.phase());
         assertTrue(online.ready());
@@ -154,10 +189,15 @@ public class CollectionSchedulerTest {
     @Test
     void runtimeReadyMustFollowConnectionAndCurrentGeneration() {
         String deviceId = "dev-runtime-generation";
-        runtimeState.markRunning(deviceId, 3L);
-        performanceMonitor.resetDeviceRuntimeWindow(deviceId, 3L);
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        DataPoint samplePoint = point(deviceId, "sample");
+        sampleTracker.open(deviceId, generation, List.of(samplePoint));
+        runtimeState.markRunning(deviceId, generation);
+        performanceMonitor.resetDeviceRuntimeWindow(deviceId, generation);
         when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
-        performanceMonitor.recordBatchSuccess(deviceId, 3L, 1, 10L);
+        performanceMonitor.recordBatchSuccess(deviceId, generation, 1, 10L);
+        sampleTracker.recordCoreProcessedPoint(deviceId, samplePoint, generation, true, 100, System.currentTimeMillis(), "POLLING");
+        sampleTracker.recordProtocolReady(deviceId, generation);
         assertTrue(scheduler.getDeviceRuntimeSnapshot(deviceId).ready());
 
         when(collectionManager.isDeviceConnected(deviceId)).thenReturn(false);
@@ -167,12 +207,115 @@ public class CollectionSchedulerTest {
         assertFalse(disconnected.connected());
         assertTrue(disconnected.firstSampleAt() > 0);
 
-        runtimeState.markRunning(deviceId, 4L);
+        long nextGeneration = sampleGuard.activateNextGeneration(deviceId);
+        sampleTracker.open(deviceId, nextGeneration, List.of(samplePoint));
+        runtimeState.markRunning(deviceId, nextGeneration);
         when(collectionManager.isDeviceConnected(deviceId)).thenReturn(true);
         DeviceRuntimeSnapshot newGeneration = scheduler.getDeviceRuntimeSnapshot(deviceId);
         assertEquals(DeviceRuntimePhase.WAITING_FIRST_SAMPLE, newGeneration.phase());
         assertFalse(newGeneration.ready());
         assertEquals(0L, newGeneration.firstSampleAt());
+    }
+
+    @Test
+    void subscriptionWithoutFirstMessageMustRemainWaitingBeyondPollingDeadline() {
+        String deviceId = "subscription-wait";
+        DataPoint point = healthPoint(deviceId, "event", "SUBSCRIPTION");
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        sampleTracker.open(deviceId, generation, List.of(point));
+        sampleTracker.recordProtocolReady(deviceId, generation);
+        RuntimeStateCoordinator coordinator = healthCoordinator(deviceId, generation, List.of(point));
+
+        DeviceRuntimeState state = coordinator.snapshot(deviceId);
+        assertEquals(DeviceRuntimeState.DeviceHealth.ONLINE_NO_DATA, state.health());
+        assertEquals(DeviceRuntimeState.AcquisitionStatus.WAITING, state.acquisition());
+        assertEquals(0L, state.firstValueDeadlineAt());
+        assertEquals(0, state.failedPointCount());
+        assertFalse(state.ready());
+    }
+
+    @Test
+    void eventValueOnlyExpiresWhenAnExplicitValidityPeriodIsConfigured() {
+        String deviceId = "event-freshness";
+        DataPoint point = healthPoint(deviceId, "event", "EVENT");
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        sampleTracker.open(deviceId, generation, List.of(point));
+        sampleTracker.recordProtocolReady(deviceId, generation);
+        sampleTracker.recordCoreProcessedPoint(deviceId, point, generation, true, 100,
+                System.currentTimeMillis() - 60_000L, "EVENT");
+        RuntimeStateCoordinator coordinator = healthCoordinator(deviceId, generation, List.of(point));
+
+        assertEquals(DeviceRuntimeState.DeviceHealth.ONLINE_HEALTHY, coordinator.snapshot(deviceId).health());
+        point.setCacheDuration(1);
+        DeviceRuntimeState expired = coordinator.snapshot(deviceId);
+        assertEquals(1, expired.stalePointCount());
+        assertEquals(0, expired.goodPointCount());
+        assertFalse(expired.ready());
+    }
+
+    @Test
+    void healthCountsMustDistinguishGoodFailedWaitingAndNonParticipatingPoints() {
+        String deviceId = "partial-counts";
+        List<DataPoint> points = IntStream.range(0, 12)
+                .mapToObj(index -> healthPoint(deviceId, "p" + index, "SUBSCRIPTION")).toList();
+        points.get(10).setStatus(0);
+        points.get(11).setReadWrite("W");
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        sampleTracker.open(deviceId, generation, points);
+        sampleTracker.recordProtocolReady(deviceId, generation);
+        long at = System.currentTimeMillis();
+        for (int index = 0; index < 3; index++) {
+            sampleTracker.recordCoreProcessedPoint(deviceId, points.get(index), generation, true, 100, at, "EVENT");
+        }
+        sampleTracker.recordPointFailure(deviceId, generation, points.get(3).getPointId(), "DECODE_ERROR", at);
+        DeviceRuntimeSnapshot runtime = healthCoordinator(deviceId, generation, points).runtimeSnapshot(deviceId);
+
+        assertEquals(12, runtime.configuredPointCount());
+        assertEquals(10, runtime.participatingPointCount());
+        assertEquals(3, runtime.goodPointCount());
+        assertEquals(1, runtime.failedPointCount());
+        assertEquals(6, runtime.waitingPointCount());
+        assertEquals(DeviceRuntimeState.DeviceHealth.ONLINE_PARTIAL, runtime.deviceHealth());
+        assertFalse(runtime.ready());
+    }
+
+    @Test
+    void successfulRecoveryAtSameTimestampMustNotRetainClearedFailure() {
+        String deviceId = "same-timestamp-recovery";
+        DataPoint point = healthPoint(deviceId, "p1", "EVENT");
+        long generation = sampleGuard.activateNextGeneration(deviceId);
+        sampleTracker.open(deviceId, generation, List.of(point));
+        sampleTracker.recordProtocolReady(deviceId, generation);
+        long at = System.currentTimeMillis();
+        sampleTracker.recordPointFailure(deviceId, generation, point.getPointId(), "COMM_ERROR", at);
+        sampleTracker.recordCoreProcessedPoint(deviceId, point, generation, true, 100, at, "EVENT");
+        DeviceRuntimeState state = healthCoordinator(deviceId, generation, List.of(point)).snapshot(deviceId);
+
+        assertEquals(DeviceRuntimeState.DeviceHealth.ONLINE_HEALTHY, state.health());
+        assertEquals(0, state.failedPointCount());
+        assertEquals(1, state.goodPointCount());
+    }
+
+    private DataPoint healthPoint(String deviceId, String pointId, String mode) {
+        DataPoint point = point(deviceId, pointId);
+        point.setStatus(1);
+        point.setReadWrite("R");
+        point.setCollectionMode(mode);
+        return point;
+    }
+
+    private RuntimeStateCoordinator healthCoordinator(String deviceId, long generation, List<DataPoint> points) {
+        CollectionScheduler runtimeQuery = mock(CollectionScheduler.class);
+        DeviceInfo device = new DeviceInfo();
+        device.setDeviceId(deviceId);
+        when(configManager.getDevice(deviceId)).thenReturn(device);
+        when(configManager.getDataPoints(deviceId)).thenReturn(points);
+        when(runtimeQuery.getDesiredState(deviceId)).thenReturn(SchedulerRuntimeState.DesiredState.RUNNING);
+        when(runtimeQuery.getDeviceRuntimeSnapshot(deviceId)).thenReturn(new DeviceRuntimeSnapshot(deviceId,
+                DeviceRuntimePhase.WAITING_FIRST_SAMPLE, true, false, true, false, 0L,
+                System.currentTimeMillis() - 120_000L, generation, 0L, 0, 0L, null, System.currentTimeMillis()));
+        return new RuntimeStateCoordinator(runtimeQuery, configManager, sampleTracker,
+                new com.wangbin.collector.core.collector.runtime.PointRuntimeStateService());
     }
 
     @AfterEach
@@ -1020,7 +1163,7 @@ public class CollectionSchedulerTest {
                 executionCoordinator,
                 configCoordinator,
                 maintenanceCoordinator,
-                restartCoordinator);
+                restartCoordinator, sampleTracker);
     }
 
     private List<Long> captureClaims(AtomicLong nowNanos) {

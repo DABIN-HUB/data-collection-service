@@ -85,9 +85,7 @@ public class ConfigImportExportApplicationService {
                     .build();
             return error("导入失败，现有配置未发生变化", result);
         }
-        if (request.isReloadAfterImport()) {
-            collectionService.reloadAllDevices();
-        }
+        // 配置管理器仅为有效差异逐设备发布事件；保留请求字段但不再追加全设备强制重启。
 
         ConfigImportResult result = ConfigImportResult.builder()
                 .total(request.getBundles().size())
@@ -106,6 +104,10 @@ public class ConfigImportExportApplicationService {
         String deviceId = resolveDeviceId(bundle);
         if (!StringUtils.hasText(deviceId)) {
             return error("导入内容存在缺少设备 ID 的配置");
+        }
+        if (bundle.getConnection() != null && StringUtils.hasText(bundle.getConnection().getDeviceId())
+                && !deviceId.equals(bundle.getConnection().getDeviceId())) {
+            return error("导入设备与连接身份冲突: " + deviceId);
         }
         DeviceInfo device = bundle.getDevice() != null ? bundle.getDevice() : configManager.getDevice(deviceId);
         if (device == null) {

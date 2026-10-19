@@ -3,7 +3,7 @@
     <div class="sidebar-top">
       <div class="brand">
         <span class="brand-mark"><img :src="factoryIcon" alt="" /></span>
-        <div class="brand-copy"><strong>工业数据控制台</strong></div>
+        <div class="brand-copy"><strong>数据采集工作台</strong><small>工业数据控制台</small></div>
       </div>
       <nav class="section-nav" aria-label="控制台主导航">
         <div v-for="group in navigationGroups" :key="group.title" class="nav-group">
@@ -13,6 +13,7 @@
             :key="item.key"
             :to="item.path"
             :class="{ 'is-active': isNavigationActive(item) }"
+            @click="emit('navigate')"
           >
             <span class="nav-glyph" aria-hidden="true"><img :src="item.icon" alt="" /></span><span>{{ item.label }}</span>
           </RouterLink>
@@ -21,15 +22,20 @@
     </div>
 
     <div class="sidebar-bottom">
-      <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}</span></div>
+      <div class="workspace-label">
+        <span class="node-square" aria-hidden="true"></span>
+        <div>本机采集节点<small>{{ appStore.platform === 'browser' ? '本地浏览器' : `Electron/${appStore.platform}` }} / {{ appStore.initialized ? '客户端就绪' : '初始化中' }}</small></div>
+      </div>
+      <div class="system-status" :class="systemStatusClass"><i></i><span>{{ systemStatusText }}<small>仅客户端状态</small></span></div>
       <details class="sidebar-token-drawer">
-        <summary>运维令牌</summary>
+        <summary>运维令牌与连接</summary>
         <div class="top-token-panel">
           <label>接口访问令牌</label>
           <input v-model="tokenInput" type="password" placeholder="请输入接口令牌" autocomplete="off" @keyup.enter="saveToken" />
           <button type="button" @click="saveToken">保存令牌</button>
         </div>
       </details>
+      <RouterLink to="/login" class="sidebar-connection" @click="emit('navigate')">服务连接页</RouterLink>
     </div>
   </aside>
 </template>
@@ -46,9 +52,10 @@ import { useAppStore } from "@/stores/app.store";
 const appStore = useAppStore();
 const route = useRoute();
 const tokenInput = ref("");
+const emit = defineEmits<{ navigate: [] }>();
 
-const systemStatusText = computed(() => appStore.initialized ? "服务可用" : "检测中");
-const systemStatusClass = computed(() => appStore.initialized ? "is-online" : "is-unknown");
+const systemStatusText = computed(() => appStore.initialized ? "客户端就绪" : "初始化中");
+const systemStatusClass = computed(() => "is-unknown");
 
 onMounted(() => {
   tokenInput.value = appStore.token;
@@ -76,14 +83,14 @@ function saveToken() {
   min-width: var(--app-sidebar-width);
   height: 100%;
   min-height: 0;
-  padding: 16px 14px;
+  padding: 24px 14px 18px;
   flex-direction: column;
   justify-content: space-between;
   gap: 16px;
   overflow: hidden;
   color: var(--console-text-secondary);
   border-right: 1px solid var(--console-border);
-  background: var(--console-sidebar);
+  background: var(--app-color-sidebar);
 }
 
 .sidebar-top {
@@ -91,42 +98,78 @@ function saveToken() {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
 }
 
 .brand {
   display: flex;
   min-height: 42px;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 0 12px 25px;
+  border-bottom: 1px solid rgb(255 255 255 / 11%);
 }
 
 .brand-mark {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   place-items: center;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-lg);
-  background: var(--console-panel-soft);
+  color: #9ee0d9;
+  border: 1px solid #7ac4c1;
+  border-radius: 0;
+  background: transparent;
 }
 
 .brand-mark img {
   display: block;
-  width: 22px;
-  height: 22px;
+  width: 25px;
+  height: 25px;
 }
 
 .brand-copy strong {
   display: block;
   color: var(--console-text-primary);
-  font-size: 15px;
-  line-height: 1.2;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.brand-copy small {
+  display: block;
+  margin-top: 4px;
+  color: var(--console-text-dim);
+  font-size: 11px;
+}
+
+.workspace-label {
+  display: flex;
+  padding: 0 12px;
+  align-items: center;
+  gap: 10px;
+  color: var(--console-text-secondary);
+  font-size: 12px;
+}
+
+.workspace-label small {
+  display: block;
+  margin-top: 2px;
+  color: #9eb2bf;
+  font-size: 10px;
+}
+
+.node-square {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border: 2px solid #b2cbd2;
 }
 
 .section-nav {
   display: block;
   min-height: 0;
+  padding-top: 18px;
   flex: 1 1 auto;
   overflow: auto;
 }
@@ -135,49 +178,60 @@ function saveToken() {
 .nav-group + .nav-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .nav-group + .nav-group {
-  margin-top: 14px;
+  margin-top: 18px;
 }
 
 .nav-group-title {
   display: block;
-  padding: 0 8px;
+  padding: 0 13px;
+  margin-bottom: 3px;
   color: var(--console-text-dim);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .section-nav a {
+  position: relative;
   display: flex;
-  min-height: 38px;
-  padding: 0 10px;
+  min-height: 39px;
+  padding: 0 12px;
   align-items: center;
-  gap: 9px;
+  gap: 11px;
   color: var(--console-text-muted);
   border: 1px solid transparent;
-  border-radius: var(--console-radius-lg);
+  border-radius: 3px;
   text-decoration: none;
 }
 
 .section-nav a:hover {
   color: var(--console-text-primary);
-  border-color: var(--console-border-soft);
-  background: rgba(59, 130, 246, 0.08);
+  border-color: transparent;
+  background: rgb(255 255 255 / 8%);
 }
 
 .section-nav a.is-active {
   color: var(--console-text-primary);
-  border-color: var(--console-primary-hover);
-  background: rgba(37, 99, 235, 0.18);
+  border-color: transparent;
+  background: rgb(255 255 255 / 8%);
+}
+
+.section-nav a.is-active::before {
+  position: absolute;
+  inset: 0 auto 0 -1px;
+  width: 2px;
+  border-radius: 0;
+  background: #65c5c0;
+  content: "";
 }
 
 .nav-glyph {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 17px;
+  height: 17px;
   place-items: center;
 }
 
@@ -187,10 +241,17 @@ function saveToken() {
   height: 18px;
 }
 
+.section-nav a.is-active .nav-glyph img,
+.section-nav a:hover .nav-glyph img {
+  filter: brightness(0) invert(1);
+}
+
 .sidebar-bottom {
   display: grid;
   flex: 0 0 auto;
   gap: 10px;
+  padding-top: 15px;
+  border-top: 1px solid var(--console-border-soft);
 }
 
 .system-status {
@@ -200,26 +261,39 @@ function saveToken() {
   align-items: center;
   gap: 8px;
   color: var(--console-text-muted);
-  border: 1px solid var(--console-border-soft);
+  border: 0;
   border-radius: var(--console-radius-lg);
-  background: var(--console-panel);
+  background: transparent;
   font-size: 12px;
 }
 
 .system-status i {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   background: currentColor;
 }
 
-.system-status.is-online {
-  color: var(--console-success);
-}
-
 .system-status.is-unknown {
   color: var(--console-text-muted);
+}
+
+.system-status small {
+  margin-left: 5px;
+  color: var(--console-text-dim);
+  font-size: 9px;
+}
+
+.sidebar-connection {
+  padding: 5px 10px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.sidebar-connection:hover {
+  color: var(--console-text-primary);
 }
 
 .sidebar-token-drawer {
@@ -228,8 +302,10 @@ function saveToken() {
 }
 
 .sidebar-token-drawer summary {
+  display: flex;
   min-height: 32px;
   padding: 0 10px;
+  align-items: center;
   border: 1px solid var(--console-border-soft);
   border-radius: var(--console-radius-lg);
   background: var(--console-panel);
@@ -260,5 +336,31 @@ function saveToken() {
 .top-token-panel label {
   color: var(--console-text-muted);
   font-size: 12px;
+}
+
+.top-token-panel input {
+  width: 100%;
+  min-width: 0;
+}
+
+.section-nav a:focus-visible,
+.sidebar-connection:focus-visible,
+.sidebar-token-drawer summary:focus-visible,
+.top-token-panel button:focus-visible {
+  outline: 2px solid var(--app-control-border-focus);
+  outline-offset: 2px;
+}
+
+@media (width <= 900px) {
+  .app-sidebar {
+    width: 100%;
+    min-width: 0;
+    padding: 12px 16px 16px;
+    border-right: 0;
+  }
+
+  .section-nav a {
+    min-height: 40px;
+  }
 }
 </style>

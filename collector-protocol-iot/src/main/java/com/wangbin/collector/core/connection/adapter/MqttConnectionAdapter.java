@@ -306,17 +306,17 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
 
     @Override
     public synchronized void closeResources() throws Exception {
-        if (!closing.compareAndSet(false, true)) {
+        if (closing.get() && mqttClientV5 == null && mqttClientV3 == null && messageDispatcher == null) {
             return;
         }
-
+        closing.set(true);
         try {
-            // A broker-loss callback already set DISCONNECTED: base disconnect() would skip doDisconnect().
-            if (status == ConnectionStatus.DISCONNECTED || status == ConnectionStatus.RECONNECTING) {
-                doDisconnect();
-            } else {
-                disconnect();
-            }
+            // 关闭失败保留客户端引用供退役所有者重试，不能把 closing 标志当作资源已释放。
+            doDisconnect();
+            status = ConnectionStatus.DISCONNECTED;
+            metrics.setStatus(status);
+            mqttClientV5 = null;
+            mqttClientV3 = null;
         } finally {
             subscribedTopics.clear();
             messageListeners.clear();

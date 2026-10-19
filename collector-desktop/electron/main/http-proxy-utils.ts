@@ -77,7 +77,7 @@ export function normalizeProxyHeaders(headers: Record<string, string> = {}, toke
     });
   const trimmedToken = String(token || "").trim();
   if (trimmedToken) {
-    normalized["X-Collector-Token"] = trimmedToken;
+    normalized["x-collector-token"] = trimmedToken;
   }
   return normalized;
 }

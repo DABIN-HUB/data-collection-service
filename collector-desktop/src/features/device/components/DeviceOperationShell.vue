@@ -1,55 +1,54 @@
 <template>
-  <section id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel">
+  <section id="deviceOperationPanel" class="local-editor local-device-panel local-device-web-dialog device-operation-panel config-workspace">
+    <nav class="config-breadcrumb" aria-label="当前位置">
+      <button type="button" @click="backToDeviceList">设备管理</button><span aria-hidden="true">/</span><span>{{ activeTab === 'config' ? '设备配置' : '设备工作台' }}</span>
+    </nav>
     <div class="local-editor-title">
       <div>
-        <span class="label-chip">设备配置</span>
         <h3>{{ selectedDeviceName }}</h3>
         <p>{{ selectedDeviceId || "从设备管理列表选择设备" }} · {{ selectedDeviceProtocol }} · {{ deviceAddress(deviceStore.selectedDevice) }}</p>
       </div>
       <div class="local-editor-title-actions">
-        <div class="local-editor-stats">
-          <div class="local-editor-stat"><strong>{{ selectedOperationStatus }}</strong><span>运行状态</span></div>
-          <div class="local-editor-stat"><strong>{{ deviceStore.selectedDevice?.collectionInterval || "-" }}</strong><span>采集周期 ms</span></div>
-          <div class="local-editor-stat"><strong>{{ realtimePreviewRows.length }}</strong><span>{{ previewStatusText }}</span></div>
-        </div>
         <button type="button" @click="backToDeviceList">返回列表</button>
       </div>
     </div>
 
     <div class="local-editor-tabs" role="tablist" aria-label="设备操作工作台分区">
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'config' }" @click="openWorkbenchTab('config')">
-        <span>01</span><strong>工作台</strong><small>点位、实时和日志</small>
+        <strong>设备配置工作台</strong>
       </button>
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'control' }" @click="openWorkbenchTab('control')">
-        <span>02</span><strong>批量和协议命令</strong><small>单点、批量和协议命令</small>
+        <strong>批量和协议命令</strong>
       </button>
       <button type="button" class="local-editor-tab" :class="{ 'is-active': activeTab === 'shadow' }" @click="openWorkbenchTab('shadow')">
-        <span>03</span><strong>设备影子</strong><small>reported、desired、delta</small>
+        <strong>设备影子</strong>
       </button>
     </div>
 
     <div class="local-editor-layout">
-      <aside class="local-editor-rail device-operation-rail">
-        <div>
-          <span class="label-chip">当前设备</span>
-          <strong>{{ selectedDeviceName }}</strong>
-          <p>配置、控制和影子通过路由共享同一个设备上下文；切换分区不会丢失当前选择。</p>
-        </div>
-        <ol class="local-checklist device-info-list">
-          <li :class="selectedDeviceId ? 'is-ok' : 'is-error'"><span>设备已选择</span><strong>{{ selectedDeviceId || "请先选择设备" }}</strong></li>
-          <li :class="selectedOperationStatus === 'ONLINE' ? 'is-ok' : 'is-warn'"><span>运行状态</span><strong>{{ selectedOperationStatus }}</strong></li>
-          <li :class="previewChecklistClass"><span>实时点位</span><strong>{{ previewStatusText }}</strong></li>
-          <li :class="selectedConnectionOk ? 'is-ok' : 'is-warn'"><span>连接状态</span><strong>{{ selectedConnectionText }}</strong></li>
-        </ol>
-        <div class="device-operation-rail-actions">
-          <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新配置</button>
-          <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理缓存</button>
-          <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">运行状态</button>
-          <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">告警历史</button>
-        </div>
-      </aside>
-
       <div class="local-editor-body device-operation-body">
+        <div class="config-overview" aria-label="当前设备配置上下文">
+          <dl class="config-overview-fields">
+            <div><dt>设备分组</dt><dd>{{ deviceStore.selectedDevice?.displayGroup || '未分组' }}</dd></div>
+            <div><dt>配置来源</dt><dd>{{ deviceStore.selectedDevice?.configSource || 'local' }}</dd></div>
+            <div><dt>采集周期</dt><dd>{{ deviceStore.selectedDevice?.collectionInterval ?? '-' }} ms</dd></div>
+          </dl>
+          <div class="config-overview-actions">
+            <button type="button" :disabled="!selectedDeviceId || deviceConfigOperatingId === `refresh:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'refresh')">刷新配置</button>
+            <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceRuntimeStatus">运行状态</button>
+            <button type="button" :disabled="!selectedDeviceId" @click="openSelectedDeviceAlarmHistory">告警历史</button>
+            <button type="button" class="danger" :disabled="!selectedDeviceId || deviceConfigOperatingId === `clear:${selectedDeviceId}`" @click="operateDeviceConfig(selectedDeviceId, 'clear')">清理缓存</button>
+          </div>
+        </div>
+        <section v-if="activeTab !== 'config'" class="operation-runtime" aria-label="设备运行状态">
+          <div class="operation-runtime-heading"><strong>设备运行状态</strong><small>当前设备运行快照</small></div>
+          <dl>
+            <div><dt>生命周期</dt><dd>{{ selectedRuntimeSnapshot?.phase || selectedOperationStatus }}</dd></div>
+            <div><dt>传输连接</dt><dd>{{ selectedConnectionText }}</dd></div>
+            <div><dt>协议就绪</dt><dd>{{ selectedRuntimeSnapshot?.ready === true ? '就绪' : selectedRuntimeSnapshot?.ready === false ? '未就绪' : '未知' }}</dd></div>
+            <div><dt>实时点位</dt><dd :class="previewChecklistClass">{{ previewStatusText }}</dd></div>
+          </dl>
+        </section>
         <slot :device-id="selectedDeviceId" :device="deviceStore.selectedDevice" :realtime-preview-rows="realtimePreviewRows" />
       </div>
     </div>
@@ -98,8 +97,7 @@ const selectedRuntimeSnapshot = computed<DeviceRuntimeSnapshot | undefined>(() =
   const deviceId = selectedDeviceId.value;
   return deviceStore.selectedDevice?.runtime || (deviceId ? deviceStore.runtimeMap[deviceId] : undefined);
 });
-const selectedConnectionOk = computed(() => Boolean(selectedRuntimeSnapshot.value?.connected || selectedRuntimeSnapshot.value?.running || realtimePreviewRows.value.length > 0));
-const selectedConnectionText = computed(() => selectedConnectionOk.value ? "正常" : "未知");
+const selectedConnectionText = computed(() => selectedRuntimeSnapshot.value?.connected === true ? "已连接" : selectedRuntimeSnapshot.value?.connected === false ? "未连接" : "未知");
 const previewStatusMessage = computed(() => buildContextualReadStatus({
   loading: previewLoading.value,
   error: previewError.value,
@@ -126,10 +124,7 @@ const previewChecklistClass = computed(() => {
 });
 const selectedOperationStatus = computed(() => {
   const runtime = selectedRuntimeSnapshot.value;
-  if (runtime?.running || runtime?.connected || realtimePreviewRows.value.length > 0) {
-    return "ONLINE";
-  }
-  return String(deviceStore.selectedDevice?.status || deviceStore.selectedDevice?.["runtimeStatus"] || "未知");
+  return String(runtime?.phase || deviceStore.selectedDevice?.status || deviceStore.selectedDevice?.["runtimeStatus"] || "未知");
 });
 
 onMounted(async () => {
@@ -137,12 +132,16 @@ onMounted(async () => {
   applyRouteDevice();
   await deviceStore.refresh();
   applyRouteDevice();
-  await loadRealtimePreview();
+  if (activeTab.value !== "config") {
+    await loadRealtimePreview();
+  }
 });
 
 watch(() => route.query.deviceId, () => {
   applyRouteDevice();
-  void loadRealtimePreview();
+  if (activeTab.value !== "config") {
+    void loadRealtimePreview();
+  }
 });
 
 onBeforeUnmount(() => {
@@ -298,332 +297,287 @@ function deviceAddress(device: DeviceInfo | DeviceViewModel | null): string {
 </script>
 
 <style scoped>
-.device-operation-panel {
-  --panel-line: var(--console-border-soft, #1e3a5f);
-  --panel-muted: var(--console-text-muted, #8aa0b8);
-  --panel-text: var(--console-text-primary, #e5edf8);
-  --console-radius-card: 6px;
-  --console-radius-control: 4px;
-  display: grid;
-  min-height: calc(100vh - 96px);
-  max-height: calc(100vh - 96px);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
+.device-operation-panel.config-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 23px 30px 24px;
+  flex-direction: column;
+  overflow: auto;
   color: var(--console-text-secondary);
-  border: 1px solid var(--panel-line);
-  border-radius: 18px;
-  background: var(--console-bg, #08131f);
-  box-shadow: none;
+  background: var(--console-bg);
 }
 
-.device-operation-panel .local-editor-title {
-  grid-row: 1;
+.config-breadcrumb {
   display: flex;
-  min-height: 76px;
-  padding: 0 16px;
+  align-items: center;
+  gap: 10px;
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.config-workspace .config-breadcrumb button {
+  min-height: 24px;
+  padding: 0;
+  color: var(--console-text-muted);
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+
+.config-workspace .local-editor-title {
+  display: flex;
+  min-width: 0;
+  padding: 12px 0 20px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  color: var(--panel-text);
-  border-bottom: 1px solid var(--panel-line);
-  background: linear-gradient(180deg, var(--console-panel) 0%, var(--console-bg-soft) 100%);
 }
 
-.device-operation-panel .local-editor-title > div:first-child {
+.local-editor-title > div:first-child {
   min-width: 0;
-}
-
-.device-operation-panel .local-editor-title h3,
-.device-operation-panel .local-editor-title p {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.local-editor-title h3,
-.local-editor-title p {
-  margin: 0;
 }
 
 .local-editor-title h3 {
-  margin-top: 3px;
+  margin: 0;
   color: var(--console-text-primary);
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.18;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .local-editor-title p {
-  margin-top: 3px;
+  margin: 7px 0 0;
   color: var(--console-text-muted);
   font-size: 12px;
-  line-height: 1.2;
-}
-
-.label-chip {
-  display: inline-flex;
-  width: fit-content;
-  min-height: 22px;
-  padding: 2px 7px;
-  align-items: center;
-  border: 1px solid rgba(59, 130, 246, 0.34);
-  border-radius: 999px;
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.18);
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.2;
-}
-
-.local-editor-title-actions,
-.local-editor-stats {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: nowrap;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .local-editor-title-actions {
-  min-width: 0;
-  flex: 0 1 auto;
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
 }
 
-.local-editor-stat {
-  width: 96px;
-  min-width: 96px;
-  min-height: 46px;
-  padding: 6px 9px;
+.config-workspace .local-editor-title-actions button {
+  min-height: 35px;
+  padding: 0 13px;
   color: var(--console-text-secondary);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-card);
-  background: var(--console-panel-soft);
-  text-align: left;
+  border: 1px solid var(--console-input-border);
+  border-radius: 6px;
+  background: var(--console-panel);
+  font: inherit;
+  font-size: 12px;
 }
 
-.local-editor-stat strong,
-.local-editor-stat span {
-  display: block;
+.config-workspace .local-editor-tabs {
+  display: flex;
+  min-width: 0;
+  min-height: 43px;
+  flex-shrink: 0;
+  gap: 28px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--console-border-soft);
 }
 
-.local-editor-stat strong {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--console-text-primary);
-  font-size: 15px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
+.config-workspace button.local-editor-tab {
+  position: relative;
+  min-height: 43px;
+  padding: 0 0 12px;
+  flex: 0 0 auto;
+  color: var(--console-text-muted);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
   white-space: nowrap;
 }
 
-.local-editor-stat span {
-  margin-top: 2px;
-  color: var(--console-text-dim);
-  font-size: 11px;
-}
-
-.device-operation-panel .local-editor-tabs {
-  grid-row: 2;
-  display: flex;
-  min-width: 0;
-  min-height: 58px;
-  padding: 7px 16px;
-  gap: 8px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--panel-line);
-  background: var(--console-bg-soft, #0d1a2a);
-}
-
-.local-editor-tab {
-  position: relative;
-  flex: 1 0 188px;
-  min-height: 44px;
-  padding: 7px 10px 7px 42px;
-  color: var(--console-text-dim);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-card);
-  background: var(--console-panel);
-  text-align: left;
-}
-
-.local-editor-tab:hover {
-  color: var(--console-text-secondary);
-  border-color: var(--console-border-active);
-  background: var(--console-panel-soft);
-}
-
-.local-editor-tab::after {
-  display: none;
-}
-
-.local-editor-tab > span {
-  position: absolute;
-  top: 9px;
-  left: 10px;
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  color: var(--console-text-muted);
-  border: 1px solid var(--console-border-soft);
-  border-radius: 50%;
-  background: var(--console-bg);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.local-editor-tab strong,
-.local-editor-tab small {
-  display: block;
-}
-
 .local-editor-tab strong {
-  color: var(--console-text-secondary);
-  font-size: 13px;
-  line-height: 1.15;
+  font-weight: 400;
 }
 
-.local-editor-tab small {
-  margin-top: 2px;
-  color: var(--console-text-dim);
-  font-size: 11px;
-  line-height: 1.1;
+.config-workspace button.local-editor-tab.is-active {
+  color: var(--console-primary);
+  border-bottom: 2px solid var(--console-primary);
 }
 
-.local-editor-tab.is-active {
-  color: var(--console-text-primary);
-  border-color: var(--console-primary-hover);
-  background: rgba(59, 130, 246, 0.16);
+.local-editor-tab.is-active strong {
+  font-weight: 600;
 }
 
-.local-editor-tab.is-active > span {
-  color: #fff;
-  border-color: var(--console-primary);
-  background: var(--console-primary);
+.config-workspace button.local-editor-tab:hover:not(:disabled),
+.config-workspace .config-breadcrumb button:hover:not(:disabled) {
+  color: var(--console-primary);
+  background: transparent;
 }
 
-.device-operation-panel .local-editor-layout {
-  grid-row: 3;
-  display: grid;
+.local-editor-layout,
+.device-operation-body {
+  min-width: 0;
   min-height: 0;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 0;
-  align-items: stretch;
-  overflow: hidden;
-  background: var(--console-bg);
 }
 
-.local-editor-rail {
+.config-overview,
+.config-overview-fields,
+.config-overview-fields > div,
+.config-overview-actions {
   display: flex;
   min-width: 0;
-  padding: 12px;
-  flex-direction: column;
-  gap: 10px;
-  overflow: auto;
-  border-right: 1px solid var(--panel-line);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.config-overview {
+  min-height: 58px;
+  padding: 12px 0 16px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-overview-fields {
+  margin: 0;
+  gap: 12px 24px;
+  font-size: 11px;
+}
+
+.config-overview-fields > div {
+  gap: 9px;
+}
+
+.config-overview-fields dt {
+  color: var(--console-text-muted);
+}
+
+.config-overview-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.config-overview-actions {
+  gap: 8px;
+}
+
+.config-workspace .config-overview-actions button {
+  min-height: 30px;
+  padding: 0 4px;
+  color: var(--console-primary);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+}
+
+.config-workspace .config-overview-actions button.danger {
+  color: var(--console-danger-text);
+}
+
+.config-workspace .config-overview-actions button:hover:not(:disabled) {
+  background: var(--app-color-info-soft);
+}
+
+.config-workspace button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+.config-workspace button:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 3px;
+}
+
+.operation-runtime {
+  display: flex;
+  min-width: 0;
+  margin-bottom: 17px;
+  padding: 18px 19px;
+  align-items: center;
+  gap: 28px;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 8px;
   background: var(--console-panel);
 }
 
-.local-editor-rail strong,
-.local-editor-rail p {
-  display: block;
+.operation-runtime-heading {
+  display: grid;
+  padding-right: 24px;
+  gap: 4px;
+  border-right: 1px solid var(--console-border-soft);
+  font-size: 13px;
 }
 
-.local-editor-rail strong {
-  margin-top: 7px;
-  color: var(--console-text-primary);
-  font-size: 14px;
-}
-
-.local-editor-rail p {
-  margin: 5px 0 0;
+.operation-runtime-heading small,
+.operation-runtime dt {
   color: var(--console-text-muted);
   font-size: 11px;
-  line-height: 1.35;
 }
 
-.local-checklist {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  gap: 6px;
-  list-style: none;
-}
-
-.device-info-list li {
-  display: grid;
-  min-height: 44px;
-  padding: 7px 9px;
-  gap: 3px;
-  color: var(--console-text-secondary);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-md);
-  background: var(--console-bg-soft);
-}
-
-.device-info-list li span {
-  color: var(--console-text-dim);
-  font-size: 11px;
-  line-height: 1.15;
-}
-
-.device-info-list li strong {
-  margin: 0;
-  color: var(--console-text-secondary);
-  font-size: 12px;
-  line-height: 1.2;
-  word-break: break-all;
-}
-
-.device-info-list li.is-ok strong,
-.is-success {
-  color: #34d399;
-}
-
-.device-info-list li.is-warn strong,
-.is-warning {
-  color: #fb923c;
-}
-
-.device-info-list li.is-error strong,
-.is-danger {
-  color: #f87171;
-}
-
-.device-operation-rail-actions {
-  display: grid;
-  gap: 7px;
-}
-
-.device-operation-body {
-  display: block;
+.operation-runtime dl {
+  display: flex;
   min-width: 0;
-  min-height: 0;
-  padding: 12px 16px;
-  overflow: auto;
-  background: var(--console-bg);
+  margin: 0;
+  gap: 16px 32px;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 1240px) {
-  .device-operation-panel {
-    max-height: none;
+.operation-runtime dd {
+  max-width: 350px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.operation-runtime .is-ok {
+  color: var(--console-success-text);
+}
+
+.operation-runtime .is-warn {
+  color: var(--console-warning-text);
+}
+
+.operation-runtime .is-error {
+  color: var(--console-danger-text);
+}
+
+@media (max-width: 1280px) {
+  .device-operation-panel.config-workspace {
+    padding: 22px 24px;
+  }
+}
+
+@media (max-width: 760px) {
+  .device-operation-panel.config-workspace {
+    padding: 20px 14px;
   }
 
-  .device-operation-panel .local-editor-title {
+  .config-workspace .local-editor-title {
     align-items: flex-start;
     flex-wrap: wrap;
-    padding-top: 10px;
-    padding-bottom: 10px;
   }
 
-  .local-editor-title-actions,
-  .local-editor-stats {
+  .local-editor-title h3 {
+    font-size: 23px;
+  }
+
+  .config-workspace .local-editor-tabs {
+    gap: 20px;
+  }
+
+  .operation-runtime {
+    padding: 15px;
+    align-items: flex-start;
     flex-wrap: wrap;
+    gap: 15px;
   }
 
-  .device-operation-panel .local-editor-layout {
-    grid-template-columns: 1fr;
+  .operation-runtime-heading {
+    padding-right: 0;
+    border-right: 0;
   }
 }
 </style>

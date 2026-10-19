@@ -7,6 +7,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 跟踪设备当前有效采集代次，并通过线程上下文把代次传递给下游处理。
@@ -15,13 +16,14 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 public class CollectionTaskGuard {
 
+    private final String runtimeId = java.util.UUID.randomUUID().toString();
     private final AtomicLong generationSequence = new AtomicLong(0);
     private final ConcurrentMap<String, Long> activeGenerations = new ConcurrentHashMap<>();
     private final ThreadLocal<CollectionTaskContext> currentContext = new ThreadLocal<>();
 
     public long activateNextGeneration(String deviceId) {
         long generation = generationSequence.incrementAndGet();
-        activeGenerations.put(deviceId, generation);
+        activeGenerations.compute(deviceId, (ignored, previous) -> generation);
         return generation;
     }
 
@@ -32,7 +34,7 @@ public class CollectionTaskGuard {
         if (deviceId == null || deviceId.isBlank()) {
             return;
         }
-        activeGenerations.remove(deviceId);
+        activeGenerations.computeIfPresent(deviceId, (ignored, previous) -> null);
     }
 
     /**
@@ -42,7 +44,15 @@ public class CollectionTaskGuard {
         if (deviceId == null || deviceId.isBlank()) {
             return false;
         }
-        return activeGenerations.remove(deviceId, generation);
+        AtomicBoolean cleared = new AtomicBoolean();
+        activeGenerations.computeIfPresent(deviceId, (ignored, previous) -> {
+            if (previous == generation) {
+                cleared.set(true);
+                return null;
+            }
+            return previous;
+        });
+        return cleared.get();
     }
 
     public boolean isCurrent(String deviceId, long generation) {
@@ -52,13 +62,44 @@ public class CollectionTaskGuard {
         return Objects.equals(activeGenerations.get(deviceId), generation);
     }
 
+    public String runtimeId() {
+        return runtimeId;
+    }
+
+    /** 配置失效与实时提交共用设备键门；没有活动代次也可执行，不创建残留状态。 */
+    public void runDeviceScoped(String deviceId, Runnable action) {
+        if (deviceId == null || deviceId.isBlank() || action == null) return;
+        activeGenerations.compute(deviceId, (ignored, current) -> {
+            action.run();
+            return current;
+        });
+    }
+
+    /** 与启停代次变更共用设备键原子门，最终副作用不能穿过 STOP/START 边界。 */
+    public boolean commitIfCurrent(String deviceId, Long generation, Runnable commit) {
+        if (deviceId == null || generation == null || commit == null) return false;
+        AtomicBoolean committed = new AtomicBoolean();
+        activeGenerations.computeIfPresent(deviceId, (ignored, current) -> {
+            if (Objects.equals(current, generation)) {
+                commit.run();
+                committed.set(true);
+            }
+            return current;
+        });
+        return committed.get();
+    }
+
     public CollectionTaskContext captureCurrentContext() {
         return currentContext.get();
     }
 
     public <T> T callWithContext(String deviceId, long generation, Callable<T> callable) throws Exception {
+        return callWithContext(new CollectionTaskContext(deviceId, generation), callable);
+    }
+
+    public <T> T callWithContext(CollectionTaskContext context, Callable<T> callable) throws Exception {
         CollectionTaskContext previous = currentContext.get();
-        currentContext.set(new CollectionTaskContext(deviceId, generation));
+        currentContext.set(context);
         try {
             return callable.call();
         } finally {
@@ -84,6 +125,9 @@ public class CollectionTaskGuard {
         currentContext.set(previous);
     }
 
-    public record CollectionTaskContext(String deviceId, long generation) {
+    public record CollectionTaskContext(String deviceId, long generation, CollectionProcessingReceipt receipt) {
+        public CollectionTaskContext(String deviceId, long generation) {
+            this(deviceId, generation, null);
+        }
     }
 }

@@ -61,13 +61,13 @@ public final class TelemetryIngressEnvelope {
     }
 
     TelemetryPostProcessContext toContext() {
-        return new TelemetryPostProcessContext(
-                deviceId,
-                point,
-                processResult,
-                cacheValueProcessResult ? cacheProcessResult : cacheValue,
-                eventTs,
-                generation);
+        return toContext(null);
+    }
+
+    TelemetryPostProcessContext toContext(com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard guard) {
+        // 所有可靠重放保留源时间，只恢复历史和可靠上报，不能授予本代实时成功。
+        return new TelemetryPostProcessContext(deviceId, point, processResult,
+                cacheValueProcessResult ? cacheProcessResult : cacheValue, eventTs, generation, guard, null, true);
     }
 
     String deviceId() {

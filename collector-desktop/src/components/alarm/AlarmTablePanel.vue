@@ -226,7 +226,7 @@ onUnmounted(() => { generation += 1; });
   min-height: 0;
   padding: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   border: 0;
   background: transparent;
 }
@@ -255,7 +255,7 @@ onUnmounted(() => { generation += 1; });
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
   overflow: visible;
 }
@@ -269,18 +269,26 @@ onUnmounted(() => { generation += 1; });
 .alarm-stat-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  padding: 14px 0;
+  gap: 0;
+  border-top: 1px solid var(--console-border-soft);
+  border-bottom: 1px solid var(--console-border-soft);
 }
 
 .alarm-stat-card {
   display: grid;
-  min-height: 66px;
-  padding: 9px 10px;
-  gap: 3px;
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel);
-  background: var(--console-panel);
+  min-width: 0;
+  min-height: 0;
+  padding: 0 16px;
+  gap: 5px;
+  border: 0;
+  border-right: 1px solid var(--console-border-soft);
+  border-radius: 0;
+  background: transparent;
 }
+
+.alarm-stat-card:first-child { padding-left: 0; }
+.alarm-stat-card:last-child { border-right: 0; }
 
 .alarm-stat-card span,
 .alarm-stat-card small {
@@ -292,18 +300,20 @@ onUnmounted(() => { generation += 1; });
   color: var(--console-text-primary);
   font-size: 20px;
   line-height: 1.1;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
 }
 
 .alarm-stat-card.danger strong {
-  color: #f87171;
+  color: var(--console-danger);
 }
 
 .alarm-stat-card.warning strong {
-  color: #fb923c;
+  color: var(--console-warning);
 }
 
 .alarm-stat-card.success strong {
-  color: #34d399;
+  color: var(--console-success);
 }
 
 .cell-ellipsis {
@@ -317,6 +327,30 @@ onUnmounted(() => { generation += 1; });
 @media (max-width: 1280px) {
   .alarm-stat-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 16px;
   }
+  .alarm-stat-card:nth-child(even) { border-right: 0; }
+  .alarm-stat-card:nth-child(3) { padding-left: 0; }
+}
+
+.alarm-workbench :deep(.el-table) { border-radius: 6px; }
+.alarm-workbench :deep(.el-table__header th) { height: 40px; }
+.alarm-workbench :deep(.el-table__body td) { height: 53px; }
+
+@media (max-width: 600px) {
+  .panel-toolbar { overflow: visible; }
+  .alarm-filter-bar {
+    width: 100%;
+    align-items: stretch;
+  }
+  .alarm-filter-bar :deep(.el-select),
+  .alarm-filter-bar :deep(.el-input) { width: 100%; }
+  .alarm-filter-bar :deep(.el-date-editor) {
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .alarm-filter-bar :deep(.el-button + .el-button) { margin-left: 0; }
+  .alarm-stat-card { padding-inline: 12px; }
 }
 </style>

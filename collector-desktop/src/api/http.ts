@@ -110,7 +110,7 @@ client.interceptors.request.use((config) => {
   config.baseURL = currentServerUrl;
   config.headers = AxiosHeaders.from(config.headers);
   if (currentToken) {
-    config.headers.set("X-Collector-Token", currentToken);
+    config.headers.set("x-collector-token", currentToken);
   }
   return config;
 });

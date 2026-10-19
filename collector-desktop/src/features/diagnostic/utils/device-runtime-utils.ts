@@ -19,7 +19,7 @@ export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): s
     case "STARTING": return "启动中";
     case "CONNECTING": return "连接中";
     case "WAITING_FIRST_SAMPLE": return "等待首采";
-    case "ONLINE": return "运行中（点位质量待核对）";
+    case "ONLINE": return "运行中";
     case "DEGRADED": return "采集降级";
     case "RECONNECTING": return "重连中";
     case "FAILED": return "运行失败";
@@ -27,6 +27,7 @@ export function runtimePhaseLabel(runtime: DeviceRuntimeSnapshot | undefined): s
   }
 }
 export function runtimeOperationMessage(runtime: DeviceRuntimeSnapshot | undefined, action: "START" | "STOP"): string {
+  if (action === "START" && !runtime?.phase) return "启动请求已受理，等待首采；当前采集健康未知";
   if (action === "STOP") return runtime?.phase === "STOPPED" ? "设备已停止" : "设备停止操作已完成";
   switch (runtime?.phase) {
     case "ONLINE": return "设备运行中；请在实时数据核对当前点位质量";
@@ -37,6 +38,29 @@ export function runtimeOperationMessage(runtime: DeviceRuntimeSnapshot | undefin
   }
 }
 
+
+// 三层事实只展示后端返回值，ready、accepted 和连接均不能推导采集健康。
+export function runtimePresentation(runtime?: DeviceRuntimeSnapshot, stale = false) {
+  const labels: Record<string, string> = {
+    UNKNOWN: "未知", RUNNING: "运行", STOPPED: "停止", CONNECTED: "已连接", DISCONNECTED: "未连接",
+    CONNECTING: "连接中", RECONNECTING: "重连中", NEGOTIATING: "协商中", READY: "已就绪", NOT_READY: "未就绪",
+    ONLINE_HEALTHY: "在线健康", ONLINE_PARTIAL: "在线部分有效", ONLINE_NO_DATA: "在线无有效数据", OFFLINE: "离线",
+    HEALTHY: "健康", GOOD: "正常", DEGRADED: "降级", FAILED: "失败", UNHEALTHY: "不健康",
+    WAITING: "等待", WAITING_FIRST_SAMPLE: "等待首采", STALE: "过期", ERROR: "异常"
+  };
+  const label = (value?: string) => value ? labels[value] || value : "未知";
+  const count = (value?: number) => value === undefined ? "未知" : String(value);
+  return {
+    lifecycle: stale ? "快照已过期" : runtimePhaseLabel(runtime),
+    desired: label(runtime?.desiredState),
+    transportProtocol: stale ? "传输 未知 / 协议 未知（快照过期）" : `传输 ${label(runtime?.transport)} / 协议 ${label(runtime?.protocol)}`,
+    health: stale ? "已过期（当前健康未知）" : label(runtime?.deviceHealth),
+    ready: stale ? "未知" : runtime?.ready === true ? "已就绪" : runtime?.ready === false ? "未就绪" : "未知",
+    points: `有效 ${count(runtime?.goodPointCount)}/${count(runtime?.participatingPointCount ?? runtime?.configuredPointCount)} · 失败 ${count(runtime?.failedPointCount)} · 过期 ${count(runtime?.stalePointCount)} · 等待 ${count(runtime?.waitingPointCount)}`,
+    lastValid: runtime?.lastValidSampleAt && runtime.lastValidSampleAt > 0 ? new Date(runtime.lastValidSampleAt).toLocaleString() : "未知",
+    reason: runtime?.healthReason || runtime?.degradedReason || runtime?.lastError || ""
+  };
+}
 
 export interface DeviceRuntimeSummary {
   total: number;
@@ -131,7 +155,18 @@ function normalizeRuntimeRow(record: Record<string, unknown>): DeviceRuntimeSnap
     firstSampleAt: numberValue(record.firstSampleAt),
     configuredPointCount: numberValue(record.configuredPointCount),
     lastError: textValue(record.lastError),
-    configVersion: numberValue(record.configVersion)
+    configVersion: numberValue(record.configVersion),
+    desiredState: textValue(record.desiredState),
+    transport: textValue(record.transport),
+    protocol: textValue(record.protocol),
+    deviceHealth: textValue(record.deviceHealth),
+    healthReason: textValue(record.healthReason),
+    goodPointCount: numberValue(record.goodPointCount),
+    failedPointCount: numberValue(record.failedPointCount),
+    stalePointCount: numberValue(record.stalePointCount),
+    waitingPointCount: numberValue(record.waitingPointCount),
+    lastValidSampleAt: numberValue(record.lastValidSampleAt),
+    participatingPointCount: numberValue(record.participatingPointCount)
   };
 }
 
@@ -140,7 +175,8 @@ function unwrapData(value: unknown): unknown {
   return Object.keys(record).length && "data" in record ? record.data : value;
 }
 
-function booleanValue(value: unknown): boolean {
+function booleanValue(value: unknown): boolean | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
   if (typeof value === "boolean") {
     return value;
   }
@@ -151,6 +187,7 @@ function booleanValue(value: unknown): boolean {
 }
 
 function numberValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }

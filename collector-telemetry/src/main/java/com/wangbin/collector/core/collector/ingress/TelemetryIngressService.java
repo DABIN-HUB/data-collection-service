@@ -59,6 +59,12 @@ public class TelemetryIngressService {
                                    Integer sourceQuality,
                                    Long collectTime,
                                    String source) {
+        return appendRaw(deviceId, point, rawValue, sourceQuality, collectTime, source, null, null);
+    }
+
+    /** 原生回调必须传入实例绑定的代次与配置版本，不能在迟到回调时借用当前运行身份。 */
+    public ProcessResult appendRaw(String deviceId, DataPoint point, Object rawValue, Integer sourceQuality,
+                                   Long collectTime, String source, Long generation, Long configVersion) {
         if (deviceId == null || deviceId.isBlank() || point == null) {
             throw new IllegalArgumentException("设备标识和点位不能为空");
         }
@@ -67,18 +73,22 @@ public class TelemetryIngressService {
         Object processedValue = applyLinearTransform(point, rawValue);
         ProcessContext context = new ProcessContext();
         context.setCollectTime(resolvedCollectTime);
-        context.setRawQuality(sourceQuality != null ? sourceQuality : 100);
+        context.setRawQuality(sourceQuality != null ? sourceQuality : 0);
         context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         ProcessResult result = dataQualityProcessor.process(context, point, processedValue);
-        if (sourceQuality != null) {
-            result.setQuality(Math.min(result.getQuality(), Math.max(0, Math.min(100, sourceQuality))));
+        if (sourceQuality != null && sourceQuality >= 0 && sourceQuality <= 100) {
+            result.setQuality(Math.min(result.getQuality(), sourceQuality));
+        } else {
+            result.setQuality(-1);
         }
         result.addMetadata(ProcessResultMetadataKeys.RAW_VALUE, rawValue);
         result.addMetadata(ProcessResultMetadataKeys.PROCESSED_VALUE, processedValue);
         result.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, resolvedCollectTime);
         result.addMetadata(ProcessResultMetadataKeys.SOURCE,
                 source == null || source.isBlank() ? "EDGE_GATEWAY" : source);
-        append(deviceId, point, result);
+        if (configVersion != null) result.addMetadata(ProcessResultMetadataKeys.CONFIG_VERSION, configVersion);
+        if (generation != null) append(deviceId, point, result, generation);
+        else append(deviceId, point, result);
         return result;
     }
 

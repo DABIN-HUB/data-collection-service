@@ -8,6 +8,7 @@ import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaAddress;
 import com.wangbin.collector.core.collector.protocol.opc.ua.domain.OpcUaDataType;
 import com.wangbin.collector.core.collector.protocol.opc.ua.util.OpcUaAddressParser;
 import lombok.extern.slf4j.Slf4j;
+import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaMonitoredItem;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaSubscription;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
@@ -197,7 +198,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
         status.put(CommonMapKeys.DRIVER, "MILO");
         status.put("implementationState", "EXPERIMENTAL");
         status.put("securityPolicy", securityPolicy);
-        status.put(CommonMapKeys.CONNECTED, client != null);
+        status.put(CommonMapKeys.CONNECTED, hasCurrentClient());
         status.put("subscriptions", subscriptions.size());
         status.put("monitoredItems", monitoredItems.size());
         status.put("requestTimeout", requestTimeout);
@@ -305,7 +306,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
                 .map(this::safeParseNodeId)
                 .map(this::resolveNodeIdForCommand)
                 .collect(Collectors.toList());
-        List<DataValue> values = client.readValues(0, TimestampsToReturn.Both, readTargets);
+        List<DataValue> values = readValues(readTargets);
         if (values == null || values.size() != nodeIds.size()) {
             throw new IllegalStateException("OPC UA 命令读取响应数量不匹配: requested=" + nodeIds.size()
                     + ", received=" + (values == null ? "null" : values.size()));
@@ -354,6 +355,7 @@ public class OpcUaCollector extends AbstractOpcUaCollector {
     private Object executeCommandBrowse(Map<String, Object> params) throws Exception {
         String nodeIdText = Objects.toString(params.getOrDefault("nodeId", "ns=0;i=84"));
         NodeId nodeId = safeParseNodeId(nodeIdText);
+        OpcUaClient client = requireCurrentClient();
         List<ReferenceDescription> references = client.getAddressSpace().browse(nodeId);
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (ReferenceDescription ref : references) {

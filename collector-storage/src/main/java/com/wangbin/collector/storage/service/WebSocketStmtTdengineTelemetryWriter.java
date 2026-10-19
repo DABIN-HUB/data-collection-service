@@ -150,7 +150,7 @@ public class WebSocketStmtTdengineTelemetryWriter implements TdengineTelemetryWr
         if (configured != null && !configured.isBlank()) {
             return configured.trim();
         }
-        return "jdbc:TAOS-WS://127.0.0.1:6041/" + properties.getDatabase();
+        return "jdbc:TAOS-WS://100.93.189.63:6041/" + properties.getDatabase();
     }
 
     private Connection connectionForCurrentThread(String url) throws SQLException {

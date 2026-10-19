@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Dreamine.PLC.Mitsubishi.MC": {
+        "type": "Direct",
+        "requested": "[1.0.1, )",
+        "resolved": "1.0.1",
+        "contentHash": "sI60j5wzXOIQbX0/wlXNFEltkSOZay8goTGUOrSwTD3ImDL6ENhqwHl4l+xxvKpxcArotGtsdTKAwxGsG9xNBw==",
+        "dependencies": {
+          "Dreamine.Communication.Abstractions": "1.0.2",
+          "Dreamine.Communication.Core": "1.0.2",
+          "Dreamine.Communication.Sockets": "1.0.2",
+          "Dreamine.PLC.Abstractions": "1.0.1",
+          "Dreamine.PLC.Core": "1.0.1"
+        }
+      },
+      "Dreamine.Communication.Abstractions": {
+        "type": "Transitive",
+        "resolved": "1.0.2",
+        "contentHash": "K70nbJVJlAWNw8M0L8/U42b9r4MM/vuAxAJlIeqqbrcOiJj+AwPYDS3bVYc6IjmHDZvMMTFBhv1nZGxuu7Hkig=="
+      },
+      "Dreamine.Communication.Core": {
+        "type": "Transitive",
+        "resolved": "1.0.2",
+        "contentHash": "jKYH9ouFA0/dAEF0Wjr0WjAeadZ01qonjnrzQsC0KllwM9GMKlhlAru/MLa4K6JL7D5XRrw75EhdOrQIi20/PQ==",
+        "dependencies": {
+          "Dreamine.Communication.Abstractions": "1.0.2"
+        }
+      },
+      "Dreamine.Communication.Sockets": {
+        "type": "Transitive",
+        "resolved": "1.0.2",
+        "contentHash": "Yo1/6LjI8WIQALq4jwDOgIBW23jfdFbh9ejekr1PH8LRaHCRE8bSe3QF9vBke3mQMii8/J2Hr++Gm+qoci3jEw==",
+        "dependencies": {
+          "Dreamine.Communication.Abstractions": "1.0.2",
+          "Dreamine.Communication.Core": "1.0.2"
+        }
+      },
+      "Dreamine.PLC.Abstractions": {
+        "type": "Transitive",
+        "resolved": "1.0.1",
+        "contentHash": "yDfM3p9PQK2QD0lYq+zWWfwCMK0zGO4By0nL1kYGdtYnBlOGrDZaUgFk6bqS9w1dAWsQ/diPxwz/ompP1LR1Tw=="
+      },
+      "Dreamine.PLC.Core": {
+        "type": "Transitive",
+        "resolved": "1.0.1",
+        "contentHash": "Je7lPzYVM8vNUM90d9HRwjxu7xuc1ayaOhek2Dl4IDFx9SNgwGphwsVib88GI66lSBQl7QMCP9HZTMy5MMwTWQ==",
+        "dependencies": {
+          "Dreamine.PLC.Abstractions": "1.0.1"
+        }
+      }
+    }
+  }
+}

@@ -1,36 +1,37 @@
 /* Element Plus 全局覆盖：统一控件、Teleport 弹层和跨页面组件视觉，不承载页面布局。 */
 :root {
+  --el-font-family: var(--app-font-family);
   --el-color-primary: var(--app-color-primary);
-  --el-color-primary-light-3: var(--app-color-primary-hover);
-  --el-color-primary-light-5: rgba(59, 130, 246, 0.32);
-  --el-color-primary-light-8: rgba(59, 130, 246, 0.18);
-  --el-color-primary-light-9: rgba(59, 130, 246, 0.12);
+  --el-color-primary-light-3: #5a9b9b;
+  --el-color-primary-light-5: #89b7b7;
+  --el-color-primary-light-8: #d0e2e2;
+  --el-color-primary-light-9: #eaf5f3;
   --el-color-primary-dark-2: var(--app-color-primary-active);
   --el-color-info: var(--app-color-info);
-  --el-color-info-light-3: #60a5fa;
-  --el-color-info-light-5: rgba(59, 130, 246, 0.32);
-  --el-color-info-light-8: rgba(59, 130, 246, 0.18);
-  --el-color-info-light-9: rgba(59, 130, 246, 0.12);
+  --el-color-info-light-3: #7a97a8;
+  --el-color-info-light-5: #a0b5c1;
+  --el-color-info-light-8: #d9e1e6;
+  --el-color-info-light-9: #edf5f8;
   --el-color-success: var(--app-color-success);
-  --el-color-success-light-3: #34d399;
-  --el-color-success-light-5: rgba(16, 185, 129, 0.32);
-  --el-color-success-light-8: rgba(16, 185, 129, 0.18);
-  --el-color-success-light-9: rgba(16, 185, 129, 0.12);
+  --el-color-success-light-3: #649d85;
+  --el-color-success-light-5: #90b9a7;
+  --el-color-success-light-8: #d3e3dc;
+  --el-color-success-light-9: #edf7f0;
   --el-color-warning: var(--app-color-warning);
-  --el-color-warning-light-3: #fb923c;
-  --el-color-warning-light-5: rgba(249, 115, 22, 0.32);
-  --el-color-warning-light-8: rgba(249, 115, 22, 0.18);
-  --el-color-warning-light-9: rgba(249, 115, 22, 0.12);
+  --el-color-warning-light-3: #b88f55;
+  --el-color-warning-light-5: #ccb086;
+  --el-color-warning-light-8: #ebe0ce;
+  --el-color-warning-light-9: #fff4de;
   --el-color-danger: var(--app-color-danger);
-  --el-color-danger-light-3: #f87171;
-  --el-color-danger-light-5: rgba(239, 68, 68, 0.32);
-  --el-color-danger-light-8: rgba(239, 68, 68, 0.18);
-  --el-color-danger-light-9: rgba(239, 68, 68, 0.12);
+  --el-color-danger-light-3: #cc7a7d;
+  --el-color-danger-light-5: #daa0a2;
+  --el-color-danger-light-8: #f0d9da;
+  --el-color-danger-light-9: #fbeded;
   --el-color-error: var(--app-color-error);
-  --el-color-error-light-3: #f87171;
-  --el-color-error-light-5: rgba(239, 68, 68, 0.32);
-  --el-color-error-light-8: rgba(239, 68, 68, 0.18);
-  --el-color-error-light-9: rgba(239, 68, 68, 0.12);
+  --el-color-error-light-3: #cc7a7d;
+  --el-color-error-light-5: #daa0a2;
+  --el-color-error-light-8: #f0d9da;
+  --el-color-error-light-9: #fbeded;
   --el-bg-color: var(--app-color-panel);
   --el-bg-color-page: var(--app-color-bg);
   --el-bg-color-overlay: var(--app-overlay-bg);
@@ -41,8 +42,8 @@
   --el-fill-color-blank: var(--app-control-bg);
   --el-border-color: var(--app-control-border);
   --el-border-color-light: var(--app-color-border-soft);
-  --el-border-color-lighter: rgba(45, 74, 122, 0.42);
-  --el-border-color-extra-light: rgba(45, 74, 122, 0.28);
+  --el-border-color-lighter: #e8edef;
+  --el-border-color-extra-light: #edf0f2;
   --el-text-color-primary: var(--app-color-text-primary);
   --el-text-color-regular: var(--app-control-text);
   --el-text-color-secondary: var(--app-color-text-muted);
@@ -50,7 +51,7 @@
   --el-disabled-bg-color: var(--app-control-bg-disabled);
   --el-disabled-text-color: var(--app-control-text-disabled);
   --el-disabled-border-color: var(--app-control-border-disabled);
-  --el-mask-color: rgba(2, 6, 23, 0.68);
+  --el-mask-color: rgba(29, 48, 61, 0.38);
   --el-box-shadow-light: var(--app-overlay-shadow);
   --el-border-radius-base: var(--app-radius-md);
   --el-border-radius-small: var(--app-radius-sm);
@@ -104,7 +105,7 @@
 
 .el-button--primary.is-plain {
   color: var(--app-color-info-text);
-  border-color: rgba(59, 130, 246, 0.58);
+  border-color: #cee3df;
   background: var(--app-color-info-soft);
 }
 
@@ -112,20 +113,20 @@
 .el-button--primary.is-plain:focus-visible {
   color: var(--app-color-text-primary);
   border-color: var(--app-color-primary-hover);
-  background: rgba(59, 130, 246, 0.24);
+  background: #dceee9;
 }
 
 .el-button--success,
 .el-button--warning,
 .el-button--danger,
 .el-button--info {
-  color: var(--app-color-text-primary);
+  color: #fff;
 }
 
 .el-button--danger,
 .el-button--danger.is-plain {
-  color: #fecaca;
-  border-color: rgba(239, 68, 68, 0.56);
+  color: var(--app-color-danger-text);
+  border-color: #e4c4c5;
   background: var(--app-color-danger-soft);
 }
 
@@ -134,7 +135,7 @@
 .el-button--danger.is-plain:hover,
 .el-button--danger.is-plain:focus-visible {
   border-color: var(--app-color-danger);
-  background: rgba(239, 68, 68, 0.22);
+  background: #f6dfe0;
 }
 
 .el-button.is-disabled,
@@ -275,7 +276,7 @@
 
 .el-input-number__increase:hover,
 .el-input-number__decrease:hover {
-  color: var(--app-color-text-primary);
+  color: #fff;
   background: var(--app-color-primary);
 }
 
@@ -329,7 +330,7 @@
 }
 
 .el-form-item__error {
-  color: #fca5a5;
+  color: var(--app-color-error);
 }
 
 .el-checkbox,
@@ -381,7 +382,7 @@
 }
 
 .el-tag {
-  border-radius: 999px;
+  border-radius: 4px;
 }
 
 .el-tag.is-light,
@@ -458,25 +459,25 @@
 .el-alert.el-alert--success {
   border-color: rgba(16, 185, 129, 0.48);
   background: var(--app-color-success-soft);
-  color: #a7f3d0;
+  color: var(--app-color-success-text);
 }
 
 .el-alert.el-alert--warning {
   border-color: rgba(249, 115, 22, 0.52);
   background: var(--app-color-warning-soft);
-  color: #fed7aa;
+  color: var(--app-color-warning-text);
 }
 
 .el-alert.el-alert--error {
   border-color: rgba(239, 68, 68, 0.52);
   background: var(--app-color-danger-soft);
-  color: #fecaca;
+  color: var(--app-color-danger-text);
 }
 
 .el-alert.el-alert--info {
   border-color: rgba(59, 130, 246, 0.52);
   background: var(--app-color-info-soft);
-  color: #bfdbfe;
+  color: var(--app-color-info-text);
 }
 
 .el-table {
@@ -486,8 +487,8 @@
   --el-table-header-text-color: var(--app-color-text-muted);
   --el-table-text-color: var(--app-control-text);
   --el-table-border-color: var(--app-color-border-soft);
-  --el-table-row-hover-bg-color: rgba(59, 130, 246, 0.12);
-  --el-table-current-row-bg-color: rgba(37, 99, 235, 0.18);
+  --el-table-row-hover-bg-color: var(--app-control-bg-hover);
+  --el-table-current-row-bg-color: var(--app-color-info-soft);
   color: var(--app-control-text);
   background: var(--app-color-panel);
 }
@@ -513,7 +514,7 @@
 }
 
 .el-table .el-table__cell {
-  padding: 6px 0;
+  padding: 11px 0;
 }
 
 .el-table__inner-wrapper::before,
@@ -588,7 +589,7 @@
 }
 
 .el-pager li.is-active {
-  color: var(--app-color-text-primary);
+  color: #fff;
   border-color: var(--app-color-primary);
   background: var(--app-color-primary);
 }
@@ -644,8 +645,8 @@
 
 .el-select-dropdown__item.selected,
 .el-dropdown-menu__item.is-active {
-  color: #bfdbfe;
-  background: rgba(37, 99, 235, 0.24) !important;
+  color: var(--app-color-primary);
+  background: var(--app-color-info-soft) !important;
 }
 
 .el-select-dropdown__item.is-disabled,
@@ -702,7 +703,7 @@
 
 .el-date-table td.start-date .el-date-table-cell__text,
 .el-date-table td.end-date .el-date-table-cell__text {
-  color: var(--app-color-text-primary);
+  color: #fff;
   background: var(--app-color-primary);
 }
 

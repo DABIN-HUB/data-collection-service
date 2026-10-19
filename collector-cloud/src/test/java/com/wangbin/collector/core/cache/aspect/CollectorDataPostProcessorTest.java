@@ -8,6 +8,7 @@ import com.wangbin.collector.core.cache.model.CacheKey;
 import com.wangbin.collector.core.cache.service.TelemetryStreamService;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.core.report.service.CacheReportService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -24,6 +25,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class CollectorDataPostProcessorTest {
 
@@ -32,19 +34,24 @@ public class CollectorDataPostProcessorTest {
         MultiLevelCacheManager multiLevelCacheManager = mock(MultiLevelCacheManager.class);
         CacheReportService cacheReportService = mock(CacheReportService.class);
         TelemetryStreamService telemetryStreamService = mock(TelemetryStreamService.class);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long generation = guard.activateNextGeneration("dev-1");
+        when(multiLevelCacheManager.put(any(CacheKey.class), any(), anyLong())).thenReturn(true);
         CollectorDataPostProcessor processor = createProcessor(
                 Runnable::run,
                 multiLevelCacheManager,
                 cacheReportService,
                 telemetryStreamService,
-                true
+                true,
+                guard
         );
 
         DataPoint point = createPoint("dev-1", "p1");
         point.setPointName("point-1");
         point.setCacheEnabled(1);
 
-        processor.saveBatchAsync("dev-1", List.of(point), Map.of("p1", 12.5), null);
+        guard.runWithContext("dev-1", generation,
+                () -> processor.saveBatchAsync("dev-1", List.of(point), Map.of("p1", 12.5), null));
 
         verify(multiLevelCacheManager).put(any(CacheKey.class), any(), anyLong());
         ArgumentCaptor<Object> reportValue = ArgumentCaptor.forClass(Object.class);
@@ -57,6 +64,9 @@ public class CollectorDataPostProcessorTest {
 
         ProcessResult result = assertInstanceOf(ProcessResult.class, reportValue.getValue());
         assertEquals(12.5, result.getFinalValue());
+        assertEquals(-1, result.getQuality());
+        assertEquals("UNKNOWN", result.getMetadata(ProcessResultMetadataKeys.SOURCE));
+        assertEquals(0L, ((Number) result.getMetadata(ProcessResultMetadataKeys.COLLECT_TIME)).longValue());
     }
 
     @Test
@@ -64,12 +74,15 @@ public class CollectorDataPostProcessorTest {
         MultiLevelCacheManager multiLevelCacheManager = mock(MultiLevelCacheManager.class);
         CacheReportService cacheReportService = mock(CacheReportService.class);
         TelemetryStreamService telemetryStreamService = mock(TelemetryStreamService.class);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long generation = guard.activateNextGeneration("dev-2");
         CollectorDataPostProcessor processor = createProcessor(
                 Runnable::run,
                 multiLevelCacheManager,
                 cacheReportService,
                 telemetryStreamService,
-                true
+                true,
+                guard
         );
 
         DataPoint point = createPoint("dev-2", "p2");
@@ -77,7 +90,7 @@ public class CollectorDataPostProcessorTest {
         point.getAdditionalConfig().put("reportEnabled", true);
         point.getAdditionalConfig().put("reportField", "temperature");
 
-        processor.savePointAsync("dev-2", point, 21.5);
+        processor.savePointAsync("dev-2", point, 21.5, generation);
 
         verify(multiLevelCacheManager, never()).put(any(CacheKey.class), any(), anyLong());
         verify(telemetryStreamService).append(eq("dev-2"), eq(point), any(ProcessResult.class));

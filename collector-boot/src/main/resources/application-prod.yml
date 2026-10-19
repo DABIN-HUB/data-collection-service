@@ -8,7 +8,7 @@ spring:
     password: ${COLLECTOR_TDENGINE_PASSWORD}
   data:
     redis:
-      host: ${COLLECTOR_REDIS_HOST:127.0.0.1}
+      host: ${COLLECTOR_REDIS_HOST:100.93.189.63}
       port: ${COLLECTOR_REDIS_PORT:6379}
       database: ${COLLECTOR_REDIS_DATABASE:0}
       timeout: ${COLLECTOR_REDIS_TIMEOUT:3000}

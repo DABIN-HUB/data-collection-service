@@ -1,32 +1,38 @@
 import { defineStore } from "pinia";
 
 import { deleteLocalDevice, getDeviceDiff, triggerFullConfigSync } from "@/api/config.api";
-import { getConfigDevices, getDeviceRuntime, getDeviceStatus, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
+import { getConfigDevices, getDeviceRuntime, getDeviceRuntimeSnapshot, getDeviceStatus, reloadDevices, startDevice, startLocalDevice, stopDevice } from "@/api/device.api";
 import type { DeviceInfo, DeviceRuntimeSnapshot, DeviceStatusResponse, DeviceViewModel } from "@/types/device";
 
-interface DeviceState {
-  loading: boolean;
-  operating: boolean;
-  error: string;
-  devices: DeviceViewModel[];
-  runtimeMap: Record<string, DeviceRuntimeSnapshot>;
-  selectedDeviceId: string;
-  lastUpdatedAt: number;
-  refreshGeneration: number;
+export interface DeviceActionResult<T = unknown> {
+  ok: boolean;
+  result?: T;
+  error?: string;
+  runtime?: DeviceRuntimeSnapshot;
+  refreshError?: string;
 }
 
 export const useDeviceStore = defineStore("device", {
-  state: (): DeviceState => ({
+  state: () => ({
     loading: false,
-    operating: false,
+    syncOperating: false,
     error: "",
-    devices: [],
-    runtimeMap: {},
+    syncError: "",
+    devices: [] as DeviceViewModel[],
+    runtimeMap: {} as Record<string, DeviceRuntimeSnapshot>,
+    runtimeErrors: {} as Record<string, string>,
+    deviceOperations: {} as Record<string, boolean>,
+    deviceErrors: {} as Record<string, string>,
+    deviceEpochs: {} as Record<string, number>,
+    runtimeReadEpochs: {} as Record<string, number>,
+    requestSequence: 0,
     selectedDeviceId: "",
     lastUpdatedAt: 0,
     refreshGeneration: 0
   }),
   getters: {
+    operating: (state) => state.syncOperating || Object.values(state.deviceOperations).some(Boolean),
+    isDeviceOperating: (state) => (deviceId: string) => Boolean(state.deviceOperations[deviceId]),
     selectedDevice: (state) => state.devices.find((device) => device.normalizedId === state.selectedDeviceId) || null,
     onlineCount: (state) => state.devices.filter((device) => resolveDeviceStatus(device) === "ONLINE").length,
     offlineCount: (state) => state.devices.filter((device) => resolveDeviceStatus(device) === "OFFLINE").length,
@@ -35,104 +41,183 @@ export const useDeviceStore = defineStore("device", {
   },
   actions: {
     async refresh() {
-      const requestGeneration = this.refreshGeneration + 1;
-      this.refreshGeneration = requestGeneration;
+      const generation = ++this.refreshGeneration;
+      const epochs = { ...this.deviceEpochs };
+      const reads = { ...this.runtimeReadEpochs };
       this.loading = true;
       this.error = "";
-      try {
-        const [deviceResponse, runtimeResponse] = await Promise.allSettled([
-          getConfigDevices(),
-          getDeviceRuntime()
-        ]);
-        if (requestGeneration !== this.refreshGeneration) {
-          return;
+      const [devices, runtime] = await Promise.allSettled([getConfigDevices(), getDeviceRuntime()]);
+      if (generation !== this.refreshGeneration) return;
+      const canCommit = (id: string) => (epochs[id] || 0) === (this.deviceEpochs[id] || 0)
+        && (reads[id] || 0) === (this.runtimeReadEpochs[id] || 0) && !this.isDeviceOperating(id);
+      const raw = devices.status === "fulfilled" && Array.isArray(devices.value.devices) ? devices.value.devices : null;
+      const ids = new Set([...this.devices.map((d) => d.normalizedId), ...Object.keys(this.runtimeMap), ...(raw || []).map(canonicalDeviceId)]);
+      if (runtime.status === "fulfilled") {
+        const rows = Array.isArray(runtime.value) ? runtime.value : [];
+        const seen = new Set<string>();
+        for (const row of rows) {
+          const id = canonicalDeviceId(row);
+          if (!id) continue;
+          seen.add(id);
+          if (canCommit(id)) this.commitRuntime({ ...row, deviceId: id });
         }
-        const nextRuntimeMap = runtimeResponse.status === "fulfilled"
-          ? buildRuntimeMap(runtimeResponse.value)
-          : this.runtimeMap;
-        if (runtimeResponse.status === "fulfilled") {
-          this.runtimeMap = nextRuntimeMap;
-        }
-        if (deviceResponse.status === "fulfilled") {
-          const rawDevices = Array.isArray(deviceResponse.value.devices) ? deviceResponse.value.devices : [];
-          this.devices = rawDevices.map((device) => normalizeDeviceViewModelWithRuntimeStatus(device, nextRuntimeMap));
-          if (!this.selectedDeviceId && this.devices.length > 0) {
-            this.selectedDeviceId = this.devices[0].normalizedId;
+        for (const id of ids) {
+          if (!canCommit(id)) continue;
+          if (!seen.has(id)) {
+            this.runtimeErrors[id] = "运行快照缺失";
           }
-          this.lastUpdatedAt = Date.now();
-        } else {
-          throw deviceResponse.reason;
         }
+      } else {
+        const message = errorMessage(runtime.reason, "设备运行状态加载失败");
+        this.error = message;
+        for (const id of ids) if (canCommit(id)) this.runtimeErrors[id] = message;
+      }
+      if (raw) {
+        const previous = this.devices;
+        this.devices = raw.filter((d) => canonicalDeviceId(d)).map((d) => {
+          const id = canonicalDeviceId(d);
+          const old = previous.find((item) => item.normalizedId === id);
+          return this.projectDevice(!canCommit(id) && old ? old : d);
+        });
+        // 读请求开始后被写入的设备不能被旧配置列表移除。
+        for (const old of previous) {
+          if (!canCommit(old.normalizedId) && !this.devices.some((d) => d.normalizedId === old.normalizedId)) this.devices.push(this.projectDevice(old));
+        }
+        const known = new Set(this.devices.map((d) => d.normalizedId));
+        for (const id of ids) if (!known.has(id) && canCommit(id)) this.clearDeviceIndexes(id);
+        if (!known.has(this.selectedDeviceId)) this.selectedDeviceId = this.devices[0]?.normalizedId || "";
+        this.lastUpdatedAt = Date.now();
+      } else if (devices.status === "rejected") {
+        this.error = [this.error, errorMessage(devices.reason, "设备列表加载失败")].filter(Boolean).join("；");
+      }
+      this.reprojectDevices();
+      this.loading = false;
+    },
+    projectDevice(device: DeviceInfo): DeviceViewModel {
+      const id = canonicalDeviceId(device);
+      return normalizeDeviceViewModelWithRuntimeStatus({
+        ...device,
+        status: device.configStatus as string | undefined ?? device.status,
+        runtimeStale: Boolean(this.runtimeErrors[id]),
+        runtimeError: this.runtimeErrors[id] || ""
+      }, this.runtimeMap);
+    },
+    reprojectDevices() {
+      this.devices = this.devices.map((d) => this.projectDevice(d));
+    },
+    commitRuntime(runtime: DeviceRuntimeSnapshot): boolean {
+      const id = canonicalDeviceId(runtime);
+      if (!id || isOlderRuntime(runtime, this.runtimeMap[id])) return false;
+      this.runtimeMap[id] = { ...runtime, deviceId: id };
+      this.runtimeErrors[id] = "";
+      this.reprojectDevices();
+      return true;
+    },
+    async refreshRuntime(deviceId: string) {
+      const epoch = this.deviceEpochs[deviceId] || 0;
+      const ticket = ++this.requestSequence;
+      this.runtimeReadEpochs[deviceId] = ticket;
+      const current = () => this.runtimeReadEpochs[deviceId] === ticket && (this.deviceEpochs[deviceId] || 0) === epoch;
+      try {
+        const runtime = await getDeviceRuntimeSnapshot(deviceId);
+        if (!current()) return;
+        if (canonicalDeviceId(runtime) !== deviceId) throw new Error("设备运行快照身份不匹配");
+        this.commitRuntime(runtime);
       } catch (error) {
-        if (requestGeneration !== this.refreshGeneration) {
-          return;
-        }
-        this.error = error instanceof Error ? error.message : "设备列表加载失败";
-      } finally {
-        if (requestGeneration === this.refreshGeneration) {
-          this.loading = false;
-        }
+        if (!current()) return;
+        const message = errorMessage(error, "设备运行状态加载失败");
+        this.runtimeErrors[deviceId] = message;
+        this.reprojectDevices();
+        return message;
       }
     },
-    selectDevice(deviceId: string) {
-      this.selectedDeviceId = deviceId;
+    selectDevice(deviceId: string) { this.selectedDeviceId = deviceId; },
+    start(deviceId: string) { return this.operate(() => startDevice(deviceId), deviceId); },
+    startSmart(deviceId: string) {
+      const device = this.devices.find((d) => d.normalizedId === deviceId);
+      return this.operate(() => resolveDeviceStartMode(device) === "local" ? startLocalDevice(deviceId) : startDevice(deviceId), deviceId);
     },
-    async start(deviceId: string) {
-      await this.operate(() => startDevice(deviceId));
-    },
-    async startSmart(deviceId: string) {
-      const device = this.devices.find((item) => item.normalizedId === deviceId);
-      await this.operate(() => resolveDeviceStartMode(device) === "local" ? startLocalDevice(deviceId) : startDevice(deviceId));
-    },
-    async stop(deviceId: string) {
-      await this.operate(() => stopDevice(deviceId));
-    },
-    async reload() {
-      await this.operate(() => reloadDevices());
-    },
-    async syncConfig() {
-      await this.operate(() => triggerFullConfigSync());
-    },
-    async syncRemoteDevices() {
-      await this.operate(async () => {
-        await triggerFullConfigSync();
-        await reloadDevices();
-      });
-    },
+    stop(deviceId: string) { return this.operate(() => stopDevice(deviceId), deviceId); },
+    reload() { return this.operate(() => reloadDevices()); },
+    syncConfig() { return this.operate(() => triggerFullConfigSync()); },
+    syncRemoteDevices() { return this.syncConfig(); },
     async deleteLocal(deviceId: string) {
-      await this.operate(() => deleteLocalDevice(deviceId));
-      if (!this.error && this.selectedDeviceId === deviceId) {
-        this.selectedDeviceId = this.devices[0]?.normalizedId || "";
+      return this.operate(async () => {
+        const result = await deleteLocalDevice(deviceId);
+        ++this.refreshGeneration;
+        this.loading = false;
+        this.devices = this.devices.filter((d) => d.normalizedId !== deviceId);
+        this.clearDeviceIndexes(deviceId);
+        if (this.selectedDeviceId === deviceId) this.selectedDeviceId = this.devices[0]?.normalizedId || "";
+        return result;
+      }, deviceId, false);
+    },
+    clearDeviceIndexes(deviceId: string) {
+      delete this.runtimeMap[deviceId];
+      delete this.runtimeErrors[deviceId];
+      delete this.deviceErrors[deviceId];
+      delete this.deviceEpochs[deviceId];
+      delete this.runtimeReadEpochs[deviceId];
+      // 在途写操作仍持锁，只有它自己的 finally 可以释放。
+      if (!this.deviceOperations[deviceId]) delete this.deviceOperations[deviceId];
+    },
+    async loadStatus(deviceId: string): Promise<DeviceStatusResponse> { return getDeviceStatus(deviceId); },
+    async loadDiff(deviceId: string): Promise<unknown> { return getDeviceDiff(deviceId); },
+    async operate<T>(action: () => Promise<T>, deviceId = "", refreshRuntime = true): Promise<DeviceActionResult<T>> {
+      if (deviceId ? this.isDeviceOperating(deviceId) : this.syncOperating) return { ok: false, error: deviceId ? "该设备正在执行操作" : "配置同步正在执行" };
+      if (deviceId) {
+        this.deviceOperations[deviceId] = true;
+        this.deviceErrors[deviceId] = "";
+        this.deviceEpochs[deviceId] = ++this.requestSequence;
+      } else {
+        this.syncOperating = true;
+        this.syncError = "";
       }
-    },
-    async loadStatus(deviceId: string): Promise<DeviceStatusResponse> {
-      return getDeviceStatus(deviceId);
-    },
-    async loadDiff(deviceId: string): Promise<unknown> {
-      return getDeviceDiff(deviceId);
-    },
-    async operate(action: () => Promise<unknown>) {
-      this.operating = true;
-      this.error = "";
       try {
         const result = await action();
+        if (result && typeof result === "object" && "accepted" in result && result.accepted === false) throw new Error("后端未接受设备操作");
         const runtime = extractOperationRuntime(result);
-        if (runtime?.deviceId) {
-          this.runtimeMap = { ...this.runtimeMap, [runtime.deviceId]: runtime };
+        if (deviceId) {
+          if (refreshRuntime) this.deviceEpochs[deviceId] = ++this.requestSequence;
+          if (runtime && canonicalDeviceId(runtime) !== deviceId) throw new Error("设备操作返回身份不匹配");
+          if (runtime) this.commitRuntime(runtime);
+          const refreshError = refreshRuntime && !runtime ? await this.refreshRuntime(deviceId) : undefined;
+          return { ok: true, result, runtime: this.runtimeMap[deviceId], refreshError };
         }
         await this.refresh();
-        return result;
+        return { ok: true, result, refreshError: this.error || undefined };
       } catch (error) {
-        this.error = error instanceof Error ? error.message : "设备操作失败";
+        const message = errorMessage(error, "设备操作失败");
+        if (deviceId) {
+          this.deviceErrors[deviceId] = message;
+          this.runtimeErrors[deviceId] = message;
+          this.reprojectDevices();
+        } else this.syncError = message;
+        return { ok: false, error: message };
       } finally {
-        this.operating = false;
+        if (deviceId) delete this.deviceOperations[deviceId];
+        else this.syncOperating = false;
       }
     }
   }
 });
 
+export function canonicalDeviceId(device: Pick<DeviceInfo, "deviceId" | "id"> | undefined): string {
+  return String(device?.deviceId || device?.id || "");
+}
+
+export function isOlderRuntime(next: DeviceRuntimeSnapshot, previous?: DeviceRuntimeSnapshot): boolean {
+  if (!previous) return false;
+  if (previous.generation !== undefined && (next.generation === undefined || next.generation < previous.generation)) return true;
+  return previous.generatedAt !== undefined && (next.generatedAt === undefined || next.generatedAt < previous.generatedAt);
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function normalizeDeviceViewModel(device: DeviceInfo, runtimeMap: Record<string, DeviceRuntimeSnapshot> = {}): DeviceViewModel {
-  const normalizedId = String(device.deviceId || device.id || device.connectionKey || "");
+  const normalizedId = canonicalDeviceId(device);
   const runtime = normalizedId ? runtimeMap[normalizedId] : undefined;
   return {
     ...device,
@@ -155,8 +240,9 @@ export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, ru
   };
 }
 
-export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" {
+export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" | "UNKNOWN" | "STALE" {
   const runtime = device.runtime;
+  if (device.runtimeStale) return runtime ? "STALE" : "UNKNOWN";
   switch (runtime?.phase) {
     case "ONLINE": return "ONLINE";
     case "DEGRADED":
@@ -167,9 +253,8 @@ export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNEC
     case "RECONNECTING": return "CONNECTING";
     case "STOPPED": return "OFFLINE";
   }
-  if (device.status === "ERROR") return "ERROR";
-  if (device.status === "DISABLED") return "DISABLED";
-  return "OFFLINE";
+  if (device.configStatus === "DISABLED" || device.status === "DISABLED") return "DISABLED";
+  return "UNKNOWN";
 }
 
 function extractOperationRuntime(result: unknown): DeviceRuntimeSnapshot | undefined {
@@ -202,8 +287,4 @@ export function isLocalDevice(device: DeviceViewModel | undefined): boolean {
 
 export function resolveDeviceStartMode(device: DeviceViewModel | undefined): "local" | "remote" {
   return isLocalDevice(device) ? "local" : "remote";
-}
-
-function buildRuntimeMap(items: DeviceRuntimeSnapshot[]): Record<string, DeviceRuntimeSnapshot> {
-  return Object.fromEntries(items.map((item) => [item.deviceId, item]));
 }

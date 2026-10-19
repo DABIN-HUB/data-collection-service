@@ -7,6 +7,7 @@ import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.port.CollectionHealthReporter;
+import com.wangbin.collector.core.config.manager.ConfigManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -45,6 +46,8 @@ public class DeviceLifecycleCoordinator {
     private final ThreadPoolExecutor deviceStartExecutor;
     private final Map<String, StartFuture> startingFutures = new ConcurrentHashMap<>();
     private final Map<String, DeviceLifecycleLock> lifecycleLocks = new ConcurrentHashMap<>();
+    private volatile java.util.function.Consumer<String> cancelConfigTasks = ignored -> { };
+    private volatile java.util.function.Predicate<String> hasPendingConfigRestart = ignored -> false;
 
     @Autowired
     public DeviceLifecycleCoordinator(CollectionManager collectionManager,
@@ -92,29 +95,114 @@ public class DeviceLifecycleCoordinator {
 
     public boolean startDevice(String deviceId) {
         try {
-            StartReservation reservation = reserveStart(deviceId);
-            if (reservation == null) {
-                return false;
+            StartReservation reservation;
+            DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+            try {
+                if (runtimeState.isClosed()) return false;
+                if (runtimeState.getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING
+                        && (runtimeState.isRunning(deviceId) || runtimeState.isStarting(deviceId)
+                        || hasPendingConfigRestart.test(deviceId))) return true;
+                if (!runtimeState.requestRunning(deviceId)) return false;
+                reservation = deviceStartPreparer.reserve(deviceId);
+            } finally {
+                releaseLifecycleLock(deviceId, lifecycleLock);
             }
-            return continueReservedStart(reservation);
+            return reservation != null && continueReservedStart(reservation);
         } catch (Exception e) {
             log.error("启动设备失败, 设备={}", deviceId, e);
             return false;
         }
     }
 
-    StartReservation reserveStartForConfigRestart(String deviceId) throws Exception {
-        return reserveStart(deviceId);
-    }
-
-    private StartReservation reserveStart(String deviceId) throws Exception {
+    /** 保存后启动只沿用已有 RUNNING 意图；并发 STOP 优先于保存请求。 */
+    public StartAfterConfigSaveResult startDeviceAfterConfigSave(String deviceId, long expectedIntentRevision) {
+        StartReservation reservation;
         DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
         try {
+            if (runtimeState.isClosed()) return new StartAfterConfigSaveResult(false, "FAILED");
+            if (getIntentRevision(deviceId) != expectedIntentRevision
+                    && getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.STOPPED) {
+                return new StartAfterConfigSaveResult(false, "STOP_SUPERSEDED");
+            }
+            if (getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING) {
+                if (isDeviceConfigurationChanged(deviceId)) {
+                    boolean pending = hasPendingConfigRestart.test(deviceId);
+                    return new StartAfterConfigSaveResult(pending, pending ? "RESTART_PENDING" : "FAILED");
+                }
+                if (runtimeState.isRunning(deviceId)) return new StartAfterConfigSaveResult(true, "ALREADY_RUNNING");
+                if (runtimeState.isStarting(deviceId)) return new StartAfterConfigSaveResult(true, "ACCEPTED");
+            }
+            if (!runtimeState.requestRunning(deviceId)) return new StartAfterConfigSaveResult(false, "FAILED");
+            reservation = deviceStartPreparer.reserve(deviceId);
+        } catch (Exception exception) {
+            log.error("保存后预留设备启动失败, 设备={}", deviceId, exception);
+            return new StartAfterConfigSaveResult(false, "FAILED");
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+        boolean accepted = reservation != null && continueReservedStart(reservation);
+        return new StartAfterConfigSaveResult(accepted, accepted ? "ACCEPTED" : "FAILED");
+    }
+
+    public record StartAfterConfigSaveResult(boolean accepted, String status) { }
+
+    /** 只读取既有重启任务的所有权，不在设备生命周期锁中取得协调器全局锁。 */
+    void setConfigRestartPending(java.util.function.Predicate<String> pending) {
+        hasPendingConfigRestart = pending;
+    }
+
+    StartReservation reserveStartForConfigRestart(String deviceId) throws Exception {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            if (!runtimeState.isRunningIntent(deviceId, getIntentRevision(deviceId))) return null;
             return deviceStartPreparer.reserve(deviceId);
         } finally {
             releaseLifecycleLock(deviceId, lifecycleLock);
         }
     }
+
+    /** 配置重启的停止与预留在同一个设备锁中完成，绝不改写用户意图。 */
+    StartReservation reserveStartForConfigRestart(String deviceId, long revision, boolean wasRunning, boolean wasStarting)
+            throws Exception {
+        return reserveStartForConfigRestart(deviceId, revision, wasRunning, wasStarting, () -> true);
+    }
+
+    StartReservation reserveStartForConfigRestart(String deviceId, long revision, boolean wasRunning, boolean wasStarting,
+                                                  java.util.function.BooleanSupplier taskIsCurrent) throws Exception {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            if (!runtimeState.isRunningIntent(deviceId, revision) || !taskIsCurrent.getAsBoolean()) return null;
+            if (!stopDevice(deviceId, wasRunning, wasStarting)) return null;
+            if (!runtimeState.isRunningIntent(deviceId, revision) || !taskIsCurrent.getAsBoolean()) return null;
+            log.info("配置重启预留 deviceId={} action=START source=CONFIG_RESTART intentRevision={} desiredState={}",
+                    deviceId, revision, runtimeState.getDesiredState(deviceId));
+            return deviceStartPreparer.reserve(deviceId);
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+    }
+
+    public SchedulerRuntimeState.DesiredState getDesiredState(String deviceId) {
+        return runtimeState.getDesiredState(deviceId);
+    }
+
+    public long getIntentRevision(String deviceId) {
+        return runtimeState.getIntentRevision(deviceId);
+    }
+
+    boolean isRunningIntent(String deviceId, long revision) {
+        return runtimeState.isRunningIntent(deviceId, revision);
+    }
+
+    void setConfigTaskCancellation(java.util.function.Consumer<String> cancellation) {
+        cancelConfigTasks = cancellation;
+    }
+
+    void beginShutdown() {
+        runtimeState.beginShutdown();
+    }
+
+
 
     boolean continueReservedStart(StartReservation reservation) {
         if (reservation == null) {
@@ -158,10 +246,6 @@ public class DeviceLifecycleCoordinator {
                 discardStaleStart(deviceId, preparation.generation());
                 return false;
             }
-            performanceMonitor.resetDeviceRuntimeWindow(deviceId, preparation.generation());
-            if (acquisitionRuntimeTracker != null) {
-                acquisitionRuntimeTracker.open(deviceId, preparation.generation(), preparation.deviceInfo(), preparation.dataPoints());
-            }
             if (!connectDevice(deviceId, preparation.connectTimeoutMs(), preparation.generation())) {
                 cleanupFailedStart(deviceId, preparation.generation());
                 return false;
@@ -185,11 +269,16 @@ public class DeviceLifecycleCoordinator {
             if (!isStartGenerationCurrent(deviceId, preparation.generation())) {
                 return false;
             }
-            try {
-                collectionManager.registerDevice(preparation.deviceInfo());
-                collectionManager.bindRuntimeGeneration(deviceId, preparation.generation());
-            } catch (Exception e) {
-                log.debug("register 设备 skipped, 设备={}", deviceId, e);
+            collectionManager.registerDevice(preparation.deviceInfo());
+            collectionManager.bindRuntimeGeneration(deviceId, preparation.generation());
+            collectionManager.bindRuntimeConfigurationVersion(deviceId, preparation.generation(),
+                    runtimeState.getAppliedConfigVersion(deviceId));
+            log.info("采集器注册 deviceId={} generation={} configVersion={} desiredState={} actualState=STARTING",
+                    deviceId, preparation.generation(), runtimeState.getAppliedConfigVersion(deviceId),
+                    runtimeState.getDesiredState(deviceId));
+            performanceMonitor.resetDeviceRuntimeWindow(deviceId, preparation.generation());
+            if (acquisitionRuntimeTracker != null) {
+                acquisitionRuntimeTracker.open(deviceId, preparation.generation(), preparation.deviceInfo(), preparation.dataPoints());
             }
             return isStartGenerationCurrent(deviceId, preparation.generation());
         } finally {
@@ -274,8 +363,8 @@ public class DeviceLifecycleCoordinator {
                 return null;
             }
             Future<?> connectFuture = deviceStartExecutor.submit(() -> {
-                collectionManager.connectDevice(deviceId);
-                deviceStartPreparer.loadDataPointsAndAdaptiveConfig(deviceId);
+                collectionManager.connectDevice(deviceId, generation);
+                // 点位准备已在设备锁中完成，迟到连接不再触发全设备或点位配置重载。
             });
             StartFuture startFuture = new StartFuture(connectFuture, generation);
             startingFutures.put(deviceId, startFuture);
@@ -289,7 +378,80 @@ public class DeviceLifecycleCoordinator {
     }
 
     public boolean stopDevice(String deviceId) {
-        return stopDevice(deviceId, false, false);
+        // 取消操作放在设备锁之外，避免配置协调器锁与设备锁反向嵌套。
+        cancelConfigTasks.accept(deviceId);
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            runtimeState.requestStopped(deviceId);
+            log.info("设备停止意图 deviceId={} action=STOP desiredState={} intentRevision={}",
+                    deviceId, runtimeState.getDesiredState(deviceId), runtimeState.getIntentRevision(deviceId));
+            return stopDevice(deviceId, false, false);
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+            // 覆盖取消与写入 STOP 意图之间刚刚入队的配置任务。
+            cancelConfigTasks.accept(deviceId);
+        }
+    }
+
+    long invalidateDeviceForDeletion(String deviceId) {
+        cancelConfigTasks.accept(deviceId);
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            long revision = runtimeState.requestStopped(deviceId);
+            invalidateDeviceForConfigChange(deviceId);
+            return revision;
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+    }
+
+    /** 删除事件必须在单设备生命周期锁内同时核对版本墓碑和当前缺失状态。 */
+    long invalidateDeviceForDeletion(String deviceId, long configVersion, ConfigManager configManager) {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            long[] revision = {-1L};
+            configManager.runIfConfigurationCurrent(deviceId, configVersion, () -> {
+                if (!configManager.containsDevice(deviceId)) revision[0] = runtimeState.requestStopped(deviceId);
+            });
+            if (revision[0] < 0L) return -1L;
+            // 先释放配置读锁再进入采集门，避免与 telemetry 的采集门→配置读锁形成反向嵌套。
+            invalidateDeviceForConfigChange(deviceId);
+            return revision[0];
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+    }
+
+    boolean stopDeletedDevice(String deviceId, long revision, boolean wasRunning, boolean wasStarting,
+                              long configVersion, ConfigManager configManager) {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            boolean[] currentDeletion = {false};
+            configManager.runIfConfigurationCurrent(deviceId, configVersion, () ->
+                    currentDeletion[0] = !configManager.containsDevice(deviceId)
+                            && getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.STOPPED
+                            && getIntentRevision(deviceId) == revision);
+            if (!currentDeletion[0]) return true;
+            // 配置读锁不包围采集门或资源清理；新代次启动仍被当前生命周期锁阻挡。
+            boolean stopped = stopDevice(deviceId, wasRunning, wasStarting);
+            if (stopped) runtimeState.forgetStoppedIntentAfterDeletion(deviceId, revision);
+            return stopped;
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
+    }
+
+    boolean stopDeletedDevice(String deviceId, long revision, boolean wasRunning, boolean wasStarting) {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            if (runtimeState.getDesiredState(deviceId) != SchedulerRuntimeState.DesiredState.STOPPED
+                    || getIntentRevision(deviceId) != revision) return true;
+            boolean stopped = stopDevice(deviceId, wasRunning, wasStarting);
+            if (stopped) runtimeState.forgetStoppedIntentAfterDeletion(deviceId, revision);
+            return stopped;
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
     }
 
     boolean stopDeviceAfterConfigInvalidation(String deviceId,
@@ -346,7 +508,9 @@ public class DeviceLifecycleCoordinator {
     }
 
     public void stopAllDevices() {
-        List<String> activeDevices = new ArrayList<>(runtimeState.getActiveDeviceIds());
+        java.util.Set<String> targets = new java.util.HashSet<>(runtimeState.getKnownDeviceIds());
+        targets.addAll(runtimeState.getDesiredRunningDeviceIds());
+        List<String> activeDevices = new ArrayList<>(targets);
         for (String deviceId : activeDevices) {
             try {
                 stopDevice(deviceId);
@@ -376,6 +540,21 @@ public class DeviceLifecycleCoordinator {
         performanceMonitor.initializeDeviceBatchSize(deviceId, defaultBatchSize, maxBatchSize);
     }
 
+    boolean isDeviceConfigurationChanged(String deviceId) {
+        return !deviceStartPreparer.containsDevice(deviceId)
+                || runtimeState.getAppliedConfigVersion(deviceId) != deviceStartPreparer.getConfigVersion(deviceId);
+    }
+
+    List<String> getChangedConfigDeviceIds() {
+        return runtimeState.getDesiredRunningDeviceIds().stream()
+                .filter(this::isDeviceConfigurationChanged)
+                .toList();
+    }
+
+    boolean hasDeviceConfiguration(String deviceId) {
+        return deviceStartPreparer.containsDevice(deviceId);
+    }
+
     public List<String> getRunningDevices() {
         return runtimeState.getRunningDevices();
     }
@@ -389,9 +568,24 @@ public class DeviceLifecycleCoordinator {
     }
 
     void invalidateDeviceForConfigChange(String deviceId) {
-        collectionTaskGuard.clearDevice(deviceId);
-        cancelStartingFuture(deviceId);
-        runtimeState.clearStarting(deviceId);
+        long generation = runtimeState.getStartingGeneration(deviceId);
+        DeviceScheduleInfo info = runtimeState.getScheduleInfo(deviceId);
+        if (generation == 0L && info != null) generation = info.getGeneration();
+        if (generation == 0L) return;
+        collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
+        cancelStartingFutureIfGeneration(deviceId, generation);
+        runtimeState.clearStartingIfGeneration(deviceId, generation);
+    }
+
+    boolean invalidateDeviceForConfigChange(String deviceId, long revision) {
+        DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(deviceId);
+        try {
+            if (!runtimeState.isRunningIntent(deviceId, revision)) return false;
+            invalidateDeviceForConfigChange(deviceId);
+            return true;
+        } finally {
+            releaseLifecycleLock(deviceId, lifecycleLock);
+        }
     }
 
     private boolean completeStartAfterConnect(String deviceId, StartPreparation preparation) {
@@ -444,6 +638,9 @@ public class DeviceLifecycleCoordinator {
             }
             collectionStatistics.startCollection(deviceId, preparation.dataPoints().size());
             collectionHealthReporter.markDeviceStarted(deviceId);
+            log.info("设备连接完成并注册任务 deviceId={} generation={} desiredState={} running=true configVersion={} batchTasks={}",
+                    deviceId, generation, runtimeState.getDesiredState(deviceId),
+                    runtimeState.getAppliedConfigVersion(deviceId), batchTasks.size());
             return true;
         } finally {
             releaseLifecycleLock(deviceId, lifecycleLock);
@@ -451,7 +648,9 @@ public class DeviceLifecycleCoordinator {
     }
 
     private boolean isStartGenerationCurrent(String deviceId, long generation) {
-        return collectionTaskGuard.isCurrent(deviceId, generation)
+        return !runtimeState.isClosed()
+                && runtimeState.getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING
+                && collectionTaskGuard.isCurrent(deviceId, generation)
                 && runtimeState.isStartingGeneration(deviceId, generation);
     }
 

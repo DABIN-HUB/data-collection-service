@@ -1,0 +1,727 @@
+.exact-page.collection-view {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 24px 28px 34px;
+  flex: 1 1 auto;
+  gap: 18px;
+  overflow: auto;
+  color: var(--console-text-secondary);
+  background: transparent;
+  font-size: 13px;
+  line-height: 1.5;
+  scrollbar-gutter: stable;
+}
+.collection-view > .section-heading,
+.collection-view > .exact-page-body {
+  flex: 0 0 auto;
+}
+.collection-view > .section-heading {
+  min-height: 35px;
+  padding: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: 0;
+}
+.collection-view .heading-title-line {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.collection-view .heading-title-line h1 {
+  min-width: 0;
+  color: var(--console-text-primary);
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.collection-view .collection-protocol-count {
+  padding: 3px 8px;
+  color: var(--console-text-muted);
+  border: 1px solid var(--console-border);
+  border-radius: 5px;
+  background: var(--console-panel-soft);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.collection-view > .exact-page-body {
+  min-width: 0;
+  overflow: visible;
+  gap: 16px;
+}
+.collection-view .exact-page-body > * {
+  min-width: 0;
+  flex-shrink: 0;
+}
+.collection-view .collection-sources {
+  display: grid;
+  min-width: 0;
+  padding: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.collection-view .collection-protocol-source {
+  margin: 0 16px;
+}
+.collection-view .heading-actions {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.exact-page.collection-view :deep(button:not(.el-button)) {
+  min-height: 35px;
+  padding: 0 12px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.exact-page.collection-view :deep(button:not(.el-button, :disabled):hover) {
+  color: var(--console-text-primary);
+  border-color: var(--console-primary-hover);
+  background: var(--app-control-bg-hover);
+}
+.exact-page.collection-view :deep(button:not(.el-button).primary) {
+  color: #fff;
+  border-color: var(--console-primary);
+  background: var(--console-primary);
+}
+.exact-page.collection-view :deep(button:not(.el-button).primary:not(:disabled):hover) {
+  border-color: var(--console-primary-hover);
+  background: var(--console-primary-hover);
+}
+.exact-page.collection-view :deep(.config-ops-panel button:not(.el-button, :disabled).primary) {
+  color: var(--console-text-secondary);
+  border-color: var(--console-border);
+  background: transparent;
+}
+.exact-page.collection-view :deep(.config-ops-panel button:not(.el-button, :disabled).primary:hover) {
+  color: var(--console-text-primary);
+  border-color: var(--console-primary-hover);
+  background: var(--app-control-bg-hover);
+}
+.exact-page.collection-view :deep(button:not(.el-button):disabled) {
+  color: var(--console-input-text-disabled);
+  border-color: var(--console-input-border-disabled);
+  background: var(--console-input-bg-disabled);
+  cursor: not-allowed;
+  opacity: 1;
+}
+.exact-page.collection-view :deep(.config-ops-panel button.config-risk-action:not(.el-button, :disabled)) {
+  color: var(--app-color-warning);
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
+}
+.exact-page.collection-view :deep(.config-ops-panel button.config-risk-action:not(.el-button, :disabled):hover) {
+  color: var(--app-color-warning);
+  border-color: var(--app-color-warning);
+  background: var(--app-color-warning-soft);
+}
+.exact-page.collection-view :deep(button:focus-visible),
+.exact-page.collection-view :deep(input:focus-visible),
+.exact-page.collection-view :deep(select:focus-visible),
+.exact-page.collection-view :deep(textarea:focus-visible),
+.collection-view :deep(.config-ops-panel summary:focus-visible),
+.collection-view [tabindex]:focus-visible,
+.collection-view summary:focus-visible {
+  outline: 2px solid var(--console-primary-hover);
+  outline-offset: 3px;
+}
+.collection-view .exact-global-config,
+.collection-view .collection-protocol-table,
+.collection-view .exact-json-panel,
+.collection-view :deep(.config-ops-panel) {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: var(--console-panel);
+  box-shadow: none;
+}
+.collection-view .exact-surface-head,
+.collection-view .exact-table-title,
+.collection-view :deep(.config-ops-panel > .exact-surface-head) {
+  min-height: 46px;
+  margin: 0;
+  padding: 12px 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border-bottom: 1px solid var(--console-border-soft);
+}
+.collection-view .exact-surface-head h2,
+.collection-view .exact-table-title h2,
+.collection-view :deep(.config-ops-panel h2) {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.collection-view .exact-surface-head > span,
+.collection-view .exact-table-title > span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+.collection-view .collection-summary-grid {
+  display: grid;
+  padding: 16px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+}
+.collection-view .collection-summary-grid > .exact-config-item {
+  min-width: 0;
+  padding: 0 18px;
+  gap: 7px;
+  border: 0;
+  border-right: 1px solid var(--console-border);
+  border-radius: 0;
+  background: transparent;
+}
+.collection-view .collection-summary-grid > .exact-config-item:last-child {
+  border-right: 0;
+}
+.collection-view .collection-summary-grid span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+.collection-view .collection-summary-grid strong {
+  color: var(--console-text-primary);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.collection-view .collection-summary-grid > .exact-config-item:last-child strong {
+  align-self: center;
+  font-size: 18px;
+}
+.collection-view :deep(.config-ops-panel .surface-grid.two) {
+  padding: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.collection-view :deep(.config-ops-panel .surface-card) {
+  min-width: 0;
+  padding: 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+.collection-view :deep(.config-ops-panel .surface-grid.two .surface-card) {
+  padding: 0;
+}
+.collection-view :deep(.config-ops-panel .surface-grid.two .surface-card + .surface-card) {
+  padding-top: 16px;
+  border-top: 1px solid var(--console-border-soft);
+}
+.collection-view :deep(.config-ops-panel .surface-card-head) {
+  min-width: 0;
+  min-height: 35px;
+  margin-bottom: 12px;
+  padding-bottom: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border-bottom: 0;
+}
+.collection-view :deep(.config-ops-panel h3) {
+  margin: 0;
+  color: var(--console-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.collection-view :deep(.config-ops-panel .inline-actions) {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.collection-view :deep(.config-ops-panel label.inline-check) {
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  line-height: 1.5;
+}
+.exact-page.collection-view :deep(.config-ops-panel input[type="checkbox"]) {
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--console-primary);
+}
+.collection-view :deep(.config-ops-panel .json-view) {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--app-code-text);
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
+  background: var(--console-bg-soft);
+  font-family: var(--app-font-family);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.collection-view :deep(.config-ops-panel .config-export-view) {
+  min-height: 184px;
+  max-height: 248px;
+}
+.exact-page.collection-view :deep(textarea.config-import-textarea) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 184px;
+  min-height: 184px;
+  max-height: 420px;
+  margin: 0 0 12px;
+  padding: 12px;
+  resize: vertical;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-input-border);
+  border-radius: 5px;
+  background: var(--console-input-bg);
+  font-family: var(--app-font-family);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.collection-view :deep(.config-ops-panel .wide) {
+  width: auto;
+  max-width: 100%;
+}
+.collection-view :deep(.config-ops-panel .compact-result-view) {
+  min-height: 68px;
+  max-height: 160px;
+  margin-top: 12px;
+}
+.collection-view :deep(.config-ops-panel .config-sync-form) {
+  margin-bottom: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px 16px;
+}
+.collection-view :deep(.config-ops-panel .config-sync-form label) {
+  min-width: 0;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.exact-page.collection-view :deep(.config-sync-form select) {
+  width: 100%;
+  min-width: 0;
+  height: 35px;
+  min-height: 35px;
+  color: var(--console-text-secondary);
+  background: var(--console-input-bg);
+}
+.exact-page.collection-view :deep(.config-sync-form select:disabled) {
+  color: var(--console-input-text-disabled);
+  border-color: var(--console-input-border-disabled);
+  background: var(--console-input-bg-disabled);
+  cursor: not-allowed;
+  opacity: 1;
+}
+.collection-view :deep(.config-ops-panel .config-sync-status-grid) {
+  display: grid;
+  margin-top: 14px;
+  padding: 14px 0 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  border-top: 1px solid var(--console-border-soft);
+}
+.collection-view :deep(.config-ops-panel .config-sync-status-grid .exact-config-item) {
+  min-width: 0;
+  padding: 0;
+  gap: 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.collection-view :deep(.config-ops-panel .config-sync-status-grid span) {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+.collection-view :deep(.config-ops-panel .config-sync-status-grid strong) {
+  color: var(--console-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.collection-view .collection-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 340px;
+  overflow: auto;
+  border-radius: 0 0 8px 8px;
+  scrollbar-gutter: stable;
+}
+.collection-view .collection-table-scroll table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 13px;
+}
+.collection-view .collection-col-name { width: 21%; }
+.collection-view .collection-col-code { width: 22%; }
+.collection-view .collection-col-port { width: 10%; }
+.collection-view .collection-col-mode { width: 19%; }
+.collection-view .collection-col-capability { width: 16%; }
+.collection-view .collection-col-action { width: 12%; }
+.collection-view .collection-table-scroll th,
+.collection-view .collection-table-scroll td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--console-border-soft);
+  text-align: left;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.collection-view .collection-table-scroll th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--console-text-muted);
+  background: var(--console-bg-soft);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.collection-view .collection-table-scroll td {
+  height: 54px;
+  color: var(--console-text-secondary);
+  line-height: 1.6;
+}
+.collection-view .collection-table-scroll tbody tr:last-child td {
+  border-bottom: 0;
+}
+.collection-view .collection-table-scroll tbody tr:hover td {
+  background: var(--console-panel-soft);
+}
+.collection-view .collection-table-scroll td strong {
+  color: var(--console-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+.collection-view .collection-table-scroll code {
+  color: var(--app-code-text);
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+}
+.collection-view .capability-badge {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 3px 7px;
+  color: var(--console-text-secondary);
+  border: 1px solid var(--console-border);
+  border-radius: 5px;
+  background: var(--console-panel-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.collection-view .collection-empty {
+  display: grid;
+  min-height: 116px;
+  padding: 24px 16px;
+  place-items: center;
+  color: var(--console-text-muted);
+  border-top: 1px solid var(--console-border-soft);
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.collection-view .exact-json-panel summary {
+  padding: 12px 16px;
+  color: var(--console-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.collection-view .exact-json-panel[open] summary {
+  border-bottom: 1px solid var(--console-border-soft);
+}
+.collection-view .exact-json-panel > .json-view {
+  min-height: 160px;
+  max-height: 360px;
+  margin: 14px 16px 16px;
+  padding: 14px;
+  overflow: auto;
+  color: var(--app-code-text);
+  border: 1px solid var(--console-border-soft);
+  border-radius: 5px;
+  background: var(--console-bg-soft);
+  font-family: var(--app-font-family);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 点位与差异占主工作面；来源证据、同步及原始文档在辅助列保留。 */
+.collection-view .collection-workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.collection-view .collection-main-stack,
+.collection-view .collection-aside-stack {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+
+.collection-view .collection-device-context {
+  display: flex;
+  min-width: 0;
+  padding: 11px 14px;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+
+.collection-device-context > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px 14px;
+  flex-wrap: wrap;
+}
+
+.collection-device-context strong {
+  color: var(--console-text-primary);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.collection-device-context span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.collection-device-context > a {
+  margin-left: auto;
+}
+
+.collection-view .collection-device-context a,
+.collection-view .collection-diff-body a {
+  color: var(--console-primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.collection-view a:focus-visible {
+  outline: 2px solid var(--console-primary);
+  outline-offset: 3px;
+}
+
+.collection-point-card,
+.collection-diff-card,
+.collection-source-card,
+.collection-protocol-disclosure {
+  min-width: 0;
+  border: 1px solid var(--console-border-soft);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+
+.collection-view .exact-table-title {
+  display: flex;
+  justify-content: space-between;
+}
+
+.collection-point-scroll {
+  min-width: 0;
+  max-height: 360px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.collection-point-scroll table {
+  width: 100%;
+  min-width: 660px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.collection-point-scroll th,
+.collection-point-scroll td {
+  height: 40px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--console-border-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.collection-point-scroll th {
+  position: sticky;
+  top: 0;
+  color: var(--console-text-muted);
+  background: var(--console-bg-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.collection-point-scroll td {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.collection-view .collection-unavailable,
+.collection-diff-body {
+  margin: 0;
+  padding: 16px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.collection-diff-body p {
+  margin: 0 0 12px;
+}
+
+.collection-protocol-disclosure > summary {
+  display: flex;
+  padding: 13px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.collection-protocol-disclosure > summary span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.collection-view .collection-protocol-disclosure > .collection-protocol-table {
+  border: 0;
+  border-top: 1px solid var(--console-border-soft);
+  border-radius: 0;
+}
+
+@media (max-width: 1440px) {
+  .exact-page.collection-view { padding: 20px 22px 24px; }
+}
+
+@media (max-width: 1100px) {
+  .collection-view .collection-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .exact-page.collection-view { padding: 18px 20px 22px; }
+  .collection-view :deep(.config-ops-panel .surface-grid.two) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collection-view :deep(.config-ops-panel .config-sync-status-grid) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .collection-view .collection-sources {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .collection-view :deep(.config-ops-panel .config-sync-form) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collection-view .collection-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .collection-view .collection-summary-grid > .exact-config-item:nth-child(2) {
+    border-right: 0;
+  }
+  .exact-page.collection-view :deep(button:not(.el-button)) {
+    min-height: 40px;
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 760px) {
+  .exact-page.collection-view {
+    padding: 18px 14px 20px;
+    gap: 16px;
+  }
+  .collection-view .collection-summary-grid {
+    padding: 14px 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 0;
+  }
+  .collection-view .collection-summary-grid > .exact-config-item {
+    padding: 0 14px;
+  }
+  .collection-view .collection-summary-grid > .exact-config-item:nth-child(2) {
+    border-right: 0;
+  }
+  .collection-view .collection-summary-grid > .exact-config-item:nth-child(n+3) {
+    padding-top: 14px;
+    border-top: 1px solid var(--console-border-soft);
+  }
+  .collection-view :deep(.config-ops-panel .surface-grid.two) { padding: 12px; }
+  .collection-view :deep(.config-ops-panel .surface-card) { padding: 12px; }
+  .collection-view :deep(.config-ops-panel .config-sync-form) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .collection-view .exact-surface-head,
+  .collection-view .exact-table-title,
+  .collection-view :deep(.config-ops-panel > .exact-surface-head) { padding: 12px 14px; }
+  .collection-view .exact-json-panel > .json-view { margin: 12px; }
+}
+
+@media (max-width: 420px) {
+  .collection-view .collection-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .collection-view :deep(.config-ops-panel .config-sync-status-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .collection-view .collection-summary-grid > .exact-config-item {
+    border-right: 0;
+  }
+
+  .collection-view .collection-summary-grid > .exact-config-item:nth-child(odd) {
+    border-right: 1px solid var(--console-border-soft);
+  }
+
+  .collection-view .collection-summary-grid > .exact-config-item + .exact-config-item {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .collection-view .collection-summary-grid > .exact-config-item:nth-child(n+3) {
+    padding-top: 12px;
+    border-top: 1px solid var(--console-border-soft);
+  }
+}

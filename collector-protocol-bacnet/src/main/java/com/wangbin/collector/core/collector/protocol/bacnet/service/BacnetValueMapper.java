@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * 定义当前模块的业务组件。
@@ -31,12 +32,22 @@ public class BacnetValueMapper {
                              String source,
                              String deviceId,
                              BiFunction<DataPoint, Object, Object> dataConverter) {
+        return map(dataQualityProcessor, point, address, rawValue, source, deviceId, dataConverter, null);
+    }
+
+    /** PUSH 的纯转换在守卫外，告警状态及通知接受由原订阅身份提交。 */
+    public ProcessResult map(DataQualityProcessor dataQualityProcessor,
+                             DataPoint point, BacnetAddress address, Object rawValue,
+                             String source, String deviceId,
+                             BiFunction<DataPoint, Object, Object> dataConverter,
+                             Predicate<Runnable> sideEffectGuard) {
         BacnetReadValue readValue = normalize(point, address, rawValue, dataConverter);
         ProcessContext context = new ProcessContext();
         context.addAttribute(CommonMapKeys.DEVICE_ID, deviceId);
         ProcessResult processResult = readValue.complex()
                 ? ProcessResult.success(readValue.rawValue(), readValue.processedValue(), "BACnet complex value passthrough")
-                : dataQualityProcessor.process(context, point, readValue.processedValue());
+                : sideEffectGuard == null ? dataQualityProcessor.process(context, point, readValue.processedValue())
+                : dataQualityProcessor.processWithSideEffectGuard(context, point, readValue.processedValue(), sideEffectGuard);
         enrich(processResult, address, source, readValue);
         return processResult;
     }

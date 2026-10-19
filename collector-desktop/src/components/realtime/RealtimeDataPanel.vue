@@ -229,7 +229,7 @@ function currentPanelRealtimeContext(): RealtimeRequestContext {
   min-height: 0;
   padding: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   border: 0;
   background: transparent;
 }
@@ -244,6 +244,26 @@ function currentPanelRealtimeContext(): RealtimeRequestContext {
   gap: 8px;
   flex-wrap: wrap;
   overflow: visible;
+}
+
+.table-actions { justify-content: flex-start; }
+
+.realtime-workbench :deep(.el-table) {
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.realtime-workbench :deep(.el-table__header th) { height: 40px; }
+.realtime-workbench :deep(.el-table__body td) { height: 53px; }
+
+@media (max-width: 600px) {
+  .panel-toolbar { align-items: flex-start; }
+  .table-actions { gap: 8px; }
+  .table-actions :deep(.el-tag) {
+    max-width: 100%;
+    height: auto;
+    white-space: normal;
+  }
+  .table-actions :deep(.el-button + .el-button) { margin-left: 0; }
 }
 
 .cell-ellipsis {

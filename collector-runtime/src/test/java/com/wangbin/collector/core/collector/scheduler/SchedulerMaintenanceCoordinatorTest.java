@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
 class SchedulerMaintenanceCoordinatorTest {
 
     @Test
-    void startShouldScheduleAdjustmentMonitoringAndAutoStart() {
+    void startShouldOnlyScheduleMaintenanceWithoutImplicitDeviceStart() {
         CollectorProperties properties = new CollectorProperties();
         properties.getScheduler().setDynamicAdjustIntervalMs(1234);
         SchedulerRuntimeState runtimeState = new SchedulerRuntimeState();
@@ -41,12 +41,8 @@ class SchedulerMaintenanceCoordinatorTest {
         ScheduledExecutorService scheduledExecutor = mock(ScheduledExecutorService.class);
         ScheduledFuture<?> adjustFuture = mock(ScheduledFuture.class);
         ScheduledFuture<?> monitorFuture = mock(ScheduledFuture.class);
-        ScheduledFuture<?> autoStartFuture = mock(ScheduledFuture.class);
         when(scheduledExecutor.scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any(TimeUnit.class)))
                 .thenReturn((ScheduledFuture) adjustFuture, (ScheduledFuture) monitorFuture);
-        ArgumentCaptor<Runnable> autoStartCaptor = ArgumentCaptor.forClass(Runnable.class);
-        when(scheduledExecutor.schedule(autoStartCaptor.capture(), anyLong(), any(TimeUnit.class)))
-                .thenReturn((ScheduledFuture) autoStartFuture);
         SchedulerMaintenanceCoordinator coordinator = new SchedulerMaintenanceCoordinator(
                 properties,
                 runtimeState,
@@ -56,7 +52,7 @@ class SchedulerMaintenanceCoordinatorTest {
                 scheduledExecutor);
 
         coordinator.start();
-        autoStartCaptor.getValue().run();
+        assertEquals(0, coordinator.pendingStartAllFutureCountForTest());
 
         ArgumentCaptor<Long> initialDelayCaptor = ArgumentCaptor.forClass(Long.class);
         ArgumentCaptor<Long> periodCaptor = ArgumentCaptor.forClass(Long.class);
@@ -72,9 +68,9 @@ class SchedulerMaintenanceCoordinatorTest {
         assertEquals(60L, initialDelayCaptor.getAllValues().get(1));
         assertEquals(60L, periodCaptor.getAllValues().get(1));
         assertEquals(TimeUnit.SECONDS, unitCaptor.getAllValues().get(1));
-        verify(scheduledExecutor).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
-        verify(lifecycleCoordinator).startAllDevices();
-        verify(configCoordinator).adjustTimeSlicesAfterWorkloadChange();
+        verify(scheduledExecutor, never()).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        verify(lifecycleCoordinator, never()).startAllDevices();
+        verify(configCoordinator, never()).adjustTimeSlicesAfterWorkloadChange();
     }
 
     @Test
@@ -97,7 +93,7 @@ class SchedulerMaintenanceCoordinatorTest {
         coordinator.cancel();
 
         scheduledExecutor.periodicFutures.forEach(future -> assertTrue(future.isCancelled()));
-        assertTrue(scheduledExecutor.delayedFutures.get(0).isCancelled());
+        assertTrue(scheduledExecutor.delayedFutures.isEmpty());
         assertEquals(0, coordinator.pendingStartAllFutureCountForTest());
     }
 

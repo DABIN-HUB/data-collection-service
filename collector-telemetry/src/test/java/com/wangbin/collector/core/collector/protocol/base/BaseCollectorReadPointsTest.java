@@ -4,6 +4,8 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.port.ExceptionReporter;
+import com.wangbin.collector.core.port.DeviceDataActivityReporter;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.junit.jupiter.api.Test;
 
@@ -15,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class BaseCollectorReadPointsTest {
 
@@ -159,6 +163,28 @@ class BaseCollectorReadPointsTest {
 
         assertTrue(collector.overrideCalled);
         assertEquals("OVERRIDDEN", collector.writtenValue);
+    }
+
+    @Test
+    void pushSubmissionMustNotReportCoreSuccessBeforeCompletion() throws Exception {
+        MetadataOverrideCollector collector = connectedCollector(new MetadataOverrideCollector(Map.of()));
+        DeviceDataActivityReporter reporter = mock(DeviceDataActivityReporter.class);
+        collector.setDeviceDataActivityReporter(reporter);
+        collector.exposeIngestPushedValue(point("p1"), 8);
+        verifyNoInteractions(reporter);
+    }
+
+    @Test
+    void configurationBindingAndArrayQualityMustRemainSourceBound() throws Exception {
+        TestCollector collector = connectedCollector(new TestCollector(Map.of("p1", 1)));
+        collector.setRuntimeConfigurationVersion(17L);
+        collector.readPoints(List.of(point("p1")));
+        assertEquals(17L, (Long) collector.takeInvocationProcessResults().get("p1")
+                .getMetadata(ProcessResultMetadataKeys.CONFIG_VERSION));
+        assertTrue(collector.processArrayQuality(point("p1"), List.of(1, 2), 2).isQualityAcceptable());
+        assertFalse(collector.processArrayQuality(point("p1"), List.of(1, Double.NaN), 2).isSuccess());
+        assertFalse(collector.processArrayQuality(point("p1"), new Object[] {1, null}, 2).isSuccess());
+        assertFalse(collector.processArrayQuality(point("p1"), List.of(), 2).isSuccess());
     }
 
     private <T extends TestCollector> T connectedCollector(T collector) throws Exception {

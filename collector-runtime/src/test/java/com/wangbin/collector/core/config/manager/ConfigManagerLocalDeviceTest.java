@@ -16,6 +16,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -29,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.never;
@@ -51,6 +55,113 @@ class ConfigManagerLocalDeviceTest {
                 eventPublisher,
                 new FieldUniquenessValidator(),
                 null);
+    }
+
+    @Test
+    void unleasedDeletionTombstonesMustNotAccumulate() {
+        for (int index = 0; index < 32; index++) {
+            String deviceId = "unleased-delete-" + index;
+            assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(point(deviceId)), false));
+            assertTrue(configManager.deleteLocalDeviceConfig(deviceId));
+            assertEquals(0L, configManager.getDeviceConfigVersion(deviceId));
+        }
+        assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(configManager, "deletedConfigurationVersions")).isEmpty());
+        assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(configManager, "deviceConfigVersions")).isEmpty());
+    }
+
+    @Test
+    void newWritesMustRejectMissingPointIdentityWithoutAdvancingVersion() {
+        String deviceId = "missing-point-id";
+        assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(point(deviceId)), false));
+        long version = configManager.getDeviceConfigVersion(deviceId);
+        DataPoint missing = point(deviceId);
+        missing.setPointId(null);
+        assertFalse(configManager.updateDataPoints(deviceId, List.of(missing)));
+        assertThrows(IllegalArgumentException.class, () -> configManager.saveLocalDeviceConfig(
+                device(deviceId), connection(deviceId), List.of(missing), true));
+        assertThrows(IllegalArgumentException.class, () -> configManager.replaceDeviceContextAtomically(
+                deviceId, configManager.getDevice(deviceId), connection(deviceId), List.of(missing), version));
+        assertEquals(version, configManager.getDeviceConfigVersion(deviceId));
+        assertEquals(deviceId + ":temperature", configManager.getDataPoints(deviceId).get(0).getPointId());
+    }
+
+    @Test
+    void deletionTombstoneMustLiveThroughPublicationAndPendingConsumerThenBeReleased() {
+        String deviceId = "leased-delete";
+        assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(point(deviceId)), false));
+        AtomicReference<Runnable> release = new AtomicReference<>();
+        AtomicReference<Long> deletedVersion = new AtomicReference<>();
+        doAnswer(invocation -> {
+            ConfigUpdateEvent event = invocation.getArgument(0);
+            if ("local-delete".equals(event.getConfigType())) {
+                deletedVersion.set(event.getConfigVersion());
+                release.set(configManager.retainDeletedConfigurationVersion(deviceId, event.getConfigVersion()));
+                assertNotNull(release.get());
+                assertTrue(configManager.runIfConfigurationCurrent(deviceId, event.getConfigVersion(), () -> {}));
+            }
+            return null;
+        }).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
+
+        assertTrue(configManager.deleteLocalDeviceConfig(deviceId));
+        assertEquals(deletedVersion.get().longValue(), configManager.getDeviceConfigVersion(deviceId));
+        release.get().run();
+        release.get().run();
+        assertEquals(0L, configManager.getDeviceConfigVersion(deviceId));
+        assertFalse(configManager.runIfConfigurationCurrent(deviceId, deletedVersion.get(), () -> {
+            throw new AssertionError("旧删除不得执行");
+        }));
+        assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(point(deviceId)), false));
+        assertTrue(configManager.getDeviceConfigVersion(deviceId) > deletedVersion.get());
+    }
+
+    @Test
+    void bundleSnapshotMustDetachNestedValuesAndPreserveAlarmAndHistoricIds() {
+        String deviceId = "detached-bundle";
+        DataPoint original = point(deviceId);
+        original.setId(99L);
+        original.setAlarmRule("[{\"ruleId\":\"original\",\"threshold\":10}]");
+        original.setAdditionalConfig(new java.util.LinkedHashMap<>(Map.of("nested", new java.util.LinkedHashMap<>(Map.of("value", "original")))));
+        assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(original), false));
+        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getDeviceConfigurationSnapshot(deviceId);
+        DataPoint detached = snapshot.context().getDataPoints().get(0);
+        assertEquals(99L, detached.getId());
+        assertEquals(original.getPointId(), detached.getPointId());
+        assertEquals("original", detached.getAlarmRule().get(0).getRuleId());
+        ((Map<String, Object>) detached.getAdditionalConfig().get("nested")).put("value", "changed");
+        detached.setAddress("40009");
+        snapshot.context().getDeviceInfo().setDeviceName("changed");
+        assertEquals("original", ((Map<?, ?>) configManager.getDataPoints(deviceId).get(0).getAdditionalConfig().get("nested")).get("value"));
+        assertEquals("40001", configManager.getDataPoints(deviceId).get(0).getAddress());
+        assertEquals(snapshot.configVersion(), configManager.getDeviceConfigVersion(deviceId));
+    }
+
+    @Test
+    void changedPointIdentityEventMustContainOnlyRetiredIdsAndCloneVersions() {
+        String deviceId = "retired-identity";
+        assertTrue(configManager.saveLocalDeviceConfig(device(deviceId), connection(deviceId), List.of(point(deviceId)), false));
+        long previous = configManager.getDeviceConfigVersion(deviceId);
+        DataPoint changed = point(deviceId);
+        changed.setAddress("40002");
+        assertTrue(configManager.updateDataPoints(deviceId, List.of(changed)));
+        verify(eventPublisher).publishEvent(argThat((Object value) -> {
+            if (!(value instanceof ConfigUpdateEvent event) || !"points".equals(event.getConfigType())) return false;
+            ConfigUpdateEvent copy = event.clone();
+            return copy.getPreviousVersion() == previous
+                    && copy.getConfigVersion().equals(configManager.getDeviceConfigVersion(deviceId))
+                    && copy.getRetiredPointIds().equals(Set.of(changed.getPointId()));
+        }));
+    }
+
+    @Test
+    void shouldRejectForeignAndDuplicatePointIdentitiesBeforeLegacyWrite() {
+        assertTrue(configManager.saveLocalDeviceConfig(device("identity"), connection("identity"), List.of(point("identity")), false));
+        long version = configManager.getDeviceConfigVersion("identity");
+        DataPoint foreign = point("other");
+        assertFalse(configManager.updateDataPoints("identity", List.of(foreign)));
+        DataPoint duplicate = point("identity");
+        duplicate.setPointCode("different-code");
+        assertFalse(configManager.updateDataPoints("identity", List.of(point("identity"), duplicate)));
+        assertEquals(version, configManager.getDeviceConfigVersion("identity"));
     }
 
     @Test
@@ -104,7 +215,7 @@ class ConfigManagerLocalDeviceTest {
     void shouldKeepCommittedBundleAndLegacyUpdateAfterEventFailure() {
         assertTrue(configManager.updateDeviceConfig(device("event-failure")));
         long version = configManager.getDeviceConfigVersion("event-failure");
-        doThrow(new IllegalStateException("listener failed")).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any());
+        doThrow(new IllegalStateException("listener failed")).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
         DeviceInfo replacement = device("event-failure");
         replacement.setDeviceName("committed");
         assertTrue(configManager.updateDeviceConfig(replacement));
@@ -127,7 +238,7 @@ class ConfigManagerLocalDeviceTest {
         DataPoint defaultPoint = point("mqtt-local");
         defaultPoint.setCollectionMode(null);
         assertTrue(configManager.saveLocalDeviceConfig(mqtt, broker, List.of(defaultPoint), false));
-        assertEquals("SUBSCRIBE", configManager.getDataPoints("mqtt-local").get(0).getCollectionMode());
+        assertEquals("SUBSCRIPTION", configManager.getDataPoints("mqtt-local").get(0).getCollectionMode());
         assertNull(defaultPoint.getCollectionMode());
 
         DeviceInfo second = device("mqtt-explicit");
@@ -147,7 +258,7 @@ class ConfigManagerLocalDeviceTest {
         point.setCollectionMode(null);
         assertTrue(configManager.replaceDeviceContextsAtomically(List.of(
                 DeviceContext.of(mqtt, connection("mqtt-import"), List.of(point)))));
-        assertEquals("SUBSCRIBE", configManager.getDataPoints("mqtt-import").get(0).getCollectionMode());
+        assertEquals("SUBSCRIPTION", configManager.getDataPoints("mqtt-import").get(0).getCollectionMode());
     }
 
     @Test
@@ -418,6 +529,10 @@ class ConfigManagerLocalDeviceTest {
         assertNull(configManager.getConnectionConfig("deleted-remote"));
         assertNull(configManager.getDeviceContext("deleted-remote"));
         assertEquals(0L, configManager.getDeviceConfigVersion("deleted-remote"));
+        verify(eventPublisher).publishEvent(argThat((Object event) -> event instanceof ConfigUpdateEvent change
+                && "deleted-remote".equals(change.getDeviceId())
+                && ConfigUpdateType.LOCAL_DELETE.getValue().equals(change.getConfigType())
+                && change.getPreviousVersion() > 0 && change.getConfigVersion() > change.getPreviousVersion()));
         ReflectionTestUtils.invokeMethod(configManager, "handleConfigChange",
                 ConfigUpdateEvent.createConnectionUpdateEvent("deleted-remote"));
         assertNull(configManager.getConnectionConfig("deleted-remote"));
@@ -453,7 +568,8 @@ class ConfigManagerLocalDeviceTest {
         assertTrue(configManager.updateDeviceConfig(existing));
         DeviceInfo candidate = device("other-device");
         DataPoint point = point("other-device");
-        configManager.validateDeviceContext("valid-target", candidate, null, List.of(point));
+        assertThrows(IllegalArgumentException.class,
+                () -> configManager.validateDeviceContext("valid-target", candidate, null, List.of(point)));
 
         assertEquals("other-device", candidate.getDeviceId());
         assertEquals("other-device", point.getDeviceId());
@@ -461,15 +577,19 @@ class ConfigManagerLocalDeviceTest {
     }
 
     @Test
-    void shouldBindImportedPointIdentityToTargetDevice() {
+    void shouldRejectForeignImportedPointAndBindOnlyMissingOwnership() {
         DeviceInfo imported = device("import-target");
         DataPoint sourcePoint = point("other-device");
         sourcePoint.setPointId("point-1");
+        assertFalse(configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(imported, connection("import-target"), List.of(sourcePoint)))));
+        assertFalse(configManager.containsDevice("import-target"));
+        sourcePoint.setDeviceId(null);
         assertTrue(configManager.replaceDeviceContextsAtomically(List.of(
                 DeviceContext.of(imported, connection("import-target"), List.of(sourcePoint)))));
 
         assertEquals("import-target", configManager.getDataPoints("import-target").get(0).getDeviceId());
-        assertEquals("other-device", sourcePoint.getDeviceId());
+        assertNull(sourcePoint.getDeviceId());
     }
 
     @Test
@@ -486,6 +606,89 @@ class ConfigManagerLocalDeviceTest {
 
         assertFalse(imported);
         assertEquals("原设备", configManager.getDevice("stable-1").getDeviceName());
+    }
+
+    @Test
+    void sameEffectiveLocalSaveShouldNotAdvanceVersionOrPublishEvent() {
+        assertTrue(configManager.saveLocalDeviceConfig(device("same-local"), connection("same-local"),
+                List.of(point("same-local")), false));
+        long version = configManager.getDeviceConfigVersion("same-local");
+        DeviceContext before = configManager.getDeviceContext("same-local");
+        assertTrue(configManager.saveLocalDeviceConfig(device("same-local"), connection("same-local"),
+                List.of(point("same-local")), true));
+        assertEquals(version, configManager.getDeviceConfigVersion("same-local"));
+        assertSame(before, configManager.getDeviceContext("same-local"));
+        verify(eventPublisher, times(1)).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
+    }
+
+    @Test
+    void sameEffectiveBundleShouldCheckCasThenKeepVersion() {
+        assertTrue(configManager.updateDeviceConfig(device("same-bundle")));
+        long version = configManager.getDeviceConfigVersion("same-bundle");
+        DeviceInfo candidate = device("same-bundle");
+        candidate.setStatus("ONLINE");
+        candidate.setUpdateTime(new java.util.Date());
+        ConfigManager.DeviceConfigCommitResult result = configManager.replaceDeviceContextAtomically(
+                "same-bundle", candidate, null, List.of(), version);
+        assertEquals(version, result.configVersion());
+        assertThrows(ConfigVersionConflictException.class, () -> configManager.replaceDeviceContextAtomically(
+                "same-bundle", candidate, null, List.of(), version - 1));
+        verify(eventPublisher, times(1)).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
+    }
+
+    @Test
+    void fullSourceCollisionShouldPreserveLocalOwnershipAndVersion() {
+        assertTrue(configManager.saveLocalDeviceConfig(device("collision"), connection("collision"),
+                List.of(point("collision")), false));
+        long version = configManager.getDeviceConfigVersion("collision");
+        DeviceInfo remote = device("collision");
+        remote.setDeviceName("不能覆盖本地");
+        when(configSyncService.loadAllDevices()).thenReturn(List.of(remote));
+        ReflectionTestUtils.invokeMethod(configManager, "loadAllConfig");
+        assertTrue(configManager.isLocalTemporaryDevice("collision"));
+        assertEquals(version, configManager.getDeviceConfigVersion("collision"));
+        assertEquals("test-device", configManager.getDevice("collision").getDeviceName());
+    }
+
+    @Test
+    void bulkImportShouldOnlyAdvanceAndNotifyChangedDevice() {
+        DeviceContext first = DeviceContext.of(device("bulk-A"), connection("bulk-A"), List.of(point("bulk-A")));
+        DeviceContext second = DeviceContext.of(device("bulk-B"), connection("bulk-B"), List.of(point("bulk-B")));
+        assertTrue(configManager.replaceDeviceContextsAtomically(List.of(first, second)));
+        long firstVersion = configManager.getDeviceConfigVersion("bulk-A");
+        long secondVersion = configManager.getDeviceConfigVersion("bulk-B");
+        org.mockito.Mockito.clearInvocations(eventPublisher);
+        DeviceInfo changed = device("bulk-B");
+        changed.setDeviceName("新名称");
+        assertTrue(configManager.replaceDeviceContextsAtomically(List.of(first,
+                DeviceContext.of(changed, connection("bulk-B"), List.of(point("bulk-B"))))));
+        assertEquals(firstVersion, configManager.getDeviceConfigVersion("bulk-A"));
+        assertTrue(configManager.getDeviceConfigVersion("bulk-B") > secondVersion);
+        verify(eventPublisher, times(1)).publishEvent(argThat((Object event) -> event instanceof ConfigUpdateEvent change
+                && "bulk-B".equals(change.getDeviceId()) && change.getPreviousVersion() == secondVersion));
+    }
+
+    @Test
+    void importShouldNotTransferExistingLocalSource() {
+        assertTrue(configManager.saveLocalDeviceConfig(device("owned-local"), connection("owned-local"),
+                List.of(point("owned-local")), false));
+        long version = configManager.getDeviceConfigVersion("owned-local");
+        assertFalse(configManager.replaceDeviceContextsAtomically(List.of(
+                DeviceContext.of(device("owned-local"), connection("owned-local"), List.of(point("owned-local"))))));
+        assertTrue(configManager.isLocalTemporaryDevice("owned-local"));
+        assertEquals(version, configManager.getDeviceConfigVersion("owned-local"));
+    }
+
+    @Test
+    void remoteConnectionChangeShouldPublishVersionedTargetEvent() {
+        assertTrue(configManager.updateDeviceConfig(device("connection-event")));
+        long version = configManager.getDeviceConfigVersion("connection-event");
+        when(configSyncService.loadConnectionConfig("connection-event")).thenReturn(connection("connection-event"));
+        ReflectionTestUtils.invokeMethod(configManager, "reloadConnectionConfig", "connection-event");
+        verify(eventPublisher).publishEvent(argThat((Object event) -> event instanceof ConfigUpdateEvent change
+                && "connection-event".equals(change.getDeviceId())
+                && ConfigUpdateType.CONNECTION.getValue().equals(change.getConfigType())
+                && change.getPreviousVersion() == version && change.getConfigVersion() > version));
     }
 
     private DeviceInfo device(String deviceId) {
@@ -509,6 +712,7 @@ class ConfigManagerLocalDeviceTest {
     private DataPoint point(String deviceId) {
         DataPoint point = new DataPoint();
         point.setDeviceId(deviceId);
+        point.setPointId(deviceId + ":temperature");
         point.setPointCode("temperature");
         point.setAddress("40001");
         point.setDataType("FLOAT");

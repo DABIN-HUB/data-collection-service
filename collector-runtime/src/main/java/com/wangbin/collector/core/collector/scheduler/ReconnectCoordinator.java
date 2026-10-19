@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.config.CollectorProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -47,7 +48,15 @@ public class ReconnectCoordinator {
         if (!collectionTaskGuard.isCurrent(deviceId, generation)) {
             return;
         }
-        ReconnectState state = reconnectStates.computeIfAbsent(deviceId, ignored -> new ReconnectState());
+        ProtocolCollector expected = collectionManager.getCollector(deviceId);
+        if (expected == null || !expected.isAutomaticReconnectAllowed()) return;
+        ReconnectState state = reconnectStates.compute(deviceId, (id, existing) -> {
+            if (!isReconnectEligible(id, generation) || collectionManager.getCollector(id) != expected) return existing;
+            return existing != null && existing.generation == generation && existing.collector == expected
+                    ? existing : new ReconnectState(generation, expected);
+        });
+        if (state == null || state.generation != generation || state.collector != expected
+                || !isReconnectEligible(deviceId, generation) || !expected.isAutomaticReconnectAllowed()) return;
         long now = System.currentTimeMillis();
         if (now < state.nextRetryAt.get()) {
             return;
@@ -75,22 +84,24 @@ public class ReconnectCoordinator {
         long startTime = System.currentTimeMillis();
         boolean success = false;
         try {
-            if (!isReconnectEligible(deviceId, generation)) {
+            if (!isReconnectEligible(deviceId, generation) || collectionManager.getCollector(deviceId) != state.collector
+                    || state.collector == null || !state.collector.isAutomaticReconnectAllowed()) {
                 return;
             }
-            collectionManager.reconnectDevice(deviceId);
-            if (!isReconnectEligible(deviceId, generation)) {
-                try {
-                    collectionManager.disconnectDevice(deviceId);
-                } catch (Exception e) {
-                    log.warn("旧代次重连后断开失败, 设备={}", deviceId, e);
-                }
+            log.info("设备重连开始 deviceId={} action=RECONNECT source=RECONNECT generation={} desiredState={}",
+                    deviceId, generation, runtimeState.getDesiredState(deviceId));
+            if (!collectionManager.reconnectDeviceAutomatically(deviceId, generation, state.collector)) return;
+            if (collectionManager.getCollector(deviceId) != state.collector) return;
+            if (!isLifecycleEligible(deviceId, generation)) {
+                collectionManager.cleanupDeviceIfGeneration(deviceId, generation);
                 return;
             }
             state.consecutiveFailures.set(0);
             state.nextRetryAt.set(0L);
             success = true;
             reconnectSuccessCount.incrementAndGet();
+            log.info("设备重连完成 deviceId={} action=RECONNECT source=RECONNECT generation={} desiredState={}",
+                    deviceId, generation, runtimeState.getDesiredState(deviceId));
         } catch (Exception e) {
             reconnectFailureCount.incrementAndGet();
             long delayMs = scheduleNextReconnectRetry(state);
@@ -98,6 +109,10 @@ public class ReconnectCoordinator {
         } finally {
             state.lastDurationMs.set(System.currentTimeMillis() - startTime);
             state.reconnecting.set(false);
+            if (!isLifecycleEligible(deviceId, generation) || collectionManager.getCollector(deviceId) != state.collector
+                    || state.collector == null || !state.collector.isAutomaticReconnectAllowed()) {
+                reconnectStates.remove(deviceId, state);
+            }
             if (success) {
                 state.lastSuccessAt.set(System.currentTimeMillis());
             }
@@ -105,8 +120,15 @@ public class ReconnectCoordinator {
     }
 
     boolean isReconnectEligible(String deviceId, long generation) {
+        ProtocolCollector collector = collectionManager.getCollector(deviceId);
+        return isLifecycleEligible(deviceId, generation) && collector != null && collector.isAutomaticReconnectAllowed();
+    }
+
+    private boolean isLifecycleEligible(String deviceId, long generation) {
         DeviceScheduleInfo scheduleInfo = runtimeState.getScheduleInfo(deviceId);
-        return scheduleInfo != null
+        return !runtimeState.isClosed()
+                && runtimeState.getDesiredState(deviceId) == SchedulerRuntimeState.DesiredState.RUNNING
+                && scheduleInfo != null
                 && scheduleInfo.isRunning()
                 && scheduleInfo.getGeneration() == generation
                 && collectionTaskGuard.isCurrent(deviceId, generation)
@@ -178,6 +200,14 @@ public class ReconnectCoordinator {
     }
 
     static final class ReconnectState {
+        private final long generation;
+        private final ProtocolCollector collector;
+
+        private ReconnectState(long generation, ProtocolCollector collector) {
+            this.generation = generation;
+            this.collector = collector;
+        }
+
         private final AtomicBoolean reconnecting = new AtomicBoolean(false);
         private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
         private final AtomicLong nextRetryAt = new AtomicLong(0);

@@ -66,7 +66,7 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
             Pattern.compile("-----BEGIN PRIVATE KEY-----(.*?)-----END PRIVATE KEY-----", Pattern.DOTALL);
     private static final long MIN_TIMEOUT_MS = 5000L;
 
-    private OpcUaClient client;
+    private volatile OpcUaClient client;
     private String endpointUrl;
     private String securityPolicy;
     private MessageSecurityMode securityMode;
@@ -336,13 +336,13 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
      * 清理或删除业务数据。
      */
     private void cleanupClient() {
-        if (client != null) {
+        OpcUaClient previous = client;
+        client = null;
+        if (previous != null) {
             try {
-                client.disconnect();
+                previous.disconnect();
             } catch (Exception e) {
                 log.warn("失败 to 断开 OPC UA client", e);
-            } finally {
-                client = null;
             }
         }
     }

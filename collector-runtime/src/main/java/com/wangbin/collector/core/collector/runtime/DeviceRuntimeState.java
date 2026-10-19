@@ -28,4 +28,18 @@ public record DeviceRuntimeState(String deviceId,
     public enum ProtocolStatus { UNKNOWN, STOPPED, NEGOTIATING, READY, ERROR }
     public enum DeviceHealth { OFFLINE, ONLINE_NO_DATA, ONLINE_PARTIAL, ONLINE_HEALTHY, DEGRADED }
     public enum AcquisitionStatus { UNKNOWN, IDLE, WAITING, ACTIVE, PARTIAL, STALE, FAILED, STOPPED }
+
+    public int participatingPointCount() {
+        return (int) points.values().stream().filter(PointAcquisitionSnapshot::participating).count();
+    }
+
+    public int goodPointCount() {
+        return (int) points.values().stream().filter(PointAcquisitionSnapshot::participating)
+                .filter(point -> point.outcome() == PointAcquisitionSnapshot.Outcome.OBSERVED).count();
+    }
+
+    public int waitingPointCount() {
+        return (int) points.values().stream().filter(PointAcquisitionSnapshot::participating)
+                .filter(point -> point.outcome() == PointAcquisitionSnapshot.Outcome.WAITING).count();
+    }
 }

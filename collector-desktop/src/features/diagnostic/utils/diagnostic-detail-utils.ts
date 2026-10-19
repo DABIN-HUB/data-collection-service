@@ -1,5 +1,6 @@
 import { RouteNames } from "@/router/route-names";
 import type { PipelineBackpressureSnapshot } from "@/types/monitor";
+import { normalizeDeviceRuntimeRows, runtimePresentation } from "./device-runtime-utils";
 
 export interface CacheDetail {
   status: string;
@@ -16,6 +17,10 @@ export interface DeviceConnectionDetailRow {
   deviceId: string;
   statusText: string;
   connectedText: string;
+  healthText: string;
+  readyText: string;
+  healthTone: string;
+  healthReason: string;
   successRateText: string;
   bytesText: string;
   idleTimeText: string;
@@ -202,10 +207,17 @@ function normalizeConnectionRow(record: Record<string, unknown>, missingIds: Set
   const connected = Boolean(record.connected);
   const expectedOnly = Boolean(record.expectedOnly);
   const missing = missingIds.has(deviceId) || expectedOnly || (!connected && String(record.status || "").toUpperCase() === "MISSING");
+  const runtime = normalizeDeviceRuntimeRows([record.runtime])[0];
+  const presentation = runtimePresentation(runtime);
+  const healthTone = ({ ONLINE_HEALTHY: "is-online", ONLINE_PARTIAL: "is-warning", ONLINE_NO_DATA: "is-warning", DEGRADED: "is-warning", OFFLINE: "is-error" } as Record<string, string>)[runtime?.deviceHealth || ""] || "";
   return {
     deviceId,
     statusText: String(record.status || (connected ? "ONLINE" : "OFFLINE")),
     connectedText: connected ? "已连接" : "未连接",
+    healthText: presentation.health,
+    readyText: presentation.ready,
+    healthTone,
+    healthReason: presentation.reason,
     successRateText: percentText(record.successRate),
     bytesText: `${numberValue(record.bytesSent, 0)} / ${numberValue(record.bytesReceived, 0)}`,
     idleTimeText: durationText(record.idleTime),

@@ -1,8 +1,324 @@
 # collector-desktop 前端架构重构进度
 
-更新时间：2026-09-02 13:52:11 +0800
+## 最新请求：设备管理配置工作台主辅布局修正与9090重部署（2026-10-17）
+
+当前状态：`IMPLEMENTED / STATIC_GATES_PASS / DEPLOYED_9090 / SHELL_VISUAL_PASS / INNER_WORKBENCH_PIXEL_ACCEPTANCE_BLOCKED`。本轮只调整“设备管理 → 设备配置工作台”标签页的呈现布局：把原先占据较大空间的运行状态、协议连接配置收窄为左侧配置轨，把点位列表、实时数据、告警、日志和点位详情扩展为右侧主工作区；未修改 API、DTO、Store、Router、Schema、请求生命周期、默认值、业务 handler 或保存/执行边界。
+
+- `DeviceWorkbenchView.vue` 将工作台主辅比例调整为左侧 `248–300px`、右侧占用剩余宽度；运行状态卡压缩为窄栏上下结构，保留连接检查、启动采集和停止采集原操作；点位详情保持在主区下方，不改变字段、事件和真实空态。
+- 1280px 兼容断点不再提前堆叠为单列，仅在 `980px` 以下转为纵向；移动端继续主区优先、配置区下置，保留内部标签和表格滚动边界。
+- 已执行 `npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web`，均成功；构建 warning 为既有 Rollup PURE 注释和 chunk 体积提示，未升级依赖或放宽规则。未创建、修改或运行测试，未运行 `quality`/`verify`。
+- 提交 `53da4f26` 已完成；`mvn.cmd -Dmaven.test.skip=true clean package` 已成功且未运行测试，最终 JAR 已部署并由 PID `12804` 监听 9090，入口 HTTP 200，liveness/readiness 已完成回读。JAR 内置 renderer 与源静态资源已逐项校验一致；设计预览、截图、审查报告和部署产物保存在外部 scratch，不进入生产提交。
+- 重启后的真实 packaged renderer 已在 1600×1000、1280×900、390×844 完成只读捕获；`/frontend-design` 逐图确认设备管理层级、三项顶层标签、桌面/移动端可见外壳通过，未发现明确像素 MUST-FIX。三张图均处于未认证/未选择设备空态，因此选中设备后的左窄右宽内层比例、点位/实时/告警/日志/详情内容及移动端内部滚动不能由当前证据签字，完整工作台验收保持 `BLOCKED`，不将业务空态误判为缺陷。
+
+## 最新请求：Precision Workbench 全站生产视觉改造与9090重部署（2026-10-15）
+
+用户确认按独立 Precision Workbench 示意图开始生产页面改造，并要求持续监督、重新编译并运行 9090。当前为 `POINT_EDITOR_CSS_DELTA_VERIFIED / FRONTEND_AND_JAVA17_BUILD_PASS / DEPLOYED_9090_BYTES_PASS / CURRENT_AUTH_CAPTURE_RECORDED / PIXEL_ACCEPTANCE_BLOCKED`。当前候选认证采集已完成150张PNG（84个默认路由状态、30个LocalDeviceEditor状态、36个PointEditor状态），入口为 `index-Bnw03rgX.js`，JAR SHA-256为 `5fb20c6d9e08ed6d3639f983a18adf972da83b33e51213080a1d755305c786b6`。当前候选与历史图严格分离；观察子集没有确证像素must-fix，但14路由及两个编辑器的完整criterion仍BLOCKED，未宣称用户接受。
+
+**当前边界（2026-10-16当前候选认证复核）**：用户提供的临时凭据仅通过任务自有无回显stdin使用，未从历史、storage、配置或环境恢复，也未写入参数、环境、源码、截图、日志或证据。当前候选 `capture-BeeU6I` 已记录认证矩阵150张PNG；NoActivate查看器已关闭并回读进程/窗口不存在。当前观察子集无确证像素must-fix，但原16项完整criterion仍BLOCKED，因细字/凭据值/JSON/log原生可读性、键盘焦点、隐藏Tab/折叠区、危险确认层级和全部图片独立复核尚未完整观察；服务健康DOWN与像素验收、用户接受分别记账。
+
+- 本轮在任务自有NoActivate拼图查看器中完成16块当前候选拼图的串行概览观察（14路由、LocalDeviceEditor、PointEditor），覆盖150张当前认证PNG对应的三视口top/bottom板面；新增记录 `STAGE-HANDOFF-index-Bnw03rgX-current-auth-review-20261016/montage-review-20261016.json`。PNG完整性回读为150/150存在、SHA不一致0、PNG签名失败0、尺寸不一致0、routeExact/entryExact各150、页面级横向溢出0；观察子集仍无确证像素must-fix。
+- 本轮未操作业务浏览器、未输入/恢复凭据、未执行任何业务写入；拼图查看器按授权选择关闭，PID/HWND均已回读不存在。源码交互契约只读核对确认AppShell抽屉/焦点陷阱、LocalDeviceEditor五Tab/关闭Details过滤/Tab与Escape、PointEditor六Tab及弹层结构存在；真实运行时Tab序列、抽屉开闭/焦点恢复、编辑器确认层和危险操作仍未实际观察，因此完整16项criterion继续BLOCKED，userAccepted=false。
+- 已生成并重新打开安全补充包 `STAGE-HANDOFF-index-Bnw03rgX-current-auth-review-20261016-montage.zip`：6个成员（含manifest），不含PNG、凭据、profile或JAR；ZIP 57,029 bytes，SHA-256 `83df7e6378a53e82e1a750fa535f6fa1cfe9e415426c646f07a26c5b1a753963`，归档回执在ZIP外。
+
+### 最新请求：完整像素/交互证据闭环补充（2026-10-16）
+
+当前状态仍为 `CURRENT_AUTH_CAPTURE_RECORDED_PARENT_MONTAGE_OVERVIEW_RECORDED_RUNTIME_INTERACTION_PENDING / PIXEL_ACCEPTANCE_BLOCKED`。本次补充只增加外部安全证据和进度记录，不改生产源码、接口、依赖、测试配置或业务状态；完整标准未缩窄，不把拼图概览或源码契约当作运行时交互PASS。
+
+
+### 点位编辑器裁切修正与新包部署（当前候选，2026-10-15）
+
+- 在 `capture-FCt33O` 上完成的150图认证采集保留原回执：84/84默认路由端点、276条获准只读请求全部200；这证明采集与身份，不证明每个编辑器实际可见。随后外部采集器沿真实祖先滚动定位编辑器，补捕36张点位图、33条获准GET均200，并逐项核对选中Tab、顶部/底部相交、PNG身份、字体及自有上下文清理。原图、原工具、原回执没有覆盖。
+- 父级串行NoActivate查看器实际观察批准PointEditor、1600顶部/原像素底部局部及390底部，确认 `PW16-FLEX-CLIP-01`（P1）：420px嵌入宿主中，顶部工具条、说明和工作区被Flex收缩；桌面内容矩形延伸出裁切面板，窄屏底部甚至未呈现字段页签。修正前PW-16的这一条件为FAIL，不能因DOM存在、选中Tab或根矩形相交就称完整覆盖。
+- 本轮生产增量仅 `src/features/point/components/PointEditor.vue` 的scoped CSS：对 `.point-toolbar`、`.point-workbench-note`、`.point-workbench-grid` 添加 `flex-shrink: 0`，保留宿主原有局部滚动。完整template/script原字节一致，枚举CSS字节差异后精确反向还原与真正改前快照一致；API/Store/DTO/Schema、字段、默认值、事件、请求归属、生命周期及保存逻辑均未改。
+- 最后生产修改后的lint、stylelint、typecheck、build、build:web均实际exit0，网页同步61项。相同HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main隔离构建仅叠加冻结renderer，使用Java17.0.15/Maven3.6.3和 `-Dmaven.test.skip=true clean package`：17模块SUCCESS、既有warning行3、JAR为111513672 bytes、应用及collector库1324个后端class与替换前完全一致、class major61；没有混入脏后端源码或运行测试。
+- 新JAR及renderer/Boot静态源码/冻结副本的61项完整路径和SHA一致。按PID40636、原生创建时间、Java17绝对exe、根cwd及唯一JAR/9090参数再次确认旧实例，验证回滚与候选哈希后才停止并替换。新后台会话 `proc_5cd3aa7dd0ba`，23:13:03实际listener PID372、原生创建时间1792077156.9447863；入口及61项HTTP资源全200且原字节匹配。health HTTP200但整体DOWN，application/cache UP、collectionService DOWN、connections UNKNOWN；未修后端、开启设备或执行业务写入。
+- 新 `prepare-4VMtzS` 只覆盖未认证login：三视口顶部/底部6 PNG、3个唯一位图，候选61资源与源指纹及自有browser/incognito/debug端口/profile清理已核对。父级另实际观察新1600/1280概貌及390原尺寸图，保存3份分析与像素身份；桌面0.75缩放、窗口边缘裁切及隐藏文字限制明确记录，不以该观察签点位编辑器、键盘或完整PW-01。
+- 新版外部采集器在写点位图前核对选中Tab、编辑器端点可见性，并记录内容区及只读末行相对所有滚动/裁切祖先的几何；若basic底部只读末行存在却未完整可见则拒绝完成。该逻辑已语法检查且无认证prepare成功，但尚未在新候选认证点位中执行，不称已修复像素PASS。
+- 新覆盖层保留16项原ID、原Row、原标准及历史状态，新候选完整像素条款均为BLOCKED，PW-16另关联修正前FAIL和已实施/待复验状态。证据在外部 `login-boundary-correction-20261015/user-authorized-fresh-document-capture-20261015/point-editor-flex-correction/`；发布候选、回滚与私有日志在忽略目录 `collector-boot/target/releases/20261015-pw-point-flex-0eb2dd1c/`。未创建/修改/运行测试，未运行quality/verify，未改依赖或规则，未commit/push；没有把实现、部署或补证阶段交接冒充总验收完成。
+- 已生成明确标注非完整验收的 `STAGE-HANDOFF-index-Bnw03rgX.zip`：28个载荷文件加manifest共29成员、846763 bytes，重新打开后精确成员集合及全部SHA一致；SHA-256为 `71f8e9def82a44acfc72e796d4dba0fa863e6cec0fc8bee04373494d61b9075b`。包只含本轮报告、安全身份/门禁/16项覆盖层、PW-14逐图父级补审JSON、6张新未认证login图、父级观察及明确标为历史的点位裁切证据，不包含凭据、私有日志、profile、采集脚本或JAR。归档回执在ZIP外；自有查看器已按精确窗口归属关闭并核对不存在，9090仍运行、入口200且字节匹配。
+- PW-14 Shadow 的独立审阅 `deleg_44254e0c/task-5` 因上游超时失败，未产生独立像素结论；父级随后通过任务自有NoActivate查看器逐张观察参考及6张历史候选PNG（1600/1280/390，top/bottom），源SHA、矩形和缩放均记录在 `pw14-shadow-parent-follow-up.json`。六张图未观察到确证的像素must-fix；真实未读取/空值/未执行状态未判为缺陷。已将这些文件从 `currentCaptureImages` 移入历史父级补审字段，不再称为当前候选；独立审阅仍为BLOCKED，PW-14不升级为完整PASS。
+- PW-07 Workbench 的独立审阅 `deleg_9b367d61/task-6` 因上游超时失败，未产生独立像素结论；父级随后逐张观察参考及6张历史候选默认态PNG（1600/1280/390，top/bottom），源SHA、矩形和缩放记录在 `pw07-workbench-parent-follow-up.json`。默认态未观察确证must-fix；真实空工作区、UNKNOWN、未连接、脱敏和health DOWN均未判为视觉缺陷。已将这些文件从 `currentCaptureImages` 移入历史父级补审字段；隐藏编辑Tab和键盘条件未覆盖，PW-07仍严格BLOCKED。
+- PW-01 Login 的当前候选入口为 `index-Bnw03rgX.js`；父级复用已保全的任务自有NoActivate观察记录核对当前候选1600/1280/390三张顶部PNG，源SHA、范围、缩放及观察句已写入 `pw01-login-parent-follow-up.json`。三张顶部图未观察到确证像素must-fix，连接边界静态说明可见；源码核对确认测试连接仍先应用地址/凭据，再读取health与protocols并刷新运行态，未点击该动作。当前候选认证图为0，三个底部图、细字/令牌值可读性、键盘和真实测试连接行为未覆盖，PW-01严格BLOCKED。
+- PW-02 Dashboard 的源码核对确认五项主摘要、优先关注/最近事件、设备运行快照、独立来源新鲜度、资源/线程池和技术拓扑/补充指标分层均保留，未知/离线/未确认等真实状态没有被改成健康或零。历史候选仅有一张1600桌面右侧局部成功观察（来源新鲜度、风险边缘与内部滚动），该裁切无确证must-fix；独立七图恢复仍无完整像素结论。当前候选无认证Dashboard PNG，PW-02保持BLOCKED，记录于 `pw02-dashboard-parent-follow-up.json`。
+- PW-03 Realtime 的独立审阅 `deleg_9b367d61/task-3` 因上游超时失败，未产生独立像素结论；父级使用任务自有NoActivate查看器逐张观察参考及6张历史候选PNG（1600/1280/390，top/bottom），并记录源SHA、整图矩形和缩放于 `pw03-realtime-parent-follow-up.json`。历史图中筛选、实时记录表、健康/来源和单点查询区域未观察到确证pixel must-fix；真实离线/UNKNOWN/空值/未执行与低缩放细字不判缺陷。当前候选认证PNG仍为0，键盘、细字完整可读性及当前候选像素接受仍严格BLOCKED。
+
+### 登录操作边界修正、部署与有界像素复核（历史候选，已被点位裁切修正版替代，2026-10-15）
+
+- 已核对较早 `proc_2f70ad4d8916` 的exit15属于历史会话；当时当前密度修正版PID58428仍是匹配的Java17实例，入口200，未因旧通知重复重启。此前输入流程没有取得令牌，最终 `CONTROLLER_FAILED`；回执为BLOCKED、credential supplied=false、认证矩阵=false，自有browser/incognito/profile/debug端口清理成功，不能继续把已结束窗口说成正在等待。
+- 修正仅在外部任务工具：标准库输入控制器改为直接使用已安装的基础Python，避免Windows虚拟环境重定向器导致Popen PID与真实控制器PID不同，保留原父子关系、可见窗口和不回显的就绪校验，不放宽安全条件。prepare只采未认证login，覆盖三个原定视口；认证模式的14路由与编辑器矩阵、严格写入阻断不变。原工具及历史证据按原字节保留。
+- 父级在任务自有NoActivate查看器实际观察批准图概貌/表单细部及原部署三尺寸登录页，保存6组真实原生分析与像素身份。0.5倍概貌曾误称账号密码/忘记密码，已被1倍细部和实际模板推翻，不据此改业务。确认的 `LOGIN-BOUNDARY-01` 是批准图的“测试连接会应用地址与凭据”常驻说明未呈现，而现有testConnection确实先执行applyConfig；没有点击该操作验证视觉。
+- 本轮相对密度候选148个生产Vue/TS/CSS输入，只改 `views/auth/LoginView.vue`：增加配置应用与连接不等于采集健康的静态提示和分隔线，收紧既有平台说明间距；保留真实平台/文档及条件安全存储警告。完整script原字节一致，原12个受保护组件/指令及其条件祖先、原插值均一致，未改默认值、handler、生命周期、请求、API/Store/Schema、凭据或保存边界。
+- 最后生产修改后lint、stylelint、typecheck、build、build:web均实际exit0，renderer/Boot静态源码完整61项一致。LoginView定向diff检查exit0；全仓检查另发现原有`.gitignore:46` EOF空行，未顺手修改或将全仓检查称为PASS。未创建/修改/运行测试，未执行quality/verify，未升级依赖或降低规则。
+- 同一HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main隔离构建实际使用Java17/Maven3.6.3、`-Dmaven.test.skip=true clean package`，17模块SUCCESS、既有warning行3；当前JAR为111513654 bytes，应用class major61，完整61静态资源集合/字节一致。应用及15个collector库内1324个后端class与替换前密度候选逐项相同。
+- 按PID58428/创建时间/Java17/根cwd/唯一JAR参数核对后，保留哈希已验回滚再替换。首次启动的裸java错误解析到JDK21，被运行门禁拦截；保存失败回执，只停止本任务新建的PID47576，改用JDK17绝对可执行文件启动，不改JAR或参数。当前服务会话 `proc_48248f3e06d9`，实际listener PID61276、原生创建时间1792062674.5266805、Java17和根cwd均核对；入口及61项HTTP资源全200且字节一致。health HTTP200但仍DOWN，application/cache UP、collectionService DOWN、connections UNKNOWN，未修后端或开启设备。
+- 当前 `prepare-2uI6hD` 实际产生6张未认证login图（3种尺寸、3种唯一位图，首末图相同），源/renderer/PNG身份与自有浏览器清理已核对。父级另保全3组新候选原生分析：1600表单细部、1280整体、390整体，均验证捕获像素与限定源矩形相同，新增提示、真实连接控件及平台/文档说明可见。该单一缺项在默认可见状态下已补回，不等于完整PW-01、隐藏输入值可读性、条件告警、键盘、业务写入或其他15项验收通过。
+- 原16项ID/全文及批准计划SHA保持不变，当前认证PNG仍0，userAccepted=false。新证据在外部 `frontend-premium-20261015/login-boundary-correction-20261015/`；包、回滚及私有日志在忽略目录 `collector-boot/target/releases/20261015-pw-login-boundary-0eb2dd1c/`。完整认证复捕仍需要用户新的本地临时输入，禁止恢复旧凭据；未commit/push。
+- 修正后的输入启动器已真实运行并读回 `VISIBLE_NATIVE_PROMPT_VERIFIED`。19:23:52核对本轮 `input-g0q3d_pp` 为 `WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`，会话 `proc_40f71691a726`，真实控制器/原生窗口所属PID21676、HWND1516420；Popen PID、基础Python、父链、可见固定标题均匹配，输入为原生msvcrt.getwch不回显、echoFallback=false。凭据不在argv/env中，未读取或保存值。此等待状态有超时边界，不把之后已结束窗口说成永久等待；认证采集与全站像素结论仍待实际完成。
+- 后续19:33实际读回该会话exit1、控制器19:31:25 `CONTROLLER_FAILED`；对应 `capture-16s5iy/receipt.json` 的安全错误为 `wait-for-new-stdin-only-token / INPUT_CLOSED_WITHOUT_TOKEN`，未提供凭据，认证矩阵=false、截图0。清理全部成功，控制器PID21676、Node PID18304及HWND1516420均已不存在；保存 `capture-ended-readback.json` 并将当前16项覆盖层改为等待用户准备好的阻塞状态。此前19:23的就绪核验作为历史快照保留，不反向修改成未就绪，也不继续要求向已关闭窗口输入。旧B/D/F等只读审图组的上游超时仍只是缺失审核证据，不是产品缺陷裁决或当前版本PASS。
+
+### 概览密度修正与复捕准备（历史候选，已被登录边界修正版替代，2026-10-15）
+
+- 父级成功观察并保全了移动概览顶部/底部、批准参考概貌、原部署1600顶部概貌和来源侧栏原像素局部。概貌不签小字、局部不签全页；这些是父级补充，不能冒充独立终审。可见差异是原部署的风险/事件与来源区占高，将设备快照和资源区明显推后；进一步定位到本页列表仍继承 `min-height:292px`，压过专属 `max-height:192px/230px` 的高度意图，以及来源行的双行和上下13px留白。
+- 本次生产源码只改 `features/dashboard/styles/dashboard-view.css`：明确两个列表 `min-height:0`、保留独立滚动，收紧来源/资源间距，让来源名和原成功时间同行且可自然换行。全部真实来源、指标、文字和滚动内容仍保留；完整Dashboard Vue与本次真正改前快照逐字节相同。未改模板、script、API/Store/DTO/Schema、默认值、请求、handler或业务写入。原采集sourceEvidence没有包含此CSS，现已单独保存真正的本次CSS改前快照，不追称为全站改造前基线；新复捕工具另外纳入该CSS指纹。
+- 本次最后生产修改后，`lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际exit0，renderer与Boot静态源码完整61项路径/SHA一致。36个原采集受保护源码仍无漂移，另冻结当前148个生产Vue/TS/CSS输入。未创建/修改/运行测试、未运行quality/verify、未升级依赖或降低规则。
+- 从同一HEAD `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0` 的pom/main生产代码准备新隔离目录，只叠加冻结renderer；Java17/Maven3.6.3的 `-Dmaven.test.skip=true clean package` 实际exit0，17模块SUCCESS，既有warning行3。最初单独探测launcher漏传multiModuleProjectDirectory而退出，补齐属性后版本探测及实际构建成功；未绕过门禁。
+- 新JAR为111513463 bytes、SHA-256 `5436df4ae4c7c5873b3dbebf14ff748a05fc1eae8686ff9b8663a46c91f32848`，应用class major61；包内61静态资源与冻结renderer全集合/字节一致，缺失/多余/不同字节均0。1324个应用及collector模块后端class与替换前运行候选逐项相同，不包含无关脏后端源码或后端修复。
+- 按PID64508/原生创建时间/Java17/根cwd/唯一JAR及9090参数再次核实旧实例；先验证候选与回滚副本，才停止旧listener并替换。新服务会话 `proc_12b091d22213`，实际listener PID58428、原生创建时间1792059641.91745，保持Java17、仓库根cwd和原端口参数。新入口及61项静态HTTP回读均200且字节匹配，未认证配置仍401；health HTTP200但整体仍DOWN，与部署、视觉结论分别记录。
+- 新工具副本保留原有严格只读策略、diagnostic running GET规则和favicon辅助归因，只增加本次CSS指纹，原工具/原PNG/原receipt不改写。`node --check`、控制器内存语法编译及新候选无认证prepare均成功，prepare实际2张登录图、37项源指纹，并读回自有incognito/browser/debug端口/profile全部清理。此准备不证明认证业务状态或诊断修正规则已认证复验；已启动任务自有不回显输入窗口流程，新的认证矩阵、修正后像素裁决仍待实际完成。
+- 本轮安全证据在外部 `frontend-premium-20261015/dashboard-density-correction-20261015/`，新候选/回滚/私有运行日志在忽略目录 `collector-boot/target/releases/20261015-pw-density-0eb2dd1c/`。原批准标准、原始150图和历史结论保留；不将修正实现、构建、重部署或未认证prepare变成像素PASS，未commit/push。
+
+### 中间候选历史（已被下方当前候选替代）
+
+- 生产修改集中在 `collector-desktop/src/app/`、`collector-desktop/src/styles/`、`collector-desktop/src/views/auth/LoginView.vue` 及各功能 CSS；视觉基线统一为石墨侧栏、浅灰作业面、白色内容面、青绿色状态、琥珀风险、红色危险和 4–6px 精密面板圆角。登录页已按示意图改为左侧深色说明区、右侧浅色连接表单，保留真实服务地址、令牌、测试连接、登录、文档和安全提示边界。
+- 前端门禁实际通过：`npm run lint`、`npm run stylelint`、`npm run typecheck`；未运行测试、`quality` 或 `verify`，未创建/修改测试代码。
+- `npm run build` 与 `npm run build:web` 实际通过；构建期间仅出现既有 Rollup 注释和 chunk 体积 warning，没有升级依赖或放宽规则。网页控制台同步 61 个资源。
+- Java17/Maven3.6.3 使用 `-Dmaven.test.skip=true package` 实际通过，17 个 reactor 模块全部 SUCCESS。中间候选 JAR 为 112019281 bytes，SHA-256 `cc014728acc7349f50108fab58bc82ee753c0e19b7bb0620287463b7c886574f`；当前61个静态资源在JAR内逐项字节一致，入口为 `index-D5yBTL2s.js`。进一步检查完整路径集合发现JAR实际含126个desktop资源、其中65个是增量构建遗留的旧hash资源，故完整资源集合门禁未通过；最终必须在独立目录执行clean package并核对集合，不能沿用本轮中间包作为最终交付身份。
+- 已停止旧 listener 并以 Java17、仓库根目录和 `--server.port=9090` 启动新包；当前入口 `http://127.0.0.1:9090/collector/desktop/index.html` 实际 HTTP 200，最终 listener 已建立。`/collector/health` 仍如实为 `DOWN`：`application UP`、`cache UP`、`collectionService DOWN`、`connections UNKNOWN`；未修复后端依赖、未启动设备、未执行配置同步、告警确认、影子提交、网络检测或控制写入。
+- 中间候选1600×1000及390×844生产登录截图已由Chromium从9090实际渲染；RGB平均绝对差6.66仅为图像差异数值，未定义通过阈值，也不能证明信息结构、字体或全部主色分布一致。登录页独立像素复审及业务页认证态截图仍待完成；没有恢复或记录任何凭据，不能把未认证登录图冒充全站真实业务态验收。
+- 后续实施清单已保存至 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/PRODUCTION-FIDELITY-PLAN.md`，含14路由及两个编辑器逐项状态。`production-checkpoint/`只是在初步token/共享壳/登录修改之后的检查点，不宣称为全轮修改前基线。以上中间构建和部署记录保留为历史，最终门禁须在最后源码修改之后重跑。
+
+### 上轮候选的源码、构建及9090回读（历史，已被密度修正版替代）
+
+- 逐页结构调整已涉及 Dashboard 的五项设备/点位摘要与来源侧轨、History 趋势/原始表与上下文主辅区、Alarm 事件表/当前确认记录与风险侧轨、Realtime 完整13列表及低频单点区、Log 正文优先，以及配置/云链路/诊断/网络/控制/影子工作区和真实5/6Tab编辑器。告警的“确认记录”只使用当前列表已有数据，不冒充完整操作轨迹；控制页只呈现实际保留的最近回执，不新增历史能力。具体结构保真仍在独立源码审查及当前像素复核中，不宣布16项全部通过。
+- 最后一次源码修改后，`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际 exit0；保留既有第三方 PURE 注释和大 chunk warning，不升级依赖或降低规则。未创建/修改/运行测试，未运行quality/verify。
+- 外部只读审查实际解析完整Vue模板：22个Vue的完整script与 `production-checkpoint/src` 逐字节一致，原非呈现指令多重集合无缺失，41个API/Store/类型/路由文件无漂移。该检查点产生在初步修改后，只覆盖其后差异；指令和script相同不能证明移动后的条件祖先/slot/挂载语义或像素一致，已另行独立审查。
+- 长会话中HEAD已更新为 `0eb2dd1c56a42cbf6b866423508ed7ec5e275df0`；未复用旧05f6a149隔离目录，而是从当前HEAD重新提取生产构建输入，仅叠加本轮61项renderer资源。Java17/Maven3.6.3在核实过cwd的新隔离目录执行 `-Dmaven.test.skip=true clean package`，17个reactor模块全部SUCCESS，错误0，warning行3，不编译或运行测试。
+- 当前可执行JAR为111513458 bytes，SHA-256 `e3579dc1cd390a51c5c746a4b974babe5c6e1992c17bebb6512d925bf55b15a1`，应用class major61。renderer、Boot静态源码与JAR均完整61项路径/字节一致，缺失0、额外旧hash资源0，已解决此前126项旧包遗留问题。
+- 部署前按PID15844、原生创建时间、Java21可执行文件、仓库根cwd及唯一JAR/9090参数核实旧listener；候选和回滚副本哈希验证后只停止该进程，再替换相同目标JAR。新服务使用Java17、仓库根cwd及原 `--server.port=9090` 参数，会话 `proc_61d00eab600b`，实际listener PID64508，原生创建时间1792052674.2467737。
+- 新9090入口及61/61静态HTTP资源均200、与最终JAR逐字节一致；未认证配置请求仍401。`/collector/health` HTTP200但整体DOWN：application/cache UP、collectionService DOWN、connections UNKNOWN；服务运行不等于采集健康，未修后端配置、启动设备或执行业务写入。
+- 认证采集前的无认证准备已实际捕获登录及设备认证失败态各顶部/底部共4图，自有incognito/browser/profile/debug端口均已清理；该准备不是全站认证态证据或像素PASS。其后已通过任务自有可见不回显窗口完成一次临时输入和下述150图采集，未恢复历史storage/配置/日志中的秘密，也不把已结束的输入窗口描述成仍在等待。
+- 构建、源保护、完整资源、受控替换及安全运行回执保留于外部 `frontend-premium-20261015/`；JAR/回滚及私有运行日志在被忽略的 `collector-boot/target/releases/20261015-pw-0eb2dd1c/`。本轮未commit/push，既有`.gitignore`和`.hermes.md`保持原状态。
+
+### 上轮候选的真实认证采集与逐页像素复核（历史证据保留）
+
+- 任务自有可见输入控制器已读回 `CAPTURE_FINISHED`，原生不回显且无降级；认证值未保存。真实截图回执为外部 `final-capture/capture-UGexIp/receipt.json`，原SHA-256为 `d6187b7da8d3c5cd9d9acbd99ed745834a8196fed2ba9fbcd5a741634fefd341`，原回执和PNG保持不变。
+- 实际取得150张PNG：14路由×1600×1000、1280×800、390×844三视口×顶部/底部共84张；本地设备5Tab及点位6Tab在同三视口顶部/底部另66张。父级逐项核对PNG签名、尺寸、SHA、Noto字体loaded及页面级横向溢出，图像无损坏、字体未加载和页面级横溢均0。此几何门禁不签表格内部滚动、细字可读性或视觉保真。
+- 295条非静态请求中244条获精确策略允许且全部HTTP200；51条被拒绝，其中48条无认证header、3条带认证header。Runtime exception和console error均0。原策略没有保存被阻断URL，不能事后把48条全部反推为favicon，也不能把所有来源分类成真实业务故障。
+- 工具源码核对发现：诊断的真实组件自动读取 `GET /api/device/{id}/running`，原精确策略遗漏此只读规则；原 `realState` 也把全部被阻断的非静态请求算作来源失败，150张原标签均为degraded。因此这些标签不能单独证明生产故障或采集健康，诊断局部错误态受采集工具边界影响，尚不能签成功来源态。原截图仍可用于其确实可见的布局审阅，不覆盖此限制。
+- 已在外部工具补上仅diagnostic可用的running精确GET规则，仍默认拒绝写入；对精确无参数同源favicon仅分开辅助分类、不放行；当hash导航复用文档时显式reload。原工具另按原字节留存，未覆盖旧证据。新版 `node --check` 和一次无认证prepare实际exit0、当前入口及完整资源核对通过、2张登录图捕获并清理；没有以无认证prepare宣称诊断running认证请求或整套认证矩阵已重跑成功。
+- 150张当前原图按25块审阅板拼接，每板含批准参考和对应三视口顶部/底部，source裁剪为exclusive坐标、destination为xywh，父级逐面板验证与源PNG像素相同。拼接验证只证明图像身份，不证明图片已被看见；原生附图通道没有提供传输缩放或analysis句柄，仍明确标为unknown/unavailable。7组逐页面板复核曾派发，其后上游失败与恢复记录见下；派发和中断均不计作通过。
+- 父级尝试一次任务自有无激活查看器的app-targeted像素观察，截图虽已保存，但辅助视觉返回server overloaded；该次为BLOCKED，不计作成功审图、无缺陷结论或像素PASS。不得用几何或源码结论补作视觉裁决。
+- 原采集自有incognito/browser/profile/debug端口均已清理，9090未被采集器重启或修改。采集结束后的当前renderer完整61项路径/字节仍与冻结候选相同；整体采集健康仍与视觉状态分开，尚无全站视觉PASS或用户接受。
+
+### 源码补充复核与像素通路恢复
+
+- 配置/运维/编辑器独立源码报告已交付，覆盖检查点之后11个Vue及6个CSS，未发现可确证新增P0/P1；父级重算报告所列17个目标指纹均一致。该报告有条件/循环/key/slot/form/Teleport等上下文核查，但不覆盖检查点之前的改动、像素、隐藏表格恢复或业务写入，不升级为完整生产验收。
+- 监测页独立源码审查尚无有效交付；父级另运行只读AST补充审查，五页原script字节一致、69个原交互/组件的受保护条件/循环/key/slot/分支链/form/Teleport上下文均找到匹配，解析错误0。六个控件的原生details折叠层级变化已逐个读源码复核：概览两个详情链接、实时单点的选择/输入/查询、历史JSON刷新。此为父级静态补充，不冒充独立审查或运行结果。
+- 原图附件批次 `deleg_d75e23b2` 的B/C/D/F/G已由完成轨迹确认上游超时，没有像素裁决；其余A/E运行超过25分钟仍无有效交付后请求中断，不通过重复等价派发或换provider制造结论。旧三页实施代理 `deleg_4579df11` 也确认零工具修改、无交付；父级再次核对36个冻结源码及完整renderer无漂移，未让旧失败任务覆盖当前候选。
+- 较早四任务批次 `deleg_6c9196ff` 的延迟完整交接现已核对：配置9个文件、运维10个文件（含保持原样的ControlView/ShadowView），合计19个唯一文件的子任务清单SHA均与当前源码相同；当前36个截图冻结源码、独立审查17个目标及renderer完整路径/字节亦无漂移。因此配置/运维交付已包含在当前构建与9090候选中，此通知未触发覆盖、重复重建或重启。该批监测任务仍是失败无交付；历史登录审图实际观察0张、BLOCKED，不能代替当前像素裁决。核对记录为 `late-deleg_6c9196ff-readback.json`，不将子任务自报的全阶段脚本保留范围扩大为父级已验证的原始基线范围。
+- 父级成功观察概览1600原图的一处原像素局部，识别真实31台/在线0/离线31/点位未知、风险主区和来源侧轨；另一成功分析仅描述概览七面板拼图的分组结构，并明确多数细字不可读，不把它分摊为七个面板或全部原图通过。两次技术分析失败和一次unchanged回复均单独保留。一次有界冷却后的标题校正已验证源PNG与业务像素不变、native标题读回改变、无激活/无前台焦点，随后得到上述分组级成功分析。
+- 当前采用实质不同、已验证可用的public computer_use只读查看器路径恢复：不再携带原生大图片附件，独占任务自有PID48704/HWND5838640，按原图序列分析。首个恢复任务 `deleg_91c4050d` 只覆盖Dashboard批准参考及三视口顶部/底部7图，要求逐图持久化真实分析和截图、失败有界、不关闭或抢焦点，不据此签其他页面。
+- 原始16项标准没有改写：新增 `current-acceptance-status-20261015-173832.json` 覆盖层绑定原计划SHA及原有ID/全文/历史状态，记录150图分布、源码受限结论、采集限制和逐项像素pending。PW-05仅有当前确认记录而非完整历史，PW-08缺少真实草稿差异快照，均明确保留为结构/来源边界，不用设计示例补齐。
+
+## 最新请求：提交设备页修正、重部署9090与全前端设计提案（2026-10-15）
+
+用户明确要求提交当前代码并重启当前服务，然后继续使用 Frontend Design 扫描所有前端页面，给出更成熟的优化建议和拟修改页面样式图。当前为 `COMMITTED_AND_DEPLOYED_9090 / FULL_FRONTEND_AUDIT_AND_DESIGN_PROPOSAL_IN_PROGRESS`，不是全站生产改版授权。按当前工作区与前轮15源/61资源冻结身份核对无漂移；提交白名单只包含前轮3个呈现源文件、本进度文档和完整Boot静态资源，不含既有`.gitignore`、`.hermes.md`、图片、证据或JAR，不push。
+
+- 执行计划已保存到 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/EXECUTION-PLAN.md`；实际路由定义核实14个不同View（登录及13个业务路由，根/兜底重定向不重复计数），另盘点本地设备编辑器与点位详情两个重点界面。
+- 服务替换先本地提交，再从精确提交隔离worktree用Java17/Maven3.6.3执行无测试clean package；完整新包与静态字节核验后才停止已确认旧listener，保留回滚包及原启动参数/工作目录，分别报告liveness、HTTP和health。
+- 全前端分监测6页、配置5页和运维3页只读审计，产出逐页来源/控件/默认GET/风险写入/敏感区域/改进建议。新样式图采用单独提案，不改变生产API/Store/Schema、默认值、请求生命周期或业务写入；图内明确示例数据与未实施，不用示例替代真实运行验收。
+- 目标交付为14个路由样式图及2个重点编辑界面图、可导航独立HTML和逐页报告；实际HTTP/PNG/字体/边界核验之后才交付，不以HTML源文件替代样式图。未取得认证或实际像素的页面明确标注源码推断/未覆盖，不伪造成功数据。
+- 不创建、修改或运行测试，不运行quality/verify，不修改依赖、认证或后端业务，不开启设备/同步/告警确认/影子/网络执行等写操作。后续完成的提交hash、包身份、部署读回与提案图在本节追加；以下为前轮已完成的范围限定视觉复审历史。
+
+### 全站设计提案产出（2026-10-15）
+
+- 已基于 `audit-monitor/config/ops.json/.md` 完成独立 Precision Workbench 原型，覆盖 14 个真实路由及 LocalDeviceEditor、PointEditor 两个重点编辑界面，共 16 个 1600×1000 PNG 样式图。
+- 原型入口位于 `C:/Users/wangbin/AppData/Local/hermes/artifacts/frontend-premium-20261015/prototype/index.html`，通过 HTTP 导航；入口使用 `app-clean.js` 和独立 `styles.css`，不进入生产源码、不请求生产 API、不执行写操作。示例数据显式标注“设计提案 · 示例数据 · 未实施”。
+- 已实际启动本地静态 HTTP 服务并通过 Chromium headless 渲染 16 张图；PNG 尺寸均为 1600×1000，均为非空渲染。该结果证明独立提案可渲染，不证明生产页面成功态像素、接口健康、键盘行为或用户接受。
+- 设计建议重点：监测页按来源新鲜度与风险组织；实时页保留完整 13 列；历史页保留采样顺序轴；告警分开 pointCode/确认/恢复；配置编辑器保留真实 5/6 Tab；云链路区分投递/ACK；诊断区分客户端就绪/服务健康/范围；网络页默认未执行。详见全站 `audit/DESIGN-PROPOSAL.md`。
+- 委派的独立 14 路由真实认证像素采集因 provider HTTP 429 未完成，因此不把未认证运行态或示例图冒充生产像素审查；剩余真实运行像素复核需另行执行。
+
+
+### 本次提交与新包重启实绩
+
+- 本地生产提交 `05f6a14929bf4dd68a52350bd7cd36d1c2b9d413`（`fix(desktop): refine device workbench visual hierarchy`）已完成，未push；提交路径以禁用rename合并口径为25条，折叠rename的Git统计为19文件，二者口径不同不混计。四个明确源/文档路径及完整生成资源范围、索引blob已逐项核验；既有`.gitignore`修改与`.hermes.md`保持未提交。
+- 精确提交的全新detached worktree采用命令级`core.autocrlf=false`检出，未修改用户Git配置；实际cwd及HEAD已核对，静态61项与前轮已审核renderer原始字节完全一致。Java17/Maven3.6.3无测试`clean package`实际exit0，17个reactor模块全部SUCCESS，可执行Boot入口及应用class major61已核验。
+- 新JAR为111501739 bytes，SHA-256 `152b8d4864f5326c85f0481daf011ef291dba8db4717c2fa311eb8346198b3b1`，打包61静态资源与已审核renderer精确匹配。备份旧包并验证SHA后，按进程可执行文件、工作目录、JAR/端口参数和原生创建时间再次确认，只停止旧listener PID29056，再替换相同目标JAR及latest副本。
+- 新后台会话`proc_d3e0b0e5b901`，实际listener PID38420；沿用Java17、仓库根cwd和`--server.port=9090`，不增加启动配置。61/61静态HTTP GET均200且与新JAR字节一致，实际入口现为`index-rdR7KHcm.js`；无认证设备配置实际401，认证默认没有放宽。
+- 整体health仍DOWN：application/cache UP，collectionService DOWN，connections UNKNOWN；新包启动与服务整体业务健康分别记录，没有通过启动/HTTP200声称采集正常。原认证上下文已销毁，当前全站成功态回读待另行本地临时输入，不读取旧storage/配置恢复秘密。
+- 安全回执和回滚/新包在忽略目录`collector-boot/target/releases/20261015-05f6a149/`，其中`ARTIFACT-READY.json`与`DEPLOYMENT-RECEIPT.json`已逐字节复制核对到全站提案artifacts的`release/`；私有Maven/后台日志、JAR和截图未提交。设备页旧7图证据包保持原字节；全站新建议与样式图继续进行，不能以重启完成代替提案交付。
+
+## 最新范围：设备管理独立像素复审与呈现修正（2026-10-15）
+
+用户确认继续设备管理页的保真审核及修正循环。当前为 `BASELINE_PIXEL_FAIL / PRESENTATION_CORRECTIONS_IMPLEMENTED / STATIC_BUILD_PASS / BACKEND_RESTORED / AUTHENTICATED_RECAPTURED / SCOPED_VISIBLE_PIXEL_PASS / READY_FOR_USER_VISUAL_REVIEW`：本轮已针对历史认证图中的 6 项独立问题实施呈现修正，并已完成修正后 7 张真实认证截图；独立桌面及窄屏已对本次 7 张新图的可见呈现范围给出 PASS，新增可确证必须修正项为 0；当前可供用户视觉复核，不是完整原验收条款、全功能或用户最终接受。此前的 9090 部署及运行记录仅是历史证据；初次核对时入口无法连接，监听扫描未发现该端口，原后台会话 `proc_cc6948c36a74` 返回 `not_found`，未查明退出时间或原因。用户随后明确允许启动现有验证 JAR，9090 已恢复，实际 listener PID 为 `29056`，入口 HTTP 200；只恢复旧包，未替换部署新 renderer，整体健康仍为 DOWN。
+
+### 本轮独立复审与逐项修正记录
+
+- Frontend Design 独立复审 `deleg_7d62ff1c` 实际观察了 3 张批准图和 3 张历史认证图（1600×1000、1280×800、390×844），逐图记录路径、SHA-256、尺寸、不同的可见观察和未覆盖区域。原生附图没有提供 analysis handle、传输缩放或 DPR，均明确标为 unavailable，不伪造句柄或声称 1:1；父级另核对源/图像身份、实际委派轨迹及 JSON 的 6 项问题。历史已观察像素范围为 FAIL：P0 0、P1 4、P2 2。该结论不是当前构建终审，也不签滚动底部、展开状态、键盘或业务。
+
+| 原问题 ID | 本轮呈现修正 | 状态 |
+| --- | --- | --- |
+| P1-01 | 窄屏操作带取消拉高的双列块及新增独占整行，改为内容适配、自然换行的紧凑按钮组；保留刷新→导出/导入→新增的阅读顺序和原绑定。 | 所附当前视口可见条件 PASS |
+| P1-02 | 登记册底栏降低占高；长操作指导及三态解释保留于原生“操作与状态说明”详情中，清单来源说明移入紧凑底栏，不再单独挤压首屏。 | 所附三视口及帮助新图可见条件 PASS |
+| P1-03 | 压缩卡片行间距；身份与来源使用紧凑元信息排布，生命周期与通信就绪行可自然换行；连接与采集健康仍独立展示，保留全部真实计数和原操作。 | 所附真实首末卡密度与字段可见条件 PASS |
+| P1-04 | 卡片连接字段不再嵌套双列挤窄短协议；配置点位/周期取消省略策略，保持原值和单位。 | 所附1600/1280当前短协议与周期可见条件 PASS |
+| P2-01 | 页面重复面包屑移除，统一由共享顶栏提供；仅 `/device` 窄屏保留完整“配置 / 设备管理”，其他路由规则不变。真实六项摘要降低视觉层级，来源说明仍保留。 | 设备页三视口可见条件 PASS；邻页未运行 |
+| P2-02 | 长设备名在下划线分隔处提供 `wbr` 软换行机会，完整名称/ID保留在DOM并新增原值title；不改数据、不替换为设计示例。 | 390可见换行条件 PASS；hover 未观察 |
+
+### 源保护、构建与资源身份
+
+- 本轮仅修改 `DeviceListView.vue` 模板、页面局部 `device-list.css` 和 `AppTopbar.vue` 设备路由限定的模板/CSS；没有更改两个 Vue `<script>` 区块，其原始字节与本轮改前快照一致。设备页事件、v-model、disabled 业务绑定序列保持一致；冻结的另 12 个 API/Store/类型/壳/公共样式等保护文件 SHA-256 未变。没有修改请求、Schema、默认模式、生命周期或业务写入边界。
+- 最后生产改动后的 `lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际 exit 0，未创建、修改或运行测试，未执行 quality/verify 聚合脚本；既有第三方 PURE 注释及大 chunk warning 保留，未升级依赖或放宽规则。
+- 新入口为 `index-rdR7KHcm.js`；renderer 与 Boot 静态资源完整 61 项路径及 SHA-256 精确一致。同步涉及的其他路由 JS 文件名变化属于生成产物引用变化，不是新增源业务修改。
+- 改前身份核对另发现旧 JAR 与改前 renderer/static 的 59 个 JS/CSS 字节差异全部仅为 LF/CRLF：文件集合与逻辑文本相同，但不能称三者原始 SHA 相同。已保留精确哈希与只读换行差异记录，未通过规范化重写证据来制造相等。
+- 本轮未重新打包或替换 JAR。原 JAR 的 SHA-256 仍为 `7b653c21e1cc549cbd0a1f9e6d329df08ee903d2664f46d2dcf088492b356db5`，不包含本轮新修正，不能以旧包或旧截图签新入口。初次核对时真实后端和临时认证均不可用；后端随后获准恢复，现已通过本地不回显输入完成一次任务自有认证回读与采集；值未向聊天、源码、参数、文件或日志输出。不猜测令牌、不从历史/storage/配置恢复秘密，也不以示例数据生成成功态截图。
+
+### 用户允许后的旧包恢复记录（2026-10-15）
+
+- 恢复前再次检查 9090 无 listener，JAR 原始 SHA-256 与允许的旧包一致，Java 实际为 17.0.15。沿用原仓库根工作目录、原 Java 17 和 `--server.port=9090`，没有 Maven 打包、复制替换或新增启动配置。
+- 新后台会话 `proc_abad66a65356`；真实 listener PID `29056`，进程创建时间 `2026-10-15T09:09:23.6620720+08:00`。限定读取原生进程元数据确认可执行文件、目标 JAR 及端口参数；未输出其他进程命令或凭据。
+- 入口 HTTP 200，实际仍为 `index-BXY-uzQS.js`，HTML 字节与允许的旧 JAR 精确一致；新修正入口 `index-rdR7KHcm.js` 未部署。无令牌配置请求实际 401，不改认证、不伪造成功。
+- `/collector/health` HTTP 200但整体 DOWN：`collectionService DOWN`、`cache UP`、`connections UNKNOWN`、`application UP`。运行与依赖/采集健康分别记录，未控制设备或修复后端配置。
+- 临时不回显输入控制器已保存于 scratch；原生控制台能力实际检查返回 `nativeConsoleReady=true / echoFallback=false`，不会退回可回显输入。原 Playwright 模块已被清理，已改用现有 Chromium 与 Node 原生 WebSocket/CDP，没有安装项目或测试依赖。
+- 无认证准备实际运行通过：新候选完整 61 项资源与入口身份匹配，17 项 CDP 命令签名核验，真实配置/runtime/protocols 均 401、零设备行；原生 1600×1000 PNG 成功，Noto Sans SC 加载与 computed font-family 已观察。prepare 不是认证成功或视觉终审；原始准备报告、EOF 失败和新版安全观察回执分别保存，没有覆盖历史。
+- 父级已核验委派原始脚本/回执/PNG 的 SHA、PNG 尺寸及 prepare 自有端口关闭；保留原脚本快照，并以 `PARENT-CAPTURE-TOOL-OVERLAY.json` 关联父级补充后的采集器与实际新版准备回执。补充只涉及截图隐文本但保留容器颜色、明确 stdin 凭据来源、安全字体/几何/完整原值布尔 metadata，不改变生产或业务源码。
+- 本地不回显输入已真正启动，会话 `proc_4f508af6871b`。`CONTROLLER-STATE.json` 读回 `WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`，当前任务自有 renderer 静态身份验证为 true，候选 `index-rdR7KHcm.js`。只等待用户在 `local-hidden-input.py` 本地终端输入后回车；当时尚未取得令牌、执行认证七图矩阵或宣称 PASS，Esc 可取消。
+- 安全恢复回执：`BACKEND-RESTORED.json`。后台输出仅重定向到本地 private 日志，不读取或交付原始日志；服务不启用每分钟心跳通知，仅保留退出通知，避免重复运行状态回复。
+
+### 可见输入窗口及当前构建认证采集（2026-10-15）
+
+- 用户表示找不到后台输入入口后，先以 Esc 取消原后台等待进程，确认 exit 130 且未提交令牌；桌面 pane 工具不可用时没有要求用户继续寻找文件，而是直接启动任务自有 Windows 可见控制台 `Collector - Token Input (Hidden)`。原生 `msvcrt.getwch` 不回显，不使用可回显降级，也不从既存存储读取秘密；额外检测采集子进程结束以避免输入窗口过期后仍永久等待。
+- 可见窗口 launcher 会话 `proc_a9fb788a64dc` 实际正常 exit 0，控制器状态为 CAPTURE_FINISHED；其采集时记录 native console visible=true。launcher 进程号与控制器自报进程号分别留在原始安全记录，不把不同 PID 当作同一进程或推断未保留的父子关系。完成依据为以下原始认证回执/请求/PNG，而不是窗口打开或退出码单独证明。
+- 本次新构建真实认证回执 `authenticated-dzZ1y2/receipt.json`，SHA-256 `06f773552f244df2ae4ca6e036aecb06b0d444322be76eafc5e99a837df596bc`，状态 CAPTURED_PIXEL_REVIEW_PENDING。标准 appStore→configureHttp→Axios→同源临时转发链的 capabilities、配置清单、全设备 runtime、protocols 四个原 GET 全部 HTTP 200，x-collector-token 只记录 presence=true，不保存值；无越界/非GET请求或模拟响应。
+- 当前 renderer 实际读取 31 台设备；7 张原生 PNG 包含1600×1000、1280×800、390×844的顶部/登记册滚动末端及390帮助展开底部。父级逐张验证原路径、SHA-256、PNG尺寸和字节数，底部三图最后设备与操作几何完整可见；各图 Noto loaded、完整名称/ID DOM-title 对应为 true，协议/周期横溢计数均 0，页面级横向溢出 0，console/page errors 0。
+- 首卡位置/高度的真实测量：1600 从 y284.1/高394.7 变为 y242.4/高316.8；1280 从 y271.1/高394.7 变为 y241.4/高316.8；390 从 y529.2/高418.7 变为 y358.6/高334.8。三种首屏均实际包含首卡连接、采集健康和操作；这是几何证据，不替代逐图像素签收。
+- 采集仅执行原 GET、调整任务自有视口/内部滚动和打开本轮非敏感帮助 summary；不选设备、不改筛选、不打开令牌 details 或执行业务命令。潜在敏感 notice/error/JSON/密码/URL-fallback 只在截图时隐藏正文且保留容器颜色与几何，不签被隐文字的可读性；没有读回令牌。
+- 当前源与61项 renderer 资源再次对冻结身份核对无漂移。原生截图传输到独立 Frontend Design 终审 `deleg_7be3bdaf`：桌面4候选+2批准图、窄屏3候选+1批准图，合计7个不同候选与3个批准稿；两个子任务只签各自实际附图和相关条件；随后返回的范围限定裁决见下节，派发不等于通过。
+- 父级保留 `AUTHENTICATED-CAPTURE-READBACK.json`、`POST-CAPTURE-CLOSURE.json`、可见输入 owner/state及原始回执。任务自有 incognito context/browser/profile/proxy已清理，原本次代理/debug端口读回关闭；9090入口仍200，health仍DOWN。新 renderer 仍未部署，未重新打包/提交/推送。
+
+### 最终独立像素裁决与父级核证（2026-10-15）
+
+- `deleg_7be3bdaf` 两个独立 Frontend Design 审核均已返回：桌面1600×1000/1280×800顶部和滚动底部4个候选可见范围 PASS，390×844顶部/底部/帮助展开3个候选可见范围 PASS；分别对各自F01–F07可见条件给出PASS，未发现新增可确证must-fix。两个任务分别实际读取6图与4图，包括3个批准稿，未把DOM/几何声明当作像素观察。
+- 父级读取两份完整Markdown/JSON和可用委派工具轨迹，重算7个唯一候选、3个批准稿的SHA/IHDR、实际所述整幅观察矩形和具体逐图观察；原生附图通道未给analysis句柄/传输缩放，仍记unavailable。`FINAL-REVIEW-READBACK.json`实际返回SCOPED_VISIBLE_PIXEL_PASS、errors空；两份历史完整问题对象与基线逐字一致，6个原id/priority/acceptance/status未改写，未将整条旧验收矩阵冒称全部闭合。
+- 6项历史问题在本轮已观察呈现条件中的修正均获得相应桌面/窄屏支持；P1-04的wide条件由桌面审核支持，P1-01/P2-02的390条件由窄屏支持，多视口项合并已观察的视口支持，不以单批未观察替代另一批。被隐藏的运行提示正文、全部31设备中间滚动位置、键盘/focus/hover、其他route/table/menu/drawer/editor、业务写入和用户接受仍未签。
+- 末次父级核对15个冻结源hash无漂移、renderer与Boot静态资源61项完整路径/字节继续一致；两个Vue业务script及原绑定保护结论不变。源码未在末次5项允许门禁后继续修改，只追加安全证据及进度文档；无测试、依赖变化或规则放宽。
+- 最后运行读回为 `2026-10-15T10:10:05+08:00`：9090实际listener仍PID29056，入口HTTP200且原字节匹配允许的旧JAR，整体健康仍DOWN（application/cache UP、collectionService DOWN、connections UNKNOWN）。本轮新renderer没有部署，旧包恢复不改变此边界；任务自有采集proxy/debug端口已关闭、incognito上下文/浏览器/profile已销毁，临时认证值未保存。
+- 交付采用本轮最终7图、范围限定审核报告、安全身份/门禁/运行记录，不混入旧图或私有日志/凭据；图像可见范围PASS与未覆盖条件分开。当前设备页呈现修正轮次结束，不自动进入新包部署、commit/push或其他页面阶段。
+
+### 当前交付与范围边界
+
+- 现有已验证 JAR 的9090恢复、一次本地不回显认证采集及7图可见范围独立复审均已完成；当前为READY_FOR_USER_VISUAL_REVIEW，不要求用户重复输入。新包打包/部署和commit/push不在当前授权中，保持未执行。
+- 三个视口的顶部/末端与说明详情新图、安全几何及独立像素复审已完成；只签实际所附7图可见条件，不将几何、历史截图、源码声明或静态门禁当作像素PASS。邻页、键盘/hover、菜单及未授权或隐藏内容不因本次7图而自动通过。
+- 本轮最终交付已保存到 `C:/Users/wangbin/AppData/Local/hermes/artifacts/device-fidelity-20261015/index-rdR7KHcm/`，包含7张当前PNG、`REPORT.md`、两份独立审核的JSON/Markdown及安全身份/源保护/运行/核证记录；仅文本交付副本对2处协议连接URI做脱敏，原始/交付SHA及次数分开保留，未改原始审核证据。
+- 已生成并重新打开校验 `C:/Users/wangbin/AppData/Local/hermes/artifacts/device-fidelity-20261015/device-fidelity-index-rdR7KHcm.zip`：18个哈希载荷文件加1个manifest，共19成员，精确成员集合及全部SHA读回一致。ZIP为848846 bytes，SHA-256 `9931a7db29a82a56734ef5f37623369dd34584ad9f89cab095906c1e0571c861`；`ARCHIVE-RECEIPT.json`保留在ZIP外，避免自引用。私有日志、凭据、profile、采集脚本和旧图没有进入交付包。
+- 原始安全证据在 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/device-fidelity-20261015/`；历史PNG/report及冻结身份没有覆盖，临时证据不纳入Git。持久化交付包不依赖scratch保留期。
+- 未 commit/push、执行业务写入或控制设备；既有 `.gitignore` 修改和 `.hermes.md` 保留。不新增 Phase 18，以下 2026-10-14 的 DEPLOYED_9090 等说明均为此前执行窗口历史。
+
+
+## 最新范围：设备管理保真修正、Noto Sans SC 与认证 Header 只读复核（2026-10-14）
+
+用户明确要求“设备管理页面没有按照设计图实现，需要监工修改；字体改成 Noto Sans SC；认证失败时通过标准请求 Header 读取真实设备”。当前状态为 `IMPLEMENTED / AUTHENTICATED_READONLY_RECAPTURED / DEPLOYED_9090 / CONDITIONAL_PIXEL_REVIEW_PENDING`。本轮沿用已批准的 `designs/collector-workbench/`，只修前端呈现层和既有 HTTP Header 的大小写表达，保持真实 API、Store、Schema、请求归属、生命周期、默认模式和业务写入边界；不创建、修改或运行测试，不伪造设备数据或认证成功。Header 由浏览器 Axios 的当前令牌和 Electron 主进程凭据存储统一注入为 `x-collector-token: [REDACTED]`，不把凭据硬编码到源码。认证后的真实 renderer 只读回读得到 31 台设备；独立像素复审指出的操作层级、配置点位摘要和标题上下文已在最新候选中修正，但当前候选的独立视觉复审调用因上游栈溢出失败，因此不宣称最终无条件视觉 PASS。
+
+### 本轮实际修正与部署记录
+
+- 设备页新增与批准稿一致的紧凑设备汇总轨道，真实列表未成功读取时显示 `—` 和“尚无成功读取结果”；成功空列表仍可显示真实的 0。桌面操作顺序调整为“刷新列表 → 配置导出/导入组合 → 新增本地设备”，1280px 使用 202px 窄桌面侧栏，390px 使用明确的双列网格；失败态只保留真实错误和“运维令牌与连接 → 保存令牌 → 刷新列表”的恢复路径。不改变请求、payload、handler 或默认视图。
+- 复审指出的 P2 错误文案重复已在呈现层收口：对 401/未授权/令牌无效类真实错误统一显示单一恢复提示，保留原始 Store 错误、请求和认证状态不变；非认证错误继续按原始错误展示。
+- 全站前端字体变量切换为本地 `Noto Sans SC` 可变字体 `NotoSansSC-VF.ttf`，并保留 `@font-face`、Element Plus 变量和弹层内联字体覆盖；旧 LXGW 资源不再进入 renderer。字体资源 SHA-256 为 `763146584cf0710223441356b4395e279021b0806c196614377a7a0174ae074a`。
+- `lint`、`stylelint`、`typecheck`、`build`、`build:web` 均实际 exit 0；Vite 仅保留既有第三方 PURE 注释和大 chunk warning。renderer 与 Boot 静态目录共 61 个文件，路径/字节 SHA-256 全部一致；入口为 `index-BXY-uzQS.js`。
+- 使用 Java 17/Maven 3.6.3 和 `-Dmaven.test.skip=true` 从提交 `b259b511` 的隔离 worktree 完成全 reactor `package`，17 个模块均 SUCCESS，未编译或运行测试。最新 JAR 为 111503465 bytes，SHA-256 为 `7b653c21e1cc549cbd0a1f9e6d329df08ee903d2664f46d2dcf088492b356db5`，已嵌入 Noto 字体和完整桌面静态资源。
+- 用户授权重启后已停止旧 9090 服务并重新启动最新 JAR；当前 9090 实际 listener 为 Java 17 JAR 进程，入口 HTML HTTP 200，受保护的 `/collector/api/config/devices` 与 `/collector/api/device/runtime` 只读请求均 HTTP 200。部署 JAR 与隔离构建产物 SHA-256 一致。
+- 最新 9090 认证只读采集已完成 `wide`/`medium`/`narrow` 三种视口：真实设备 31 台，1600px/1280px/390px 分别为三列/两列/单列，标题上下文、操作顺序、配置点位摘要均符合候选；三视口页面级/root/登记册横向溢出均为 0，Noto Sans SC 已加载，浏览器错误为 0。采集报告中的 Header 值已脱敏为 `[REDACTED]`，未执行任何业务写操作。
+- 按用户提供的临时凭据通过现有标准 Header 注入路径执行只读回读：`/api/config/devices` 与 `/api/device/runtime` 均 HTTP 200；认证后的 renderer 读取到真实 31 台设备，1600px 为三列、1280px 为两列、390px 为单列，三视口均无横向溢出、Noto Sans SC 已加载且浏览器错误为 0。凭据未写入源码、进度文档或截图报告，未执行任何业务写操作。
+- 最新候选增加 `配置 / 设备管理` 页面上下文、将配置导入/导出收束为同一操作组、恢复真实 `配置点位` 摘要位，并把窄屏顺序固定为“刷新列表 → 配置导入/导出 → 新增本地设备”；卡片对长真实 ID 做两行视觉限高但保留原值 tooltip，连接地址、来源、点位和周期继续来自真实设备字段。前端 `lint`、`stylelint`、`typecheck`、`build`、`build:web` 重新实际 exit 0；最新认证候选 Header 名集合包含 `x-collector-token`，四个只读 API 请求成功，三视口截图的页面级/root/登记册横向溢出均为 0。配置点位在本次真实响应中不可得时显示 `—`，未用批准稿示例数字填充。
+- 最终候选又修正了卡片网格的隐式行高：设备卡片按内容自动扩展，不再让地址、点位、健康统计和底部操作溢出 99px 固定行；协议、长真实 ID、连接地址和状态统计保持可见。重新采集的 1600/1280/390 认证成功态仍为 31 台、三列/两列/单列、页面级/root/登记册横向溢出均为 0。
+- 本轮 `build:web` 已将 renderer 与 Boot 静态目录同步为 61/61 文件且逐文件 SHA-256 一致。首次 Maven 无测试打包受 PID 53176 锁定旧目标 JAR 影响；在用户授权重启后停止该旧服务，从提交 `b259b511` 的隔离 worktree 完成无测试打包，安装并启动最新可执行 JAR，9090 入口和认证只读 API 均已实际读回验证。
+
+## 最新范围：批准稿精密工业工作台实施与真实 renderer 验收（2026-10-13）
+
+登录/连接页、共享浅色壳、14 个路由呈现、设备五分区编辑器、点位六分区编辑器及相关弹层已完成生产实施。用户已回复“接受，继续”，接受已披露的 8 个 script 差异及既有 `.gitignore` 边界；随后明确要求“执行完成后提交一下代码，然后吧本地运行的服务重新编译启动”。最新范围增加的本地限定提交、精确提交隔离无测试打包及 9090 服务替换已实际完成，不包括推送、修改认证/依赖配置或业务写入。当前为 `IMPLEMENTED / USER_ACCEPTED_PROTECTION_SCOPE / LOCAL_DEPLOYED_WITH_HEALTH_DOWN`；新服务启动及完整静态资源读回通过，但整体健康仍为 DOWN，不是完整业务验收或最终像素签收。
+
+用户接受后的 lint、Stylelint、typecheck、build、build:web 五项门禁均重新实际 exit 0；renderer 与 Boot 静态目录的完整 60 项路径及 SHA-256 一致，入口 `index-C8DUMKg8.js`。Vite 仍有第三方 PURE 注释与 vendor chunk 体积 warning，未更改依赖或放宽规则。正式构建独立预览入口 `http://127.0.0.1:5175/`，原开发入口 5174 保留；9090 另经下述独立部署核证，已运行本次新 JAR，不能以预览服务代替部署证据。
+
+最新真实正式构建观察按清单精确使用 1600×1000、1280×800、390×844，14 路由共 42 个组合，页面级横向溢出 0、Runtime exception 0；原先 1440×900/1024×768 的观察仅保留为历史，不能替代要求尺寸。入口 HTML 与 dist 原字节相同，全部页面实际加载 `index-C8DUMKg8.js`；本轮全部 265 个请求均为 GET，388 条浏览器日志均为 CORS 分类，真实失败/未知不补假数据。三宽度设备卡片/表格切换、五个编辑分区及上下端点、Escape 关闭、日志“更多筛选”有实际观察，共 76 张新 PNG；pre/textarea 正文仅在截图时隐藏，保留几何，不签其内容可读性。
+
+窄屏导航原生 Tab/Shift+Tab 共 28 次均未越出抽屉；Escape、真实路由点击和 900→1024→390 断点的背景锁/回焦有实际记录。观察工具的遮罩中心点击实际命中了覆盖其上的导航链接，不能当作遮罩关闭证据。设备编辑器 Escape 关闭并清除 modal-active，但从分区按钮关闭后焦点实际落到 BODY，不能标记 Dialog 焦点恢复通过；该既有 UI 限制未在本轮新增脚本修复。截图存在/几何通过不等于独立最终像素审查或全成功态验收。
+
+### 本轮保护核对与剩余边界
+
+- 改前 manifest 为 1530 个 tracked 文件、41 个 Vue script、146 个源快照和 69 个批准稿文件；允许呈现范围内源文件按批准稿变化。
+- renderer 与 Boot 静态同步校验：60/60 common 文件一致，0 mismatch，0 missing，0 extra。
+- 按 manifest 的 Vue `<script>` 字节核对仍发现 8 个差异：`AlarmView.vue`、`CloudView.vue`、`DeviceListView.vue`、`LogView.vue`、`NetworkView.vue`、`RealtimeView.vue`、`DeviceOperationShell.vue`、`ConfigOpsPanel.vue`。其中设备列表属于批准的页面本地 UI 例外；其余差异为当前工作区既有生命周期/请求归属/最后成功快照保护等行为改动，本轮未回滚，未将其冒称为 script 保护通过。
+- 全仓库 `git diff --check` 仅因既有 `.gitignore:42` EOF 空行返回 exit 2；前端源与 Boot 静态同步路径限定核对返回 exit 0。未修改 `.gitignore`，以免越过当前工作区边界。
+- 用户已接受上述保护例外；其源差异保持原范围，不据此宣称全部 script 字节一致。本次提交只纳入前端生产源码、完整 Boot 同步静态资源和本进度文档；既有 `.gitignore`、`.hermes.md`、`.workbuddy-ai/`、私有审计/设计/运行证据不纳入。
+
+### 真实 renderer 证据
+
+- 机器可读记录：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/runtime-ui-results-with-events.json`。
+- PNG 目录：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/runtime-ui/`；文件按 `{wide|medium|narrow}-{route}.png` 命名，另有设备新增弹层交互截图。
+- 代表性访问方式：浏览器打开 `http://127.0.0.1:5174/#/login`；其他页面使用 hash 路由，例如 `#/dashboard`、`#/device`、`#/device/workbench`、`#/shadow`。
+- 最新正式构建证据：`designs/collector-workbench-implementation/evidence/candidate-C8DUMKg8/RUNTIME.json`、`IDENTITY.json`、`screenshots/`，仅保留本地，不提交截图及运行记录。
+
+### 最新提交与重启执行边界
+
+从本次生产提交的精确 HEAD 创建隔离 worktree，以 `-Dmaven.test.skip=true clean package` 编译生产模块，不编译或运行测试；旧 9090 保持运行直到新可执行包及全部嵌入静态资源核验通过。替换前保留旧 JAR，按真实监听 PID/创建时间/可执行文件核对后只终止该服务，沿用原 Java、工作目录和启动参数。生产提交、JAR SHA-256、旧/新 PID、完整 HTTP 静态资源读回、健康组件状态及回滚包另存忽略目录 `collector-boot/target/releases/` 下安全回执；部署后的文档收尾不改变生产构建身份。服务启动与依赖健康、视觉验收分别记录，不改历史 PASS/FAIL/BLOCKED。
+
+### 本轮本地提交与部署结果（2026-10-13）
+
+- 生产提交：`d1578fd4`（`feat(desktop): implement precision industrial workbench design`），分支 `feature_2.0`。包含 44 个前端生产源码文件的改动、完整同步静态资源和本进度文档；没有推送，没有提交私有设计/证据、测试或无关工作区文件。
+- 从该精确提交创建全新 detached worktree；实际 cwd 和 Maven 各 `Building jar:` 路径均位于隔离目录。生产 `clean package` 的 17 个 reactor 项目全部 SUCCESS，exit 0；实际日志明确不复制测试资源、不编译测试、跳过测试运行。
+- 新可执行 JAR 为 100178571 bytes，包含 192 个嵌入依赖，应用字节码 major 61（Java 17）。SHA-256：`689cbc72e83edbc0ccea4957eb96931263061a9ecc20d4e29d92ffff8893aa3f`。源码静态目录、正式 renderer 与 JAR 的 60 项完整路径及字节一致，无旧 hash 文件残留。
+- 旧运行包先备份并复核 SHA-256；只终止原 9090 实际监听 PID `25552`，确认进程退出和端口释放后才安装新包。沿用原 Java 17、仓库根工作目录及原启动参数，新实际监听 PID `50456`，进程创建时间 `2026-10-13T22:23:26.221664+08:00`。
+- 页面入口 `http://127.0.0.1:9090/collector/desktop/index.html#/login`；60/60 静态 HTTP GET 均返回 200，响应原始字节 SHA-256 均匹配新 JAR，入口 `index-C8DUMKg8.js`。这是静态部署读回，不升级此前视觉或业务验收结论。
+- 切换前后 `/collector/health` 均 HTTP 200、整体 DOWN；分项同为 `collectionService: DOWN`、`cache: UP`、`connections: UNKNOWN`、`application: UP`。新包已启动不等于采集服务健康；本次未改认证/依赖配置或发起设备启停等业务修复。
+- 发布产物与安全回执目录：`collector-boot/target/releases/20261013-220823-d1578fd4/`，包括 `ARTIFACT-READY.json`、`DEPLOYMENT-RECEIPT.json`、`data-collection-service-d1578fd4.jar` 和 `previous-data-collection-service.jar`。回滚包保留本地；服务继续运行，隔离构建目录在持久化产物后清理。
+
+### 以下为此前发布与专项验收历史（不是本轮部署结果）
+
+提交之后从该精确 HEAD 创建隔离 worktree，采用 `-Dmaven.test.skip=true clean package`，不新增、修改、编译或运行测试。旧 9090 服务保持运行直到新可执行 JAR 核证成功；替换前保留旧包备份，替换后核实新 PID、9090 页面及全部嵌入静态资源字节，健康状态与启动结果分别记录。打包、部署结果及回滚路径以忽略目录 `collector-boot/target/releases/` 下本次安全部署回执为准，不预先宣称成功；以下更新时间和未部署说明均为历史窗口。
+
+### 发布请求执行记录
+
+- 2026-10-13 13:14（中国标准时间）：新构建/同步完成，完整 60 项资源一致；原监听 PID、Java 路径、工作目录及运行 JAR 路径已限定读取核对，未输出秘密或原始运行日志。
+- 原全量验收执行窗口停止，临时认证输入进程已取消；历史证据、盘点和未完成验收保持原范围。
+- 本次仅执行授权的提交、无测试编译和 9090 服务替换；精确提交和最终运行核证另存安全部署回执，不开展业务写入或依赖配置修复。
+
+最新全部授权执行窗口（2026-10-13）：用户要求完成此前解析的剩余四类任务，执行计划另存 `full-closure-authorized/EXECUTION-PLAN.md`，不改旧合同和历史结论。五项无测试门禁重新实际exit0，最新隔离renderer的完整60项path/SHA/bytes与前序焦点候选完全一致，158个源hash保持；HEAD仍 `7c1778dd27542be92049deb59b16233b471e48e4`，diff-check通过，既有工作树改动保留、不宣clean。独立原条款盘点 `deleg_3738a697`已完成并逐条父核：云诊断42、日志网络42、共享/采集36，共120条；原id/priority/全文/顺序和suite保持，不合并28个同名shared ID，9输入manifest与9安全源snapshot全部匹配。10条高价值动作及208个证据路由分支不是新PASS或新合同。已准备真实浏览器安全观察工具但尚未初始化或生成新PNG：上一轮临时认证值没有保留，当前内存只具 `[REDACTED]`标记，禁止猜值、逆脱敏或从配置/storage读取。任务自有本地终端已进入 `x-collector-token`不回显输入提示，`CONTROLLER-STATE.json`读回 `WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`；认证只在用户输入后由stdin进入浏览器内存。完整五页、新像素终审、最终效果图ZIP仍PENDING；不是授权未获准或门禁失败。新窗口未执行业务写入/测试/部署/服务替换。
+
+最新认证补充（2026-10-13）：用户明确提供`x-collector-token`供只读验收使用，值仅由stdin进入任务自有headless context内存，不写源码/配置/任务日志/证据。相同认证头在9346既有入口的config summary仍401，直连已批准9090后端返回200；原因未核实，不推断代理丢头、不改代理或服务。新auth候选仅在浏览器映射原scratch真实index-CUrdtFzV.js，不替换9090运行包：五页5条route、36静态资源及27原页面GET均200，console/pageErrors均0，0非GET/0越界guard。首认证轮的两个自动设备runtime/running GET被旧观察器guard误挡已另保留；核生产API及Collection默认选首设备调用链后，新版本只精确放行此前两个自然GET，不手选设备/带入、改query或扩大业务权限。父核`AUTHENTICATED-REQUEST-READBACK.json`另存durable补充；158当前源及原renderer/Boot各60资源仍一致，旧401记录/原专项安全ZIP不改。MF-FOCUS-01专项PASS保持；HTTP200不等于accepted-source/last-good/业务、完整84或新像素通过，完整五页/最终效果图ZIP仍PENDING。下列“25GET401”为修复专项原观察窗口历史，不再作为新直连认证窗口状态。）
+
+最新更新时间：2026-10-13（本轮MF-FOCUS-01最小修复/无测试构建/隔离有限键盘复核/Frontend Design三阶段监督专项闭环完成。deleg_9ed39160最终裁决SCOPED_MF_FOCUS_01_PASS、专项must-fix0，三个报告SHA/bytes及13唯一直接引用已父核，并逐项重算221保存记录、201开态记录、182原生键、7组14方向/14首尾单键见证、6Escape和16末链接滚入见证；60新真实资源与36加载身份、158当前源集合/bytes及原renderer/Boot各60完整集合均再次核证。只签所录闭合details共享根因与顺序边界，不是独立新交互/rawtool取回、新像素、Electron IPC或原84整条通过。五门禁exit0及diff-check保持，源码只有AppShell三处改变，157其它源从改前基线不变。原两个suite S-NAV-04历史FAIL/原84/旧PNG裁决保留，完整五页/新效果图终审/最终ZIP PENDING；25原GET全部401/25consoleErrors如实保留，不签业务成功或读取秘密修认证。专项报告及安全证据另存durable artifacts；未提交push/部署或启停服务，不扩Q3/Q4。下列在途/未运行checkpoint为历史。）
+
+最新更新时间：2026-10-13（MF-FOCUS-01新候选有限键盘观察已真实exit0并父核：index-CUrdtFzV.js，221安全结构记录/182原生Tab或Shift+Tab，五页640×480加900×600及短高复回共7组/14完整方向，均遍历12实际候选，SUMMARY→关闭BUTTON及反向同次按键闭环，BODY/抽屉外/隐藏后代焦点0。6次Escape回触发器/解锁，当前路由关闭、其它四页导航、1024→900→1024→640断点及末链接内部滚入有实际端点。Frontend Design实施中deleg_d2416592报告已SHA父核，源级无must-fix；行尾误说明以SOURCE-SCOPE-LINE-ENDINGS-CORRECTION.json补充更正为317CRLF/0孤立LF，旧scope/candidate记录不改。修复后独立证据终审deleg_9ed39160在途，状态RUNTIME_OBSERVED_PENDING_INDEPENDENT_REVIEW，不预签其PASS。36新真实静态资源/25原GET全部401，0pageerror但25console error，不证明源成功/业务/last-good；原renderer/Boot/运行包未替换，未修认证。旧84/两套历史FAIL/旧PNG签署保留，新像素/五页完整验收/最终ZIP PENDING；未扩Q3/Q4、测试/秘密/业务/前台/部署或服务动作。以下checkpoint为历史。）
+
+最新更新时间：2026-10-13（MF-FOCUS-01最小修复已获用户明确“授权”，Frontend Design修复前监督deleg_0624f852已父核支持实施。仅改AppShell的可聚焦过滤、同集合初焦和Tab成员/首尾边界；CSS/template/关闭/resize/watchers/lifecycle保持原字节，157其它前端源文件不变。lint、Stylelint、typecheck、scratch renderer build及scratch Electron编译五门禁均exit0，git diff --check通过；新候选index-CUrdtFzV.js的60资源单独冻结于scratch，原renderer/Boot各60资源与既有9346入口index-CW3V7nPt.js未替换。实施中监督deleg_d2416592已派发，真实新候选键盘复核尚未执行；修复状态IMPLEMENTED_PENDING_RUNTIME_REVIEW，不签局部或完整PASS。原两套S-NAV-04历史FAIL、84全文/priority/来源/顺序及原PNG像素结论保持原build范围；新候选不能沿用旧PNG签新像素，五页/最终ZIP PENDING。无测试、秘密/业务写入、提交push、部署/服务启停，不扩大Q3/Q4。下面的旧更新时间与旧监督为历史时点。）
+
+更新时间：2026-10-13（本轮已授权只读DOM与有限交互检查、两份Frontend Design独立监督及父级核证已完成，无待返回本轮监督报告。index-CW3V7nPt.js确证1个P0共享焦点环缺陷MF-FOCUS-01：640×480闭合details，SUMMARY→BODY→BUTTON；候选14误含2隐藏后代/实际可见12，反向环也不能通过。两套S-NAV-04补充FAIL，另外82完整BLOCKED、完整PASS0；原84全文/priority/顺序/历史状态保持不改，五页/最终ZIP PENDING。主轮92UI/5页computed/11matched/3listener，定点9UI/8节点，独立报告14输入/10父引用/76有界证据引用全部父核。21生产输入和renderer/Boot各60完整资源集合hash再次一致；没有本次新HTTP/health、截图或像素分析。旧限定像素PASS与全部PNG覆盖保原范围，不证明键盘。只读阶段报告已另存durable artifact，本轮未修源码、业务/秘密/前台/测试/提交push/部署/服务动作，修复需另行窄授权，Q3/Q4未获准。）
 
 ## 当前状态
+
+### 当前MF-FOCUS-01专项闭环：SCOPED_MF_FOCUS_01_PASS
+
+- 认证后的最新安全交通补充：用户供给认证头已临时实际应用，`authenticated-read-status-2`真实观察exit0；直连9090、同一新真实scratch artifact，5页原导航自然读取27GET全200、36静态200、0console/pageErrors、0非GET/越界阻断。未读响应正文/请求头/storage/文本值，details保持闭合，不改源码/运行资源；两个默认设备状态GET仅按已核生产GET定义及原页面自动默认选择链精确加入观察器allowlist。父安全投影/hash已存`AUTHENTICATED-REQUEST-READBACK.json`，认证值不落盘；不以200升级source-success/accepted提交/last-good或整页验收。原专项记录/证据ZIP保持原窗口字节，新的认证结果为另存补充而非覆写历史。
+- 本轮授权任务已完成：最小生产补丁、无测试lint/Stylelint/typecheck/scratch renderer及Electron编译、真实隔离有限交互、Frontend Design修复前/实施中/修复后监督及父核。最终独立报告`RUNTIME-REPAIR-REVIEW.md` SHA `83e95d70428d42b755b633ecb140c223c5be5e56b12663d02a0ab60d9cd735a0`，机器状态SHA `d30060a7aa462b8d954839b836272a93469e7c309ac5f8e36084bd0dcebe45b5`，引用表SHA `8f50b14600e929487561c7576bccfbd8807492d613940ab75b98968acec21ed0`；均精确SHA/bytes父核，不再待返回监督。
+- `PARENT-FINAL-REPAIR-REVIEW-READBACK.json`重新验证13唯一直接引用、60完整新artifact集合/36实际加载、158当前源path集合及hash、原renderer/Boot各60资源；重算7组/14完整方向/182键逐项ordinal和14邻接边界、6Escape、resize/route端点及16真实末链接内部scroll见证。221记录中201开态均无BODY/抽屉外/隐藏后代焦点；首条闭态BODY不算逃逸。新entry `index-CUrdtFzV.js`独立归属，不混签旧`index-CW3V7nPt.js`。
+- 审阅来源准确限定为“保存真实观察记录的独立审阅＋父逐项核证”；新专项PASS只关闭MF-FOCUS-01共享根因及所录顺序边界。不能升级`cloud-diagnostic/S-NAV-04`、`log-network/S-NAV-04`全部合取条件，更不能原84/五页全量/新像素/业务/部署或用户接受PASS。原历史两FAIL及其它完整BLOCKED不擦除，后续证据需新候选独立补充。
+- 317CRLF/0孤立LF说明更正已单独冻结，旧scope/candidate/中期报告输入字节保持；未因记录说明错误修改或重建正确源码。最后生产编辑后的五门禁exit0仍绑定当前源，Vite第三方PURE/大chunk警告保留。只有三处焦点逻辑改变，CSS/template/其它handlers/watchers/lifecycle按精确逆向原字节核证保持，157其它源从改前基线不变。
+- 25原页面GET全401、0pageError/25consoleError；静态36×200不等于后端健康/成功。未读取正文/值/headers/storage/秘密、未提交业务或修认证；不存在新像素签署，reduced-motion/query/root卸载、未自然出现兼容/空集/失效成员分支、成功/last-good/accepted提交、检测ingest/隐藏全文仍未审。完整五页及最终真实效果图ZIP PENDING；专项durable报告/安全证据交付不能冒充该最终包。
+
+### 下列为专项最终独审返回前的真实键盘checkpoint历史
+
+- `keyboard-observation-1/OBSERVATION-RECEIPT.json`：fresh task-owned headless Chromium，scratch编译产物精确path/SHA/bytes映射，不是部署或API Mock；加载entry `index-CUrdtFzV.js`/SHA `ab1b29224fcb456f53b417cb9b5087902de9c930a35b1aa73ea70b3e3a3405d0`，36唯一真实静态资源均与60项冻结集合对应。全部原GET继续原后端，method/精确path/默认参数allowlist，未读取response正文/headers/storage/值，未添加凭据。
+- `PARENT-KEYBOARD-OBSERVATION-READBACK.json`从221原记录重算182原生按键：cloud/diagnostic/log/network/collection五页640×480、900×600及重新640×480的7组，每方向13次，均实际走全12候选并按±1mod12连续；初焦都在当前link，闭合details全程不展开，旧算法14/2隐藏后代仅诊断。7次正向SUMMARY11→关闭BUTTON0、7次反向BUTTON0→SUMMARY11均一次原生键完成，无BODY/外部/隐藏焦点；不把诊断候选列表冒充通用浏览器顺序oracle。
+- 五页及短高复回6次Escape均等实际hidden后保存回焦/expanded=false/main解锁/overflow恢复；当前route点击一次闭合、另四route真实RouterLink导航。desktop当前link真实获焦→900隐藏后trigger；900开抽屉→1024恢复220px常驻nav/currentlink并解锁→640隐藏后trigger。短高section-nav `scrollHeight=533/clientHeight=255`，原生末链接获焦后`scrollTop=278`且整段rect在局部视口；无强制focus/状态注入/checkVisibility改写/人工history-query/实际root卸载。
+- 新观察36静态200、25原GET全部401，0非GET/0越界guard阻断、0pageErrors/25consoleErrors。401是实际未认证状态，不签source-success/accepted-commit/业务/last-good，不读取或修复秘密。观察结束关闭仅task-owned headless browser，既有服务/窗口未动。
+- 实施中报告`REPAIR-MIDPOINT.md` SHA `9728cebe1d8b9797ccd8fd9e1a9cf72904ae82e36f22f2e01e9241f3c448e432`父核：三处符合、源级must-fix无；说明更正以版本化补充保留其冻结输入。观察后158源保存hash/旧renderer与Boot各60资源集合再次一致，无新源码编辑；前五gate依然归当前源。修复后Frontend Design独立保存证据审阅`deleg_9ed39160`在途，不冒称已返回或独立新交互。
+- 当前仅RUNTIME_OBSERVED_PENDING_INDEPENDENT_REVIEW；旧两套S-NAV-04 FAIL是历史、不能擦除，原84整条仍无新完整PASS。缺失checkVisibility/嵌套details/disabled fieldset/空集合/panel失效等未自然分支只源级；Electron IPC/OS焦点、新像素、reduced-motion/query/root卸载、成功业务/隐藏全文及完整五页/最终ZIP均不在本次通过声明内。
+
+### 下列为授权修复实施/构建历史checkpoint
+
+- 授权范围：只修`collector-desktop/src/app/AppShell.vue`三处焦点逻辑、无测试静态构建及隔离同范围有限键盘复核；不改业务/API/Router/Store，不展开令牌details或读取值/正文，不部署或启停服务。
+- `focus-boundary-repair-authorized/PRE-EDIT-BASELINE.json`保存改前158个生产源/静态资源集合。AppShell原始CRLF与归档LF的SHA分列；经核原SHA重构原字节，仅反向恢复两函数跨度和Tab成员条件一行，即与完整改前原字节完全相等。CSS/template、其余handlers/watchers/lifecycle未改，不将绑定相同冒称全部script未改。
+- Frontend Design修复前报告SHA `09776b1e70a45e71e31489ace9469a1c702363b8fe934964fda71d43c98537bd`已父核；实现保留第一直接summary及其子树、检查所有闭合details祖先、hidden/inert/:disabled/负tabIndex及checkVisibility兼容过滤，不排除滚动视口外可Tab的链接。初焦与Tab共用集合，非成员按方向回首尾，保留空集合panel兜底；未注入状态或原生函数伪造分支覆盖。
+- 五项真实无测试门禁exit0；Vite仍有第三方PURE注解及大chunk警告，未改依赖/配置消警。新entry `index-CUrdtFzV.js`、60完整资源在scratch独立冻结；没有执行`build:web`的原目录同步、Maven打包或服务替换。原renderer/Boot各60集合字节和9346公共index保持；隔离复核拟仅在task-owned headless browser映射真实新静态artifact，后端原页面精确允许GET继续，不伪造API响应。
+- 实施中监督`deleg_d2416592`在途；五页640×480完整双向环、真实Escape、900断点/resize/navigation和原短高复现尚待执行并独立复核。新补充结论另存，不改原84历史、旧failure或旧PNG记录；不将此专项等同S-NAV-04全部合取条件、完整五页/像素/业务/cleanup通过。
+
+### 下列为修复前检查/监督历史
+
+最新运行监督结论（2026-10-13）：`deleg_7fdc3589`已完整返回并父核，MF-FOCUS-01为CONFIRMED P0 MUST-FIX，非新增像素终审。`cloud-diagnostic/S-NAV-04`、`log-network/S-NAV-04`补充FAIL对应同一个共享缺陷，不是两个生产缺陷；其它82条完整BLOCKED，不将局部CSS/关闭/节点复用签全条通过。独立报告、机器状态、回执精确SHA/bytes，14输入、10父引用及76 scoped引用/JSON pointer/源码行范围均核证；原84历史层不改。`PARENT-RUNTIME-DESIGN-READBACK.json`保存，durable `READONLY-DOM-UI-INSPECTION-HANDOFF.md`与原独立报告已生成。本轮检查/复核阶段完成，但源修复仍未授权未实施，最终PASS/ZIP PENDING；下两段是此前范围回读与监督待回时点。
+
+范围监督补充（2026-10-13）：`deleg_77ba2df7`独立范围报告与矩阵已精确SHA父核；16行监督矩阵覆盖Q1/Q2关联并集50条，不是50条通过。原84正文/顺序/priority/历史状态及Q1–Q4映射与安全计划完全相同，2输入和8源码hash一致。本轮不扩展筛选/模式/设备填写、details展开、复制、人工query/history或root卸载；现有history证据仅已有路由点击后真实goBack。实际computed保存15个安全native disabled布尔，观察器也读取该布尔等待settle，不冒称只读ARIA；范围监督指出字段未在投影清单显名，保守不据此签L4/N1完整禁用语义，不新增扩读。独立运行证据监督的最终报告尚未消费，焦点问题仍未修、整体PENDING；下段“在途”是上一回读时点。
+
+最新实际回读：Q1/Q2授权已收到并落实于任务自有headless Chromium和既有9346候选；只保存允许的几何/CSS/ARIA/焦点/监听器摘要。Escape、遮罩、×、当前/其他路由、history关闭及焦点回退、1024→900→1024→640尺寸变化有新实际记录；query-change和真实root unmount未执行。主轮与定点轮均发现闭合details下隐藏后代被焦点列表误算，正向Tab出现BODY越界，不能签键盘通过；独立Frontend Design证据监督在途，不提前签其结论。旧PNG覆盖已收口，无待返回PNG批，本轮0新增像素分析；两套42原条件及旧证据保持不可变，五页/ZIP PENDING。实际5页h1为22px/650/31.9px，采集textarea184px/vertical及具体matched规则有证，但不认证风险全文/全部字号/真实成功态。Sidebar实际BackendNodeId14八次相同只证明本轮记录节点复用，不证明秘密值、所有state或unmount清理。授权后不再重复请求Q1/Q2；禁止业务、秘密、前台、源码编辑、部署/服务动作的边界不变。以下较早“已问未答”等段落仅为当时历史。
 
 - 当前目标分支：`feature_2.0`
 - 最近提交：
@@ -12,6 +328,253 @@
 - Phase 1 ~ Phase 17：全部完成并通过验证。
 - `collector-desktop` 前端架构重构：已完成。
 - 不创建 Phase 18；后续优化作为独立任务重新确认范围。
+- 2026-10-09 独立优化：设备配置页 Frontend Design 实现、静态检查、构建、真实后端只读交互及最终截图复核已完成，状态为 `READY FOR USER VISUAL REVIEW`；最终效果待用户确认。范围与验证边界见文末。
+- 2026-10-09 新增独立优化：按已展示 Frontend Design 方案实现批量和协议命令、设备影子；首次监工指出的四项样式问题已修正并通过真实渲染尺寸检查，五项门禁重新通过。二次监工已确认代码 / DOM 修正，但当时截图读取能力受限，独立像素复核尚未完成，不能标记操作页视觉通过；本轮不重新验收操作页。
+- 2026-10-09 协议连接独立实施：已按用户确认的 EtherNet/IP 完整目标图完成生产修改，新增工作台专用 Schema 表单和110字段展示尺寸，旧本地设备编辑表单不变。前期、实施中和最终 Frontend Design 均实际读取截图像素；必须修正项已闭环，最终独立监工为 `PASS`（所附截图像素复核 + 五协议三宽度运行记录核验），六项静态/构建门禁通过。不是整页逐像素完全相同、业务写入验证或用户最终验收；未部署运行中旧JAR，不新增 Phase 18。
+- 2026-10-10 本地临时设备弹窗独立实施：已按批准方案落实五个 Tab，业务脚本与 Git 基线一致，62处模板业务绑定保留，六项允许门禁通过。Frontend Design 全程监工发现的问题已闭环，最终18张主/滚动图及4张局部图获得附图范围 `PASS`；“双套箭头”疑点经高清像素核实是计数单位“个”，原缺陷已撤回。最新62张有效截图/65条记录来自 `index-DBqXg9DV.js`，不是62张全部逐图签收或业务验收；当前 `READY FOR USER VISUAL REVIEW`。不新增 Phase 18，不重启或部署旧JAR。
+
+- 设备管理独立优化最新状态：2026-10-10按批准稿完成生产实施；Frontend Design 前期、实施中和末次构建持续实际像素监工，空态重复标题及确认窗比例/危险按钮/遮罩问题已闭环。末次14图全部获得所附范围PASS，当前为 `READY FOR USER VISUAL REVIEW`，不是全状态业务验收或用户最终确认。未提交/推送/部署，不新增Phase18；详细记录见文末。
+
+- 2026-10-10 概览/实时数据/历史趋势独立优化：六个生产呈现文件及原三个业务区、40处控件绑定和56个保护文件保持；六项允许门禁通过。原离线四附图PASS之后，用户授权启动原9090，补采27张真实原图；Frontend Design独立审查deleg_a1783768实际看4张派生图，当前有后端状态/尺寸PASS，无must-fix。历史存储仍不可用，成功历史曲线/记录及真实采集长精度数值未覆盖；前序三个CSS换行问题未闭环，不等于全状态或用户最终验收。未提交/推送/部署新JAR，不新增Phase18；见文末独立记录及恢复补审。
+
+- 本轮独立运维交付（前序）：五页综合源码分析及优化建议已保存；前端允许门禁、隔离后端无测试打包、9090新包部署及完整57资源HTTP字节核对完成，入口 `index-BM7lzMzh.js`。该前序候选不作为本轮视觉签收。
+- 2026-10-11 五页建议实施已完成：真实renderer入口 `index-DsbgyuIk.js`，五View与五份scoped CSS已按建议调整；末次 `git diff --check`、lint、Stylelint、typecheck、Electron build、Web build均exit0。Frontend Design独立复核 `deleg_2b4ea181` 首轮40张 + `deleg_d06f90d1` 补审8张，48/48在声明视口/滚动/状态范围内PASS，无当前图片支持的must-fix。当前状态为 `SCOPED VISUAL PASS / READY FOR USER ACCEPTANCE`，不等于106张全部逐图、敏感正文/未执行业务态或用户最终验收。
+
+- 2026-10-11 最新提交 `1984343221bf8373d026219c9e0992583f304c45` 已使用最新无测试打包产物部署并重启9090，运行入口为 `index-DsbgyuIk.js`，页面/health HTTP均为200；真实运行状态仍如实为 `application=UP`、`cache=UP`、`collectionService=DOWN`、`health=DOWN`、`connections=UNKNOWN`。随后对9090真实renderer采集40张五页候选图，Frontend Design独立实际查看5张1600宽主图及3张640宽窄图，形成扫描报告。新一轮只记录建议，未修改生产代码、未执行业务写操作、未写测试；首要建议为<=900px收起侧栏/单列化，其次为统一未知/未执行/不可用/零值/失败语义、拉开读写操作权重、增强异常恢复与数据新鲜度表达。报告见发布产物 `POST-RELEASE-FRONTEND-DESIGN-SCAN.md`，不将401、未知数据、health DOWN误判为视觉缺陷。
+
+- 2026-10-12 五页及共享壳二次精修最新状态：前序6项及新增3类独立源码must-fix已RESOLVED。旧 `index-BLe3PJnp.js` 授权终审发现P1 MF-V1抽屉背景穿透，历史FAIL保留；父级核真实关键工具结果后，仅把AppShell/AppSidebar两处CSS背景引用改为既有不透明 `--app-color-sidebar`，反向恢复完整改前文件hash，业务script/template及焦点/Router不改。六允许门禁重新exit0，新 `index-CW3V7nPt.js` 已105主图+173补图重采，共278图、265不同PNG hash。新 `deleg_33038f3e` 已实际分析39/39native＋3sidebar＋1detail，共43次真实分析，56/56本组来源可见矩形联合覆盖；MF-V1及MF-E1/E2/E3已按新像素闭环，原36项为26限定PASS、10BLOCKED、0FAIL，没有新生产视觉must-fix。父级重新计算43handle对应成功tool-result、全部原矩形覆盖、21源/60renderer/Boot/278PNG/100前端/840Java保护零漂移；compact transcript仅作实际工具handle佐证，不冒称完整vision正文已读回。当前为 `SHARED/COLLECTION SCOPED CURRENT-VISIBLE PIXEL PASS / OVERALL PENDING`；云31＋诊断126来源及110native已串行派 `deleg_a70fb030`，之后才审日志/网络，不沿用旧PASS。本轮未测试、提交、推送或部署；9090/9346公共HTML最后读回分别为旧 `index-DsbgyuIk.js`/新候选，本次未重新读取health正文或执行业务操作。
+
+- 2026-10-12 第二组首轮终审（历史）：`deleg_a70fb030`已返回 `BLOCKED_INCOMPLETE_PIXEL_REVIEW`，不是云/诊断通过。110必审native仅6完整＋1部分真实分析，native06缺右45px，103板未见；157来源full3/partial4/unseen150，42条原要求全部BLOCKED，2侧栏补板仅准备未分析。三个自有查看器连续正常退出，最后记录 `WM_DELETE_WINDOW`，当时触发者未知，未出现新工具同意拒绝。父级当时核7实际成功tool-result及capture副本/hash/尺寸，按返回几何独立重算覆盖，21源/60renderer/Boot/100前端/840Java当时零漂移，精确三个HWND均消失。当时暂停反复重开及日志/网络同路径审查等待关闭来源和后台保持确认；后续用户确认与恢复见下条，不降低原110板矩阵，不发布总体PASS或最终冻结包。
+
+- 2026-10-12 第二组首次恢复（历史）：用户原文“我刚才手动关闭了截图查看器，后续不再关闭  你继续”，已解除关闭来源及后台保持等待；只继承任务专用已脱敏截图后台打开/切换/翻页授权，不扩大业务、凭据、测试、前台、提交或部署范围。当时派 `deleg_697539e5`保留原6完整native证据，补native06与103未见native、2侧栏；其后实际因上游超时失败，增量证据与续审见下条。42原要求及未审状态保留，日志/网络48native仍待本组结束后串行。恢复前21源、60renderer/Boot集合字节、112板及157来源PNG、两捕获报告一致，100前端保护无漂移；既有ConnectionManager.java与前序840Java基线有1处非纯CRLF漂移，本轮未碰、不回滚，不宣当前后端合同或840Java零漂移。证据 `PIXEL-REVIEW-RESUME-AUTHORIZATION.json`、`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RESUME-PRECHECK.json`。
+
+- 2026-10-12 第二组第一次分批续审（历史）：`deleg_697539e5`返回failed，上游连续6次空/坏响应、slow response359s；native08并发失败/unchanged-screen不计seen。这不是新同意拒绝或关闭来源等待。父级核native06/07两成功handle及完整原板/cap像素，累计9分析/8完整native；旧PID26512/HWND800040已不存在。父级持有无激活PID41380/HWND598426，native08一次60秒延时重试真实成功后累计10分析/9完整native、101未见，source full6/partial3/unseen148；当时派30板 `deleg_38289ad8`，其后增量及再次失败见下条，原110/157/42矩阵保留。证据 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RESUMED-PARENT-READBACK.json`、`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RECOVERY-CHECKPOINT.json`。
+
+- 2026-10-12 第二组最新增量：`deleg_38289ad8`再次上游6次空/坏响应、slow response398s而failed，原30板未完成，5个真实成功native09/10/11/12/13已核trace成功分析前缀/handle、capture副本SHA/尺寸、整板与source crop像素完全相等；native11首试并发失败排除。父级同窗口正常capture补native15/16/17三板，直接取得完整真实分析；最新累计18分析、17完整native/93未见，来源full15/partial4/unseen138，2sidebar未审。640云抽屉MF-V1仅该图可见不透字PASS，诊断库存未知/失败及默认密度仅已见范围可接受，不预签展开details或整页。已派小批 `deleg_c237391b`续native18–22，另88native及2sidebar保留；42完整条件、日志/网络48板、总体及最终冻结包仍PENDING。证据 `BATCH-1-RECOVERY-DESIGN-NOTE.md`、`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-1-PARENT-CHECKS.json`及`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-1-RECOVERY-CHECKPOINT.json`。
+
+- 2026-10-12 第二组第2微批（历史）：`deleg_c237391b`已真实完成native18–22五板，full5/partial0/unseen0、无capture/vision失败；父级独立核tool成功前缀/handle、cap副本SHA及整板/来源crop像素，原42条文案完全相同且完整状态42BLOCKED。累计23分析/22完整native/88未见，source full21/partial4/unseen132，2sidebar未审；失败库存未知非0与来源失败/业务未知有新可见证据，但逐行颜色、混合排序、全展开details及drawer未被本批认证。后续23–27五板已完成，见下条；证据 `MICROBATCH-2-DESIGN-REVIEW.md`及`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-2-PARENT-READBACK.json`。
+
+- 2026-10-12 第二组最新微批：`deleg_739e97c3`实际完成native23–27五板，full5/partial0/unseen0，五次vision成功无重试；父级核整板/来源crop RGB、frozen hash/transform、cap原副本/尺寸、实际tool handle及可读42–49字符分析前缀，完整子saved tool与逐图记录一致，但不冒称独立取回完整raw正文。累计28分析/27完整native/83未见，source full28/partial4/unseen125，2sidebar未审；390/1280×720上下和640诊断drawer/表左右端结构实际可见，库存未知非0及失败/未知并列继续支持，但各行精确色相/密度/展开全部元数据/诊断drawer不透字仍证据不足。已派`deleg_4510b619`只续28–32云连续五板，另78native和2sidebar保留，原42全BLOCKED、日志/网络和总体PENDING。独立`MICROBATCH-3-DESIGN-REVIEW.md`及父级`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-3-PARENT-READBACK.json`已存；窗口41380/598426后台NOACTIVATE留运行，21源/60renderer/Boot再次一致。
+
+- 2026-10-12 第二组第4微批：`deleg_4510b619`真实完成28–32五native，full5/partial0/unseen0；native28首次gateway_concurrency_limit失败及PNG真实留存、不计seen，有限同窗重试成功。父级核五成功tool handle/可用分析前缀、完整子saved tool内部对应、整板/来源crop RGB、冻结hash/transform及42原文；累计33分析/32完整native/78未见，source full31/partial6/unseen120，2sidebar待审。1600连续两来源未含左220px故partial，不用整板full冒称来源full；1280连续上下和1024首板未知/未评估/恢复路径/Replay和Flush风险说明限定支持，未签成功态或细字/端点/生命周期。已派`deleg_179cd9fe`有界10板33–42、每5板即时检查点，另68native和2sidebar待，原110/157/42不变。证据`MICROBATCH-4-DESIGN-REVIEW.md`与`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-4-PARENT-READBACK.json`；21源/60renderer/Boot一致，自有41380/598426后台native32/index31留运行，总体PENDING。
+
+- 2026-10-12 第二组第5批与父级41补审：`deleg_179cd9fe`原10板只33–40八板实际成功，父级核成功tool handle/前缀、完整子saved tool文件及逐图正文/原像素/来源crop，native38首次写文件权限错误后的补存现有效；41 gateway及无分析screen_unchanged两返回不计seen，42未试，原8/10 BLOCKED_INCOMPLETE不改为完成。查明retry marker只记commentary/JSON，实际native caption未变、两PNG hash相同；父级核自有PID/HWND、原PNG/NOACTIVATE/非前台后，真正SetWindowTextW并GetWindowTextW读回新title，单次正常capture取得41完整实际vision正文，cap整板/source crop完全相等。此为单独PARENT_FOLLOWUP，不冒称独立终审。累计42分析/41完整native/69未见，source full42/partial8/unseen107，两sidebar待、原42完整BLOCKED；已派`deleg_9ebdb3f2`仅42–46五板，另64native留原范围。证据`BATCH-5-PARENT-READBACK`、`parent-caption-recovery`及`AFTER-PARENT-41-CHECKPOINT`，总体PENDING。
+
+- 2026-10-12 第二组第6微批：`deleg_9ebdb3f2`实际完成42–46五板且父级核证，full5/partial0/unseen0、分析成功5/失败0/重试0；实际handle及42–47字符解码前缀佐证、完整child saved tool内部对应、冻结hash/transform、整板与source crop RGB及42原文均核。累计47分析/46完整native/64未见，source full44/partial11/unseen102，2sidebar仍待；1600三来源只含x220以右，仍partial。库存失败未知、来源失败与业务未知、最后尝试/尚无成功读取和恢复/折叠入口有局部证据；红色明确对象仅45错误横幅，不能外推八行标签或字号/密度/排序/展开全文。原42完整BLOCKED、五页总体PENDING。已派`deleg_0914a7dc`仅47–51，另59native及2sidebar留原矩阵；证据`MICROBATCH-6-DESIGN-REVIEW.md`及`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-6-PARENT-READBACK.json`。
+
+- 2026-10-12 第二组第7微批：`deleg_0914a7dc`47–51五板完整实际成功，父级核实际handle/44–47字符解码前缀、完整子saved tool/aggregate/逐图对应、冻结hash/transform/capture原副本/整板与source crop RGB，以及42原全文。累计52分析/51完整native/59未见，source full49/partial11/unseen97，两sidebar待；当前库存/运行未知而非0、来源失败与业务未知、优先关注层级/管线背压中文名/尝试时间/恢复折叠入口限定支持，颜色/字号密度/完整每源时间与展开全文仍缺证，无新确切must-fix不等于无缺陷或PASS。已派`deleg_6483344a`有界52–61十板、每5板检查点，另49native留原110/157/42，原42完整BLOCKED、整体PENDING。证据第7报告及`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-7-PARENT-READBACK.json`；父级窗后台留运行，21源/60renderer/Boot一致。
+
+- 2026-10-12 第二组第8批：`deleg_6483344a`52–61十板真实成功，父级核10实际handle/43–49字符解码前缀、完整child saved tool/逐图/汇总对应、冻结hash/transform、原capture与留存副本SHA/尺寸、1:1整板及source crop RGB，42原全文保持；第5/10图checkpoint完成与剩余板名单精确核证。累计62分析/61完整native/49未见，source full59/partial11/unseen87，两sidebar待。库存未知/来源失败与业务未知、尝试无成功时刻/整轮结束分列及恢复入口有证，未认证行颜色/字号密度/展开/真实成功/混合排序；原42完整BLOCKED、整体PENDING。已派`deleg_aa4d95ad`62–71十板（900尾段、640与390连续），另39native保持原110/157/42；第8报告/父级READBACK和CHECKPOINT-PARENT-CHECK保存，21源/60renderer/Boot一致，owned窗后台留运行。
+
+- 2026-10-12 第二组第9批：`deleg_aa4d95ad`62–71十板真实成功，父级核10实际handle/42–49字符可用解码前缀、child完整saved tool/逐图/汇总内部一致、冻结hash/transform、原capture与副本SHA/尺寸、1:1整板及22来源tile RGB；首图gateway失败的实际handle/前缀与PNG保留、不计seen，单次caption readback及不同capture SHA核证。第5/10图checkpoint完成/剩余名单及records精确核证，42原全文及完整BLOCKED保留。累计72分析/71完整native/39未见，source full81/partial11/unseen65，两sidebar待；多panel局部/组级观察不外推小字/逐行颜色或精确密度。已派`deleg_fe64943d`仅72–81十板（390尾段、640表左右及1600/1280/1024表左纵向），另29native/2sidebar保留；第9报告和父级READBACK已存，21源/60renderer/Boot一致，owned窗后台留运行。五页及原42完整PENDING/BLOCKED，不是总体PASS。
+
+- 2026-10-12 第二组第10批：`deleg_fe64943d`72–81十板真实成功，父级核12实际tool-result handle及可用解码前缀（十成功42–50字符）、child完整saved tool/aggregate/record内部一致、冻结hash/transform、原capture/副本SHA与尺寸、1:1整板及13来源tile RGB；75/76各一次gateway失败不计seen，逐目标单次caption更新/readback/原PNG不变和capture SHA不同核证。第5/10图checkpoint有序完成/剩余名单与record/tool/capture引用/hash精确核证、42原全文完整BLOCKED。累计82分析/81完整native/29未见，source full91/partial14/unseen52，两sidebar待；三个1600纵向来源裁左220px仍partial。77管线背压中文主名/英文辅助获局部支持，80英文误译不当作中文缺失；原生details折叠/安全脱敏不判缺陷。已派`deleg_1720e133`仅82–91十板（1024/900表左及640/390表左右纵向），另19native/2sidebar留原矩阵；第10报告/父级READBACK已存，21源/60renderer/Boot一致，owned窗后台留运行。原42完整BLOCKED/五页总体PENDING，非总体PASS。
+
+- 2026-10-12 第二组第11批：`deleg_1720e133`82–91十板真实成功，父级核10实际handle/42–49字符可用解码前缀、完整child saved tool与aggregate refs/hash/analysis及逐图内部一致、冻结hash/transform、原capture与副本SHA/尺寸、1:1整板和17来源crop RGB；第5/10图checkpoint有序名单、record/tool/capture refs/hash及config/manifest/brief hash精确核证，原42全文/完整BLOCKED保留。累计92分析/91完整native/19未见，source full108/partial14/unseen35，两sidebar待；native91逐panel建议“查看来源详情，再重试完整诊断。”有限支持，组级内容不外推小字或独立时间。已派`deleg_5408deed`仅92–101十板（1600/640已展开行来源与来源时间账本连续段），另9native/2sidebar留原矩阵；第11报告及父级READBACK保存，21源/60renderer/Boot一致，owned窗后台留运行。全42完整BLOCKED/总体PENDING，不是总体PASS。
+
+- 2026-10-12 第二组第12批：`deleg_5408deed`92–101十板真实成功，父级核10实际handle/42–45字符可用解码前缀、完整child saved工具/逐图/aggregate refs/hash/analysis、冻结hash/transform、capture原副本SHA/尺寸、1:1整板和13来源crop RGB，第5/10图checkpoint有序名单/refs/hash/config-manifest-brief及原42全文精确保持。累计102分析/101完整native/9未见，source full114/partial21/unseen22，两sidebar待；本批七1600来源仅x220以右，原图仍partial。92/94/95具名1600最后尝试09:21:44/尚无成功局部支持，100的64009:21:46仅跨panel具名组级，不补齐其他源/细字/成功提交。已派`deleg_da14d72e`102–110九required及sidebar01/02两辅助，成功5/10/最终11检查点；原42完整BLOCKED/五页总体PENDING，不提前记seen或PASS。
+
+- 2026-10-12 第二组第13批收尾：`deleg_da14d72e`审native102–110九required及sidebar01/02两辅助，11次真实分析成功、失败0/重试0。父级按实际schema核11个actual handle/可用解码前缀、完整child saved tool与record/aggregate refs/hash/analysis内部一致、原capture副本SHA/尺寸、1:1整板RGB和43来源join的source SHA/crop RGB，5/10/最终11检查点有序required/auxiliary完成与剩余名单、record/tool/capture refs/hash、config/manifest/brief hash及原42全文均核证。最终文件实际名`checkpoint-final-11.json`，初查文件名不适配是准备问题，不是capture失败。完整raw子tool未独立回取限定保持。
+- 云/诊断累计113实际成功分析（含历史partial06）、110/110完整required、0当前partial/0unseen、2/2辅助已审。父级按原source path/hash与矩形联合重算157source为full157/partial0/unseen0；21侧栏来源join逐一核原字节，补齐左220px仅证明导航像素，不认证业务细字/来源时间。第13没有识别具名来源的具体最后尝试值；09:21:46/49仅按实际panel或组级记轮结束，不补为来源成功。原42完整条件仍BLOCKED；来源成功/last-good/混合排序/隐藏正文/精确色字号/640诊断drawer不透字/键盘生命周期未签。第5原8/10与parent41非独立终审历史保持。证据`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-13-PARENT-READBACK.json`；21源/60renderer/Boot完整集合及hash一致，不是当前后端零漂移认证。
+- 2026-10-12 第三组启动：日志27+网络38原图、48required native及原17辅助overview的冻结hash/尺寸和1:1source crop再次核证。`LOG-NETWORK-FROZEN-REVIEW-BRIEF.json`在本组首capture前保留原L1–L7/N1–N7全文及28共享条件，共42项；即使48native全审也有9桌面原图左220px缺口，不能据48/48推65来源full。新父级专用查看器PID39864/HWND6359704已读回native01/index0、原路径/hash/transform、NOACTIVATE/非前台；旧PID41380/HWND598426留运行，不停止9346/9090。`deleg_d46d9e9c`一条子任务仅审01–10，先核01/02不同图真实分析再继续，第5/10成功检查点，其余38明确未审；另条子任务只读收敛云/诊断42项剩余证据，不重复泛扫157source，不操作viewer或改生产。没有提前计seen/签PASS，无新增生产/测试/业务请求/秘密/提交push部署或服务启停。
+
+- 2026-10-12 第三组首批实际核证：`deleg_d46d9e9c/task-0` native01–10真实完成，success10/failure2/retry2/captureCalls12。01首gateway失败，固定60秒同caption重试unchanged且无分析、不计seen，随后一次独立material native-caption纠正恢复；父级核12实际handle、十成功41–46字符可用解码前缀、完整child saved tool与per-image/aggregate/checkpoint refs/hash/analysis内部一致、1:1整板及12来源crop RGB/hash、原42全文/完整BLOCKED、5/10检查点的有序48required/本批及批外余项/17辅助overview未审名单、冻结config/manifest/brief hash。原capture两个失败SHA相同、恢复SHA不同但原板/来源不变，完整raw子tool未独立回取限定保持。实际冻结来源纠正：09/10仍日志640/390双panel，网络始于native17，先前派单“09起网络”描述不作证据。累计10/48完整required、0partial/38unseen；65source union full10/partial2/unseen53，日志full10/partial2/unseen15，网络38全部未审。报告及`DRAWER-CORRECTED-LOG-NETWORK-MICROBATCH-1-PARENT-READBACK.json`保存，无新确证must-fix不等于无缺陷或PASS。
+- 2026-10-12 云/诊断42项证据收敛：`deleg_d46d9e9c/task-1`原42id/priority/criterion全文保留，父级核原文、authorities/previous-readback refs/hash、112catalog board/record/capture/tool/source hash及criterion witness引用。完整状态0PASS/42BLOCKED/0FAIL；限定可见建议29PASS/13BLOCKED/0FAIL只是既存localized/group观察复核，不是新看图或独立终审。已退休“六宽度/后组/底部/展开未审”覆盖理由，剩余精确颜色/640诊断drawer不透字/未归属source时间/字号几何/键盘生命周期/真实成功与last-good/混合排序/合法全文仍分列。最小已有PNG细读首轮<=12、必要delta<=12，不再泛扫157source；新DOM/键盘/业务GET或危险操作未获本子权限。报告line16关于identity仍batch12为并行派单后的陈旧旁注，当前父级identity已指batch13，父级`CLOUD-DIAGNOSTIC-42-CRITERION-AUDIT-PARENT-READBACK.json`明确纠正，原子报告不改。
+- 2026-10-12 后续有界执行：父级核viewer39864/6359704仍存活、NOACTIVATE、非前台、native10/index9，最小化只用同ownedwindow的ShowWindow4恢复并读回iconic=false/不激活/原PNG与transform不变；未close/restart旧云诊断窗或服务。`deleg_15f3078c/task-0`只审11–20十板，11–16日志短高/drawer左右端/更多筛选，17–20网络1600/1280上下，第5/10成功检查点，其余28required保未审，不能提前计seen；task-1仅解析已有冻结safe capture-report中14代表几何/至多2条已有UI序列，核身份匹配、缺口与复用，不操作桌面、不发业务请求、不写测试或改生产。21源/60renderer/Boot完整集合/hash再次一致；本次无生产/测试/业务/秘密/提交push部署或服务启停，整体及最终效果图ZIP仍PENDING。
+
+- 2026-10-12 第三组第2批核证：`deleg_15f3078c/task-0`真实完成native11–20，11–16日志、17–20网络，success10/failure0/retry0/captureCalls10。父级核10实际成功handle及41–49字符可用解码前缀、完整child saved tool/record/aggregate内部refs/hash/analysis、原capture副本SHA/尺寸、1:1整板及12source crop RGB、checkpoint-05/10有序完成/剩余/批外required和17辅助名单、冻结config/manifest/brief及原42全文/priority/完整BLOCKED；50个索引文件hash/尺寸逐项核证。完整raw子tool未独立回取限定保留。累计20/48完整required、0partial/28unseen；65source按exact path/hash矩形联合full19/partial5/unseen41，日志17/3/7、网络2/2/34；相同hash但不同source仍各自审查，1600裁左220px仍partial。第1批10success/2failure/2retry/12capture历史不变。日志401恢复/未知空态及native15弱化导出、网络未执行/本地会话历史真实0及native18蓝色开始检测获得限定支持，不将未知伪0、不认证真实响应/业务handler/精确尺寸/390每字段/全部来源时间。报告和`DRAWER-CORRECTED-LOG-NETWORK-MICROBATCH-2-PARENT-READBACK.json`保存，无新确证must-fix不等于无缺陷或总体通过。
+- 2026-10-12 云/诊断存量runtime复用核证：`deleg_15f3078c/task-1`只读解析当前identity引用的105/173条安全capture-report，完整SHA/entry合同一致；157云/诊断source路径/hash及几何记录全部精确join冻结batch13，父级核53个JSON指针和保留标量、14代表layout、2段已有连续UI序列（14终态）、40导航安全记录及表端点/15连续摘要。已存桌面导航220px/顶栏40px、窄闭态导航0px/顶栏52px、两页640开/Escape后的inert/滚动锁/焦点回退、resize读回、诊断表横滚0/140与末header.right=panel.right=615可复用；12项只减少E2/E3补证，原42完整BLOCKED不变。query-change三条hash无问号，只认证命名终态、不认证真实参数改变；shared collection抽屉底部只作共享partial、不冒充云/诊断逐页或keyboard验收。原viewport与native crop PNG尺寸、layout/metadata及安全字段投影按真实schema分开核证，准备错误只修父级解析，不改子证据。winning CSS/控件bounds/全键盘事件归因/listener-unmount，以及E1像素/E4-E5真实成功与全文缺口仍保留；报告和`CLOUD-DIAGNOSTIC-EXISTING-RUNTIME-EVIDENCE-PARENT-READBACK.json`保存，不是新capture/handlerverification或新PASS。
+- 2026-10-12 第三组第3批已派：父级核owned39864/6359704仍native20/index19、NOACTIVATE/非前台/非最小化，21源及60renderer/Boot完整路径集和hash一致；`deleg_53f9ee94`只审21–30十required（网络1024/900/640/390上下、1280×720上下、640drawer及表左右端），第5/10成功检查点，其余18required及17overview保未审。原48/65/42范围不缩，48全审仍须9来源左220px原像素补证；旧云/诊断窗及9346/9090不动。只更新文档/scratch证据，无本次生产/测试/业务请求/秘密/提交push部署或服务启停，五页总体与最终冻结交付仍PENDING。
+
+- 2026-10-12 第三组第3批核证：`deleg_53f9ee94`真实完成native21–30十网络required，success10/failure1/retry1/capture11。首图app-only定位失败，真实返回width/height均0、无analysis/PNG/handle，不计seen；记录60秒有界等待后公共capture以同owned HWND6359704/PID39864精确定位恢复。父级核十一actual返回、十成功handle及23–30字符可用解码前缀，完整child saved tool/逐图/critical aggregate refs/hash/逐字analysis内部一致、原PNG副本及lossless base64解码字节完全相同、1:1整板和13个source crop RGB/hash、checkpoint-05/10有序完成/剩余与17辅助分列、冻结config/manifest/brief hash和原42全文/priority/完整BLOCKED；索引54成员hash/尺寸精确核证。native21真正完整工具引用为`tool-results/native-21-actual.json`，不将另存minimal记录当完整实际返回。完整raw子tool未独立回取限定保持。累计30/48required full、0partial/18unseen；65source按exact path/hash矩形联合full32/partial5/unseen28，日志17/3/7、网络15/2/21，17overview未审；未审required为31–48。报告及`DRAWER-CORRECTED-LOG-NETWORK-MICROBATCH-3-PARENT-READBACK.json`保存；无足够定位证据新增must-fix不代表无缺陷或通过，原42完整BLOCKED、总体PENDING。
+- 2026-10-12 第三组第4批已派：父级交接前核owned39864/6359704为native30/index29、原path/hash/transform精确、NOACTIVATE/非前台/非最小化，21源码及60renderer/Boot完整路径集/hash一致。`deleg_bd388011/task-0`只审31–40十required，第5/10成功检查点；31–34网络telemetry，35混网络390底部与日志390连续源、36日志连续尾段、37–40网络1600/900连续段，逐panel按冻结transform.source归页，不误称全网络。41–48八required和17overview保持未审；48全审仍9桌面来源左220px缺口。`task-1`只读把云/诊断42审计与已核runtime缺口收敛为第一轮<=12当前冻结PNG细读计划，不操作任何viewer、不新capture/DOM/键盘/业务或改生产；计划不是像素审图、不能新增PASS。旧云诊断窗及9346/9090不动，本次只文档/scratch证据维护，无测试/秘密/提交push部署，五页和最终冻结交付仍PENDING。
+
+- 2026-10-12 第三组第4批核证：`deleg_bd388011/task-0`真实完成native31–40十required，10success/0failure/0retry/10capture，按冻结transform共网络10源、日志3源，35混页/36日志，不按派单统称网络。父级核十actual成功handle及23–32字符可用解码前缀、完整child tool/record/critical refs/hash/逐字analysis、原capture与lossless base64解码字节、1:1整板及13source crop RGB/hash、pre/post身份、checkpoint-05/10的有序required/辅助分列、冻结config/manifest/brief hash及原42全文/priority/完整BLOCKED；索引63本批文件与237外部引用共300项bytes/hash精确核证。累计40/48required full、0partial/8unseen；65source按exact path/hash矩形union full41/partial9/unseen15，日志20/3/4、网络21/6/11，17overview未审。日志390 continuous01具名最后尝试09:21:14/尚无成功只按该source局部沿用，网络表单0/质量100/sequence和本地时钟不是业务响应或源时间。父级准备解析`counts.successfulAnalyses`及nested `successfulRefs.record/tool/capture`纠正，不改子证据。报告与`DRAWER-CORRECTED-LOG-NETWORK-MICROBATCH-4-PARENT-READBACK.json`已存；完整raw子消息未独立回取限定保持，无新具体must-fix不等于无缺陷或总体PASS。
+- 2026-10-12 云/诊断定点细读计划核证：`deleg_bd388011/task-1`只读准备12个单来源请求（10既存小source PNG+2既存单panel native板），未capture/操作viewer/新裁图/DOM/键盘/业务。父级核计划JSON/MD及全部input refs/hash、当前冻结source/renderer/capture合同、12source PNG尺寸与safe capture record/原viewport/state/retained geometry、native/context hash/transform/source crop RGB、旧actual证据引用、原42全文priority及14项可见子条件映射。具体行/控件rect无法从safe整体几何取得，均保持null，不猜位置；S-P2-06全文边界单独保留。PNG-only可保证完整解决的原criterion仍0，字号token/键盘/成功0falseDisabled/last-good/排序/隐藏全文缺口不变。报告`cloud-diagnostic-focused-detail-plan/FOCUSED-DETAIL-PLAN.json/.md`及父级`CLOUD-DIAGNOSTIC-FOCUSED-DETAIL-PLAN-PARENT-READBACK.json`保存。计划不授予也不撤销权限；既有任务专用脱敏PNG后台查看授权已存在，不重复询问同一授权，新DOM/键盘/业务/秘密/前台/部署仍范围外，遇新拒绝/owned退出立即停。
+- 2026-10-12 第三组required收尾已派与后续只读准备：父级核owned39864/6359704为native40/index39、path/hash/transform、NOACTIVATE非前台/iconicfalse，21源/60renderer/Boot全路径集hash一致；`deleg_62e690f5`仅审41–48八required，成功5及最终8checkpoint，不能造CP10或提前签48full。17overview和九1600 source左220px保持未审/partial。父级按九原左条的真实RGB而不是品牌或页名分出3个220×1000不同组（日志三源、网络普通两源、网络遥测四源），逐成员RGB精确核；未发生新分析，不增加coverage。公共writer已准备`focused-png-parent-review/viewer.py/config/selection`及`FOCUSED-PNG-VIEWER-PREPARATION.json`：32项允许名单为3额外左条、12云诊断细读、17原overview；左条仅Tk内存显示原PNG裁片，不生成/改原PNG，不改两个既有查看器或冻结manifest。新查看器未启动，只有语法/身份准备，不声称运行或PASS。旧云诊断窗/9346/9090不动，无本次生产/测试/业务/秘密/提交push部署或服务启停，原矩阵及五页总体/最终ZIP仍PENDING。
+
+- 2026-10-12 第三组required收尾核证：`deleg_62e690f5`按冻结序真实完成41–48八required，8success/0failure/0retry/8capture；父级核八真实工具handle及23–32字符实际解码前缀、所有实际saved public返回字段/逐字analysis/per-image/critical一致、原capture/副本/base64解码字节、pre/post owned身份、1:1整板及15个source crop/target RGB（日志4/网络11）、success5与final8检查点有序48required/17aux分列及原42全文priority/BLOCKED，71本批+339外部共410引用的hash/bytes。累计required48full/0partial/0unseen，actual48success/3failure/3retry/51capture；source65按exactpath/hash矩形union56full/9partial/0unseen（日志24/3/0、网络32/6/0），17overview全未审。native45/46日志native crop600×281、native47/48网络596×42不是640完整viewport，裁边/隐藏正文不认生产缺陷，47 loose“empty log table”依冻结source明确为network历史表头，不借此替换来源。现存15安全source records的精确pointer/hash/PNG尺寸/原viewport/metadata已父核：exact-table原viewport640×1000，日志实offset0→360（请求370但实clamp360）、末headerRight601<=panelRight615，网络0→404、末headerRight613=panelRight613；这是存量metadata，不是新scroll/DOM/GET。native44/45右panel的09:21:28/no-success只局部不外推。父级parser对flat index、历史ref size/bytes增量、base64字段originalBytes/pngBytesBase64的schema纠正已记，不改子证据；历史21–25和31–33共8个cache PNG从既存原bytes备份恢复，父核每backup/ref/SHA/size/PNG signature/解码字节，不重抓、不新增计数。`DRAWER-CORRECTED-LOG-NETWORK-MICROBATCH-5-PARENT-READBACK.json`保存；未独立完整raw子tool回取限定保持，原完整42仍全部BLOCKED，无具体新mustfix不是无缺陷或总体PASS。
+- 2026-10-12 定点查看器真实首两图试读：父级核21source/60renderer/Boot完整pathset/hash及旧owned39864/6359704在native48/index47后台运行，不关闭旧云诊断或服务。启动此前已准备的任务专属`focused-png-parent-review/viewer.py`，session `proc_08b8285c2a8c`，actual PID40748/HWND606906（57700是terminal wrapper PID），ownership/原PNG hash/220×1000 client/NOACTIVATE非前台非iconic核实。父级两次真实公共capture审LN-SIDEBAR01（日志三源）→02（网络普通两源），分别存全部实际返回、逐字analysis、handle、原PNG与公共writer的lossless原byte backup、pre/post身份及显示rect，原图只Tk内存copy左220、不生成derivedPNG；实返回220×1030，除30px原生chrome后与五个原source crop逐一RGB完全相同、effectiveScale1，两个不同RGB的允许图真实切换已验证。界面中文组/日志与网络active/客户端就绪可见，标题Fronte...属于原生窄窗chrome，不判产品缺陷；未读/保令牌值。仅父直接跟进，不归为独立终审或整条criterion PASS。`focused-png-parent-pilot/PARENT-PILOT-CHECKPOINT-02.json`保存，合并矩形union后source61full/4partial/0unseen（日志27full/0partial，网络34full/4partial），剩余networktelemetry四源左条LN-SIDEBAR03未审；48required不重复计，17overview和云诊断FD01–12仍未审。
+- 2026-10-12 后续小批与证据冻结：child5的safe metadata/410索引现引用候选identity元数据SHA，因此该文件保持原bytes不再更新其历史第4批进度；新真实状态写到版本化`DRAWER-CORRECTED-CANDIDATE-REVIEW-STATUS-AFTER-LN5-PILOT2.json`，与PROGRESS/ledger共同作为最新checkpoint，避免进度更新破坏已核引用。`deleg_a75ae436/task0`仅在同owned40748/606906续LN-SIDEBAR03及云诊断FD01–05共六图，禁止提前将source65full/FD5seen/原42PASS；单列supplement与Cloud首轮12 actual请求预算，原48/65/42、110/157/42及17辅助不缩。task1只读归并两套原42的已具证/缺口/最小额外授权或用户准备合法真实状态，不能以在途审图当通过、不能重新索要已有PNG授权、不执行DOM/键盘/业务/秘密/前台。计划/就绪不是验收，新明确拒绝或owned退出仍停，不替代路径。本轮只有scratch证据/只读viewer和进度维护，无生产/测试/业务GET或写/秘密读取/提交push部署/服务启停，旧两窗与9346/9090不动，五页总体验收/最终ZIP保持PENDING。
+
+- 2026-10-12 定点批1真实回读：`deleg_a75ae436/task0`完整返回LN-SIDEBAR03及FD01–05六图。父级核8份实际返回/原PNG与base64备份、6份逐字analysis与完整savedtool/per-image/critical内部对应、8个真实computer_use结果handle及6个20字符可用解码前缀、pre/post HWND→PID身份、client/capture/chrome/display/source尺寸与1:1 RGB、9个精确source join。两次失败为gateway_concurrency_limit/无分析screen_unchanged，不计seen；同窗caption物理更改/readback和一次有界等待后恢复，不把失败描述当业务读取失败或凭文件存在签通过。CP03/06有序记录、61本批+287外部共348引用SHA/size及两套42原全文/priority已核；完整raw子工具正文独立回取限制保留。来源union从已核pilot61/4叠加telemetry四源左条，实得65full/0partial/0unseen，日志27/0/0、网络38/0/0；48required不重复计，累计51success/5failure/5retry/56capture。原17overview全部未审，两套42完整条件仍BLOCKED。云诊断首轮12actual预算消耗5，FD06–12七请求仍未审；9个mapped可见条件仅partial、5个未识别/延后，不能称已解决14项。FD01为左侧覆盖/外部变暗非明确零穿透，FD02/03红色横幅非逐失败行红或中文主名/row rect，FD04仅Application Service尝试09:21:46及无成功的局部语义，FD05时间组级不派发各源。无确证新must-fix不等于无缺陷。`FOCUSED-PNG-BOUNDED-BATCH-1-PARENT-READBACK.json`保存，下一串行批只续FD06–12、总首轮预算不超12；不重审已完成required、不扩大业务权限。
+- 2026-10-12 真正剩余授权/数据条件只读回读：task1保留两套各42、共84原条件的独立来源/priority/全文，157合取子门禁全部完整BLOCKED。父级核23安全输入、162逐图记录SHA、84 suite-qualified原文及UTF-8 hash、157子门禁、priority/非互斥分类统计与4个尚未执行草案；不读原始capture-report正文，父递归遍历核1213安全path/hash/pointer目标并排除12继承raw pointer。子自报1094unique与父递归口径未统一，记录限定而不把1094当父独立总数。计划固定于其读取时pilot61/4与FD12未审，未消费在途兄弟结果；最新像素增量只能来自另份新父回读，不倒改历史计划。`MINIMAL-AUTHORIZATION-PLAN-PARENT-READBACK.json`保存，4草案包括只读DOM/CSS/bounds、有限键盘/UI/lifecycle、用户合法真实状态、隐藏全文与禁读秘密边界；已有PNG grant不重问，不制造成功0/false/disabled、last-good或混合排序。identity和旧overlay/index保持原bytes，最新`DRAWER-CORRECTED-CANDIDATE-REVIEW-STATUS-AFTER-FOCUSED-BATCH-1.json`关联原identity、上一overlay和两份父回读。新DOM/键盘/业务/秘密/前台/部署均未执行；21源/60renderer/Boot集合字节及frozen canonical contract再核。原state原生Windows斜杠与config正斜杠的同文件表示已通过Path身份+SHA核证，不把旧helper纯字符串断言失败当退出或拒绝；Win32实核40748/606906/index7/FD05、640×1000 client、NOACTIVATE非前台非iconic。旧窗/服务不动，本次仅证据/台账维护，五页与最终ZIP仍PENDING。
+
+- 2026-10-12 定点批2派发：原42不缩、FD12完整矩阵不变；`deleg_e3b9430b/task0`只续FD06–12，scope由已核config index8–14导出，前序FD01–05不重复。单列本批actual≤7/首轮5+本批≤12，失败也占预算不加重试；逐图即时保完整actual/analysis/原bytes/几何及RGB，有效成功3/6/最终7保存检查点，不足则partial final。原48required/65source已核与17overview未审保留，新结果未返回前不推进覆盖或条件。限定下一步DOM/CSS/bounds与有限键盘/UI/lifecycle需新明确授权；真实业务成功/last-good/混合状态及隐藏全文不伪造、不读秘密。父级不轮询子artifact/live transcript等待，保已核版本overlay/三台账，收到异步结果再回读。
+
+- 2026-10-12 定点批2真实回读：`deleg_e3b9430b`FD06–12七request/七actual/七success/零失败重试cooldown；父级核七真实computer_use结果handle与20字符解码前缀、完整child savedtool/record/critical逐字analysis及全部实际字段、七原PNG/base64/签名hash/size/尺寸、pre/post owned40748/606906与原source/index/client、chrome-excluded RGB1:1与七source crop→target RGB。46本批+7工具原PNG+26继承共79直接refs/hash/bytes、报告/receipt SHA已核，不冒称回读历史千pointer。CP03/06/final7原12有序名单与每record/actual/backup/post refs、原两套42全文priority及CP副本保持；完整12-request matrix关联前五父核与新七实际，累计12actual12success0failure0retry、failed/unseen空，原17status原字面UNSEEN_DO_NOT_CONSUME仍保未审，父parser最初简写UNSEEN已纠正而未改证据。FD06/07接口组级及轮结束时间不派给每行，FD08异常统计source summary具名局部/其余五来源时间组级，FD09Ingress/Stream/History具名但目标主名未识别非生产缺失，FD10实际中文遥测线程池压力及可见表头/管线消息不能认证遥测来源成功，FD11轮结束09:20:19非指标/队列成功或attempt，FD12具名Outbox数量未知/未成功读取及最后成功尚未成功读取局部，50是读取上限而非实际数量。原14mapped不等于14已解决，无新增确证must-fix非无缺陷、两套42完整BLOCKED/五页PENDING；完整raw子结果未独立回取限定保持。`FOCUSED-PNG-BOUNDED-BATCH-2-PARENT-READBACK.json`及版本化`DRAWER-CORRECTED-CANDIDATE-REVIEW-STATUS-AFTER-FOCUSED-BATCH-2.json`保存，旧identity/overlay/index不改bytes。
+- 2026-10-12 原17概览只读预核与授权边界：同owned40748/606906实核index14/FD12、390×844、NOACTIVATE/nonForeground/noniconic，21source及60renderer/Boot完整pathset/hash、frozen canonical contract一致。原17overview/index15–31的原PNG/source/hash及65个source→target像素均静态核：所有panel原源缩放0.4、LANCZOS与冻结board匹配，target采用round（1024×0.4→410，不是截断409）；每板viewer/capture仍须新实际analysis+全板RGB才计seen。预核不计审图/不补65source full，不以0.4panel认证细字/字号或全row颜色；source与board/capture/effectiveScale分列，multi-panel分别具名/组级/未识别。`LOG-NETWORK-ORIGINAL17-OVERVIEW-PIXEL-PRECHECK.json`保存，下一只审01–10、11–17保未审。前一父回复已请求Q1只读DOM/CSS/bounds/事件信息与Q2有限Tab/ShiftTab/Escape/导航/抽屉/缩放，尚无用户授权回复，未执行且不因异步自动消息扩大；Q3合法真实状态、Q4隐藏全文仍草案。仅继续已有PNG grant，旧两窗与9346/9090不动，无生产/测试/业务/秘密/提交push部署/服务动作。
+
+- 2026-10-12 原17概览第1串行批派发：`deleg_5460eec1/task0`只审config index15–24的LN-overview01–10（原auxiliary），不同于原48required，不加157/65 source覆盖信用；index25–31的11–17保原矩阵未审。每图保存实际完整tool返回/逐字analysis/handle/原PNG-byte backup/pre-post/RGB，成功5/最终10检查点，技术失败最多每目标单次重试与同owned caption物理更改/readback，有界foreground cooldown不是抢GUI焦点；新拒绝/退出即停不重开替代路径。父预核65个sourcePanel的0.4倍LANCZOS/round作为geometry，实际判图必须逐panel定位或保group/unidentified，概览不能原尺寸字体/逐行色PASS。两套42全文priority/完整BLOCKED、原17完整名单保持，完整raw二次回取限定续保。该批在途不提前算seen/PASS，父级不poll子artifact/trace等待；未答复的DOM/键盘/业务/秘密/前台/部署不执行，旧窗/服务不动。
+
+- 2026-10-13 原17辅助概览第1批父回读：`deleg_5460eec1/task0`01–10十actual十成功/零失败重试；逐图核真实computer_use handle及20字符解码前缀、complete child savedtool/record/critical逐字analysis/全部字段一致，十original PNG/base64/签名SHAbytes/尺寸、pre/post owned路径hashindex/source/client/NOACTIVATE/nonForeground/noniconic、排30chrome完整boardRGB1:1、40source crop→target LANCZOS/round/RGB精确。源panel各0.4仍只结构，不以board1:1认证原12px细字。CP5/final10原17有序completed/remaining及record/actual/capture/backup refs、84原条件全文priority/CP副本完整BLOCKED；索引60本批+10工具原PNG+11继承+10board+40source=131唯一直接refs/hashbytes，63本批文件=60索引+index/finalreceipt/DIRECT-REFS三独立文件，报告/receipt/index/CP SHA核，不宣递归千pointer或完整rawtool独立回取。父parser先把orderedActuals当results、localizedStructuralSupport/groupOnlyNotPanelCertification当supportScope、captureRGB字典当scalar，已按真实schema修正，不改旧证据或把父parser错误当capture失败。raw capture-report只hashbytes，不新增正文指针读取；originViewport/route/state作为按sourcepath/hash关联的saved safe projection记录，不冒称新DOM测量。新`LOG-NETWORK-ORIGINAL-OVERVIEW-BATCH-1-PARENT-READBACK.json`与`DRAWER-CORRECTED-CANDIDATE-REVIEW-STATUS-AFTER-ORIGINAL-OVERVIEW-BATCH-1.json`保存，旧identity/index/overlay保bytes。
+- 2026-10-13 概览观察边界及续审目标：40panel中6 localized结构/34group，零具名source+metadata label+精确time局部证据；日志01–05总体失败/恢复/unknown/空表/筛选，LN04 lower-left drawer及LN05 upper-right desktop局部；网络06–10总体尚未执行/空history/展开遥测，LN09 lower-left drawer/right窄版、LN10 upper-left检查结构及lower-right纵向堆叠局部。100/5秒为筛选/自动刷新参数，127.0.0.1/PING/9090/3000ms为输入；analysis failure/successfulchecks0未定位原label/source，既非实际接口零、也非确证生产虚零。低右遥测延伸冻结view下方非意外裁切/末端可达证明；loose英文转述不是中文copy缺陷，真实401非vision失败。未新确证must-fix不等无缺陷，原两套42完整仍BLOCKED。原17overview现在10full/7unseen，其余11–17/index25–31/25source panels待最后串行批；源panel/native信用+0，原48/65与Cloud首轮12预算分别保持，不混合计数。21source/60renderer/Boot完整pathset/hash及canonical合同再核，同40748/606906 index24LN10、1296×872、NOACTIVATE非前台非最小化；仅同冻结PNG grant，新DOM/键盘问题已问未答未执行，旧两窗/9346/9090不动，无本次production/tests/business/secrets/commit/push/deploy/services动作。
+
+- 2026-10-13 原概览最后串行批派发：`deleg_7283fa96/task0`仅LN-overview11–17/config25–31，前十verified保留不重审，七board/25source混page按exact transform定位而非ordinal。最大每目标一次技术retry/本批capture≤14，失败耗预算，不因model/vision失败反复重派，owned退出/新拒绝即保存partial并停，不重开绕路。每actual即时完整return/analysis/handle/原PNGbase64/SHA/身份/RGB，成功3/6/final7checkpoint及原17有序matrix/完整两套42。仅已有安全projection按sourcepath/hash解origincontext，明确禁止新读raw capture-report.json内容，hashbytes引用不是正文解引用；缺来源viewport/route字段保未知，不用board/sourcecrop dimensions或filename脑补。原17父核仍10full7unseen，原48/65和Cloud12calls保持分列，未返回不提前seen/PASS。父不poll子trace/artifact等待，Q1/Q2无答复不执行新DOM/keyboard/business/secret/foreground/deploy/service，旧窗/服务不动，五页及最终ZIP PENDING。
+
+- 2026-10-13 原17概览最后批父回读：`deleg_7283fa96/task0`仅11–17，7actual/7success/0failure/0retry；父独立读七条live trace实际成功handle、尺寸和20字符解码analysis前缀，并核完整saved actual/record/critical逐字analysis一致、原PNG/base64签名SHAbytes/尺寸、pre/post同owned身份、排30px chrome的完整board RGB1:1及25个exclusive source crop→round尺寸→0.4 LANCZOS→board/capture target RGB。该核验不是另一路完整rawtool独立取回。CP3/6/final7原17有序completed/remaining与逐record/actual/capture/backup refs/hash核证；106scoped directrefs、108receipt targets、51本批文件精确成员一致。两套原42的id/priority/criterion全文及继承数组/CP副本保持完整BLOCKED；日志brief附加sourceReference仍保存在原不可变brief，未删除或改写。父parser按真实vision_analysis/screenshot_path、panel记录与派生pageMembership差异、批1localizedStructuralSupport/groupOnlyNotPanelCertification修正；这些是核验schema问题，不计capture失败或重试。
+- 2026-10-13 原概览累计与许可门：17/17辅助概览full、0partial/0unseen，17actual/17success/0failure/0retry；最后25来源panel为log7/network18、23localized结构/2group-only（LN-overview13下方两图），合并前十为29localized/36group。每个本批panel仍有细字/freshness/业务或交互unidentified，零具名来源+metadata label+精确time的新局部证据。日志401/未知/恢复入口与网络尚未执行/空history/表单/输出容器只有相应可见支持；0/100/自动刷新参数不外推真实接口成功，右侧“partly clipped”转述不推翻完整板RGB或直接确证生产clip。15源由已批准安全投影精确关联path/hash/尺寸与originViewport/route/state，另10未独立解析；不新读候选raw report、不借邻源context。原48required/65source和Cloud12actual信用增量0。新`LOG-NETWORK-ORIGINAL-OVERVIEW-BATCH-2-PARENT-READBACK.json`与`DRAWER-CORRECTED-CANDIDATE-REVIEW-STATUS-AFTER-ORIGINAL-OVERVIEW-BATCH-2.json`保存，旧证据不改bytes。21源/60renderer/60Boot完整pathset/hash再核；同40748/606906 index31/LN-overview17、492×106、NOACTIVATE非前台非最小化保留运行。没有待返回PNG批，不再重复派同图；Q1/Q2已问未明确答复未执行，Q3/Q4仍草案，五页/最终ZIP仍PENDING，无本次生产/测试/业务/秘密/前台/提交push部署/服务动作。无新确证must-fix不代表无缺陷或完整验收通过。
+
+### 2026-10-13 独立运行监督父回读与阶段交付
+
+- `deleg_7fdc3589`报告`runtime-design-supervision/RUNTIME-DESIGN-SUPERVISION.md`的SHA为`cbebc47681b1705fe82eb1924f56bf9876cc75879c1c05767e3d61d5b3a14acd`；机器状态和核证回执均已实际读取、精确SHA/bytes核证。父级重算14允许输入、10可比父引用、76 scoped evidence refs及JSON pointer/源码行范围；独立最初代码转交SyntaxError与后续exit0核证分列，不归生产缺陷、不改原证据。
+- 原84的suite/id/priority/criterion全文/hash/来源引用/历史status/scoped结论有序投影与原安全计划逐项完全相等，历史BLOCKED84不倒改。只在新supplement判S-NAV-04两条FAIL、其余82BLOCKED、完整PASS0，原优先级统计及两套42范围保持；同共享壳缺陷只计1个MF-FOCUS-01。
+- 确证缺口：640×480闭合details时主轮云`/10–12`、采集短高`/81–83`及定点`/4–6`都SUMMARY→BODY→BUTTON；BODY时抽屉expanded/main inert仍真。两个隐藏后代误算使真正可见SUMMARY不是逻辑last；主轮reverse-tab-9至-14停首项支持同类反向失败，不签逆环。下一Tab回焦不能抵销越界；不推断秘密获焦/读取、原生地址栏或每route完整复测。
+- 局部有效CSS、ARIA/打开、关闭/resize、同Sidebar节点及listener有限结论已独立审阅；5页h1 22/650/31.9、所采primary蓝/34px、textarea184/vertical不能证明所有角色/宽度/禁用/风险全文或真实业务成功。真实query变化、root卸载清理、每页每关闭路径、有效滚动、另一reduced-motion环境、accepted commit/last-good/混排序/隐藏全文依然缺证；401不变成成功态。
+- 异步返回后再次检查21候选源码与renderer/Boot各60完整路径集合/hash一致，HEAD/branch保持，`git diff --check`exit0；未做新HTTP/health、PNG、浏览器、业务、秘密、源码、测试、前台、部署或服务动作。父回读`PARENT-RUNTIME-DESIGN-READBACK.json`与durable检查交付`READONLY-DOM-UI-INSPECTION-HANDOFF.md`、原独立报告保存；本轮两份独立报告均已消费，不轮询或再派重复审阅。
+- 最小下一授权：只修改AppShell可见可聚焦集合与首尾边界，排除闭合details/hidden/inert后代、保留summary及兼容回退，不改业务/API/Router/Store/凭据/依赖；获准后运行无测试静态/构建门禁，并在任务隔离候选用同安全范围复核SUMMARY一次Tab→关闭BUTTON及关闭BUTTON一次Shift+Tab→SUMMARY，补必要短高/导航/resize/Escape与Frontend Design监督。现授权明确只读，未自动修源、部署或扩Q3/Q4；新像素/最终ZIP仍独立门槛。
+
+### 2026-10-13 Q1/Q2授权后真实DOM与有限交互补证（监督返回前历史）
+
+- 授权与身份：用户原文“授权只读 DOM 与有限交互检查”，对应上一请求的任务专属候选/只读DOM/CSS/bounds/listener、有限Tab/Shift+Tab/Escape/导航/抽屉/缩放及页面原GET；不包含修改源码、业务执行、秘密读取、抢焦点、部署或启停服务。`readonly-dom-ui-authorized/AUTHORIZATION-AND-BASELINE.json`记录权限。21生产输入及renderer/Boot各60资源完整路径/hash检查前后均一致；9346公共index HTTP200且SHA匹配冻结身份，HEAD仍7c1778dd27542be92049deb59b16233b471e48e4，未宣工作区干净或后端全文件零漂移。
+- 实际主轮：`run-2/OBSERVATION-RECEIPT.json` completed=true，真实工具exit0；五页computed样本、11组CDP matched CSS、3份document/window监听器摘要及92条有限UI记录。101次允许的原只读请求，200×36/401×65，0非读、0越界、0执行请求、0pageError/65consoleError；不读保存原响应、console正文、DOM文本、输入值、storage、headers/cookies或凭据，不因console数量相同断言全部错误归因。字号子证据与隐藏全文/风险正文、业务成功或reduced-motion完整验收分开。
+- 新实际问题：640×480、details真实闭合，`cloud-forward-tab-4`为SUMMARY、`-5`为BODY；`short-tab-6`同样BODY越界，导航expanded=true、背景main仍inert=true。`focus-detail-2/FOCUS-DETAIL-TRACE.json`再现SUMMARY→BODY→关闭BUTTON，14焦点候选中2个在闭合details内，native checkVisibility仅12；AppShell.vue:53–56仅getClientRects/visibility过滤，因而末候选不是实际可见末项。只读结构定位未展开或读取运维令牌；不推断原生浏览器地址栏实际获焦，不把新增证据包装为旧图像素发现。
+- 其余实际支持：Escape/遮罩/关闭按钮/当前路由/其他路由/history后导航hidden/inert、主区解锁及可见trigger焦点均有记录；desktop→900窄与开抽屉→desktop→640再次窄有明确focus回退。定点成功轮9记录、8次Sidebar BackendNodeId均14，包含五页路由和尺寸变化，只支持同DOM节点复用，不证明所有state、秘密记忆或真实unmount。监听器keydown1→3→1、focusin1的快照包含组件/工具监听器，既不误判泄漏，也不等于生命周期完整通过。
+- 工具失败独立保留：初轮CDP DOM根尚未请求导致matched阶段未完成，仅采集页computed和1摘要留存，未计为五页成功；自有observer的宽泛sync路径分类误阻GET `/api/config/sync/status`，源码证明其为原只读状态GET后修观察器，不是执行同步业务。首次定点在Escape后空候选数组的观察器访问失败，7条已收记录保留，不判生产Escape失败；定点第二轮增加空数组guard后真实exit0。未改业务代码、制造成功数据、加Mock或运行测试。
+- 当前父回读：`readonly-dom-ui-authorized/PARENT-OBSERVATION-READBACK.json`独立解析成功轮记录并核19精确direct refs/SHA/bytes、5页22px有效scoped字体候选与computed、焦点越界及Sidebar节点。旧原84全文/priority和原PNG全部不改；当前新键盘问题交`deleg_7fdc3589`只读独立监督，其结论未返回不预签PASS/FAIL报告。有限检查不是Electron Main/Preload、query变化、root卸载、真实成功/last-good/混合排序或隐藏全文证明。本轮源码修复需要另行明确许可，五页最终PASS和最终ZIP仍PENDING。
+
+## 2026-10-11 五页及共享壳二次精修：实施中记录
+
+### 2026-10-13 独立范围监督返回与本轮动作对照
+
+- `deleg_77ba2df7`只读范围监督已完成，未执行浏览器/端点/像素审图；新报告`design-supervision/FRONTEND-DESIGN-INDEPENDENT-SCOPE-CHECKLIST.md`及配套矩阵父级精确hash核证。16行对应Q1关联37/Q2关联29/交集16/并集50；Q3关联49、Q4关联14为非互斥数量。原84独立suite-qualified条件的顺序、全文、priority、历史BLOCKED与原计划逐项相等；全部输入及8源码目标hash一致。范围监督不是运行裁决或全条PASS，父级回执`PARENT-INDEPENDENT-SCOPE-READBACK.json`独立保存，不改原报告/矩阵。
+- 本轮真实动作对照：已有cloud→diagnostic链接后`page.goBack`支持自然history关闭，不注入History API、query或人工事件。filters/mode/device、native details展开、clipboard和root生命周期注入均未执行；本轮不新补这些范围外分支。旧Q2草案更宽，不是授权本身；Q3/Q4及本轮源码修复未获许可。Sidebar数字UID及BackendNodeId只是身份支持，不外推值/state或cleanup。
+- 投影/请求限定：DOM-CSS实际含15个native disabled安全布尔，无字段值；不能把回执简写理解为只有ARIA，亦不以该辅助样本签完整禁用合同。五页computed CSS没有URL值。主轮19精确refs再核不变；origin/method/path防护不是逐endpoint方法/参数语义白名单证明，0执行计数不外推后端零副作用或accepted-success。未增加浏览器、业务、秘密、源码、测试、部署或服务动作；`git diff --check`仍exit0，工作区已有其它修改保留。
+
+- 范围：`AppShell/AppSidebar/AppTopbar`、运维状态token/纯props状态组件，以及采集、云平台、诊断、日志、网络五页限定呈现文件；`<=900px`使用同一导航的抽屉，桌面220px侧栏及40px顶栏不改。不创建Phase18，不改领域Store、API/DTO、Router定义、Electron Main/Preload或后端，不新增依赖。
+- 前期监督：`DESIGN-PREFLIGHT.md`结合真实前序截图及当前源码纠正过时建议；已正确项保留，适用项记录在三份页面实施台账和共享壳台账中。实施中三组Frontend Design只审对应候选图片，尚未签新版最终PASS。
+- 独立源码审计：`deleg_68aa59d7`核证100个前端保护文件、840条既有Java文件及16个改前副本hash一致；77个原ref默认值及61个原控件绑定保留。提出MF-C1/C2/D1/D2/D3/L1；该核证属于修正前审计，不自动证明修正后全部合同。
+- 本次六项修正：采集点位采用严格数字类型/原字段顺序，缺值未知且不覆盖真实0；连接数量不再以设备数回退，各项计数标明自己的来源；诊断库存已知guard与原Store resolver一致；队列和累计拒绝分别跟踪共享摘要实际来源；来源读取失败优先显示但业务状态仍未知、不改风险分布数学；日志正在读取时展示当前查询本次尝试时间，完成/失败提交与cleanup仍服从原owner。`deleg_fbe9a9ad` 独立补审已全部标为RESOLVED（源码/静态范围），61个原绑定和26组API/Store/owner调用序列及参数保持；明确记录获准展示差异，不声称全部script identical。
+- 父级在前序源码补审阶段读回报告及19源hash冻结，核证当时源码、100前端保护与840既有Java、全部60渲染资源及同步资源身份；记录为 `SOURCE-CORRECTION-REVIEW-VERIFICATION.json`。这是 `index-ffGQdTDD.js` 的历史checkpoint，不将其19源零漂移结论冒称新增中期整改后的21源独审；诊断排序说明已在下述整改中显式包含“读取失败”。
+- 末次门禁：`git diff --check`、lint、Stylelint、typecheck、Electron build、Web build均exit0；命令与真实输出存于 `operations-polish-v2/SOURCE-CORRECTION-GATES.json`。Web同步60文件是源码资源同步，不是运行9090部署；保留既有PURE注释及vendor chunk提示。不创建、修改或运行测试。
+- 新版捕获：9346隔离候选renderer只读访问真实9090，`source-corrected-reviewed/capture-report.json`为completed=true，入口 `index-ffGQdTDD.js`；105张图覆盖1600/1280/1024/900/640/390宽度、局部滚动、默认折叠及安全展开；40条抽屉操作记录。真实pageError为0，consoleError为52，响应状态包含51次401；没有非读请求或网络检测请求。原始JSON、日志正文及可能含敏感值的文本在截图时遮蔽，未读其值。
+- 实施中反馈现已汇总：`MIDPOINT-SHARED-COLLECTION-REVIEW.md`要求补足细字、真实最大表端点及抽屉自身底部证据；`MIDPOINT-CLOUD-DIAGNOSTIC-REVIEW.md`旧图云页所见范围局部PASS、诊断库存失败误零/失败主标签/重复长行需修；`MIDPOINT-LOG-NETWORK-REVIEW.md`旧图遥测未提交计数误零需修，并补日志真实最大端点和390中段。三个报告均只签旧 `index-LPY1pd0N.js`，不是当前终审。
+- 本次新增极小呈现差异：DeviceRuntimePanel的可选inventoryCount由诊断页传入真实成功库存count或null，未传时保留原默认，明确0仍显示0；EdgeTelemetryPanel仅resultText对没有归属响应的分支不拼接normalizer默认零，保留本地历史真实0及原提交/请求/归一化/owner；诊断失败主标签显式红色，业务状态仍未知，源名保留、各源时间/详情进入真实native details，恢复建议不再重复整段元数据；状态列140px，badge原12px与tbody原13px规则保留，不声称全部computed字号均12px。两个现有组件不属于原100保护清单，已另外保存真实中期编辑前字节 `MIDPOINT-UI-COMPONENT-BASELINE.json`，不冒称初始pre-edit副本。
+- 末次完整重跑：`FINAL-CANDIDATE-GATES.json`中六命令均exit0，随后重新载入当前 `index-BLe3PJnp.js` 并捕获 `final-candidate/`105图、40导航记录，及 `final-supplement/`173图。补图22组真实连续滚动覆盖到body底部且记录零gap，包括390日志恢复来源、390遥测中段及1600/900/390本地空草稿校验/风险/来源；900/640/390抽屉及640x480导航内滚动到底均另有原像素补图。未执行遥测接入或网络检测。
+- 端点补证而非改CSS：采集640设置理论350后实际clamp340，再赋极大scrollLeft仍340，最后表头右边与panel右边重合；日志理论370、实际最大360，均保留scrollbar-gutter、offset/client/scrollWidth及原像素端点图。不能拿理论差值猜测列截断；待独立像素复核确认可见右端。所有补图来自真实当前渲染，没有伪造滚动数据。
+- 父级当前身份核证：`FINAL-CANDIDATE-IDENTITY.json`冻结21源hash；278图的PNG签名、尺寸、SHA、入口及外层横溢核验无问题，100前端保护/840既有Java零漂移，60资源集合与Boot源码同步一致；当前source差异补审已获独立RESOLVED并由父级核验，像素终审仍待完成。`FINAL-CANDIDATE-HTTP-IDENTITY.json`读回9090/9346公共HTML均200，分别为旧发布 `index-DsbgyuIk.js` 与当前 `index-BLe3PJnp.js`。Web同步不等于部署。
+- 新差异源码补审已完成：`MIDPOINT-PIXEL-CORRECTION-SOURCE-REVIEW.md`及 FINAL机器JSON/21源freeze读回核证，MP-D1/MP-D2/MP-N1均RESOLVED，无OPEN源码项；两个组件全部原函数/ref/watch/lifecycle字节不变，反向移除获准改动后整份文件恢复真实中期原字节。父级另外重复当前/独审/捕获21源hash、100/840保护、60资源集合/字节，并独立做两个整文件反向字节比对，全通过，记录 `MIDPOINT-PIXEL-CORRECTION-PARENT-VERIFICATION.json`。本子审计第一轮整组hash已含140px，未留下更早82px整份快照，因此不宣称该历史整文件仅一行变更；不是像素、运行或业务PASS。
+- 最终监工受阻：共享壳/采集 `deleg_e6965329` 对当前56原图及14结构/39原像素板形成逐项ledger，但只成功分析native-01的1600主区1:1裁剪；其余38原像素板和1600侧栏全上下文未见。翻页工具明确返回 `NOT consented / Do NOT retry / no different path`，已停止，没有通过换文件、另开查看器或输入路径绕过。末次报告 `FINAL-SHARED-COLLECTION-DESIGN-REVIEW.md` 为BLOCKED；MF-E1风险/来源/校验细字、MF-E2采集640真实右端、MF-E3抽屉导航自身底部全部仍BLOCKED。没有足够像素证据提出新生产CSS问题，不以盲改代替看图。
+- 23:11父级读回核证：独立核对报告hash、8个审查JSON文件hash/格式、39原像素板hash/尺寸、56来源hash，并从ledger重新统计1成功板/1部分原图/0全审原图/55未见原图；真实live transcript存在22:58翻页超时无同意的原始工具拒绝。当前21源、全部60渲染资源/Boot同步、278原PNG与100前端/840既有Java保护全部无漂移，记录 `FINAL-SHARED-COLLECTION-PARENT-READBACK.json`。不把文件核验升级为像素PASS。云/诊断和日志/网络的终审暂挂，等待只读看图/翻页明确授权；不降低必审矩阵，不发最终冻结ZIP。
+- 验收边界：实际PNG存在、DOM/交互记录和构建通过不等于像素通过；`index-LPY1pd0N.js`的实施中图与最新入口分开，不混签终审。未授权的导入/导出、同步、设备写入/启停、Replay/Flush、云测试、网络检测及敏感正文/成功业务态均未执行或未审，不制造数据补态。
+- 运行边界：9090最后公共页面读回为HTTP200及旧入口 `index-DsbgyuIk.js`；health HTTP200/body DOWN为前序记录，本次未再读取health正文。不为改善健康显示执行控制操作；本次仅读回审查证据和更新文档，未改生产、运行测试、提交/部署或执行业务写入。最终逐项设计闭环、最新图片像素终审、冻结交付包及用户确认仍待完成。
+- 新看图授权与恢复：父级明确请求只在任务专用截图查看器打开、切换及翻页查看已脱敏截图，用户回复“授权”。`PIXEL-REVIEW-AUTHORIZATION.json`记录该授权及仍禁止的业务操作/凭据/提交/部署/抢焦点边界，当前21源及60资源重新计算一致。已派 `deleg_c6dd7085`恢复共享/采集39原像素板及1600侧栏上下文；先核首图和第二张不同图真正分析，再扩展既定矩阵。新审查保存独立AUTHORIZED报告，不覆盖历史BLOCKED记录；如有新的同意拒绝仍停止不绕过，未返回不签PASS。其余两组保持串行，不降低未审要求。
+
+### 2026-10-12 授权后完整终审反馈与MF-V1修正
+
+- 真实终审反馈：`FINAL-SHARED-COLLECTION-AUTHORIZED-DESIGN-REVIEW.md`为旧 `index-BLe3PJnp.js` 的限定FAIL，39/39必审native板与3侧栏补板/3细节板共45次成功分析，56本组来源可见矩形联合覆盖；36项保留为22限定PASS、4FAIL（同一MF-V1）、10BLOCKED/SOURCE_ONLY/NOT EXERCISED，不签脱敏正文或五页总体。MF-E1风险/来源/校验细字、MF-E2真实340端点已补证；MF-E3因背景穿透不能整体PASS。父级核45独特handle basename均存在实际live结果，并通过子会话130063/130071读回native37/native39完整真实vision结果，明确看到业务文字与导航叠读，不以自报代替关键发现。
+- 最小生产修正：`src/app/AppShell.vue:215`与`src/app/AppSidebar.vue:88`各一处 `background: var(--console-sidebar)`改 `var(--app-color-sidebar)`，直接复用tokens.css既有 `#151d2b`，不新增alias或fallback覆盖层。`DRAWER-OPACITY-STATIC-VERIFICATION.json`证明21源只有这两文件变化，两处反向替换整文件恢复原冻结hash；原script/template、导航handler、Tab/Escape、inert、Router及其它19源保持。未改API/DTO/Store/后端/依赖/测试。
+- 门禁与新证据：`DRAWER-OPACITY-GATES.json`记录diff-check、lint、Stylelint、typecheck、Electron build、Web build六项真实exit0，保留既有vendor/PURE提示。重新捕获 `drawer-corrected-candidate/`105图、40导航记录及 `drawer-corrected-supplement/`173图；pageError/non-read请求/network执行请求均0，22连续组无gap到底，真实401保持。`DRAWER-CORRECTED-CANDIDATE-IDENTITY.json`冻结 `index-CW3V7nPt.js`、21源、60资源、278PNG（265不同hash）、Boot同字节、100前端/840Java零漂移；旧原图与FAIL报告不覆盖。新三组审查板保留原矩阵39/110/48 native，不缩小scope。
+- 当时复审：新共享/采集完整矩阵已派 `deleg_33038f3e`，其结果见下述补记；公共HTML当时读回9090/9346均HTTP200，分别旧 `index-DsbgyuIk.js`/新 `index-CW3V7nPt.js`。Web资源同步不是运行部署，未重启服务、未读凭据、未执行业务写入或测试。
+
+### 2026-10-12 MF-V1修正后共享/采集限定复审与第二组终审
+
+- 新版独立结论：`DRAWER-CORRECTED-SHARED-COLLECTION-DESIGN-REVIEW.md`签 `SCOPED_CURRENT_VISIBLE_PIXEL_PASS`，仅当前实际可见范围。39必审native全部分析，额外3侧栏板补齐9个1600原图左220px及1个明确倍率抽屉细节，共43次成功视觉分析；56原图可见矩形联合完整，partial/unseen均0。MF-V1背景穿透已RESOLVED，MF-E1风险/校验细字、MF-E2真实340表端点、MF-E3抽屉导航底部按新图闭环，无新生产视觉must-fix。
+- 原验收要求不降级：36项完整保留，26限定可见PASS、10BLOCKED、0FAIL；成功数据/明确0与false/last-good、有值JSON、实际写入或下载、脱敏正文细字、键盘焦点/inert/关闭/resize/unmount/motion未由本组图片签收，保留既有源码及40条运行记录与像素结论的区别，不把这10项删除或改为PASS。未签五页总体或用户最终确认。
+- 父级证据核验：从逐图ledger重算39＋3＋1及43独特handle，逐一对应live transcript中真实成功computer_use的vision_analysis结果行；重新按exclusive-corner矩形计算56原图覆盖。重新核21源/全部60renderer与Boot资源/278PNG（265不同hash）及100前端/840Java保护均无漂移，110/48下游native每块与来源像素完全相等。证据 `DRAWER-CORRECTED-SHARED-COLLECTION-PARENT-READBACK.json`。compact transcript截断完整分析，session_search按handle及更宽标题未返回完整记录，因此目前是handle-result佐证，不冒称父级读回了全部或关键完整vision正文；独立报告和逐图分析记录仍保留该限定。
+- 当时串行派单：`deleg_a70fb030`只审当前 `drawer-corrected-cloud-diagnostic-plates` 的110native和云31/诊断126来源，并补齐1600侧栏上下文；要求原CL1–CL7、D1–D7及适用共享P0/P2逐项保留，重点审库存未知、来源失败优先、展开元数据/密度。其后阻塞结果见下述补记；日志27/网络38来源及48native仍未审，没有签其PASS，没有最终冻结ZIP。
+- 清理与限制：子审查两个自有查看器已记录exit0和HWND消失；父级独立读回退出记录，未操作9346/9090、未修改生产或执行业务操作，仅更新过程文档和证据。不读取或保存秘密、不创建/修改/运行测试，不提交、推送或部署。
+
+### 2026-10-12 云/诊断终审查看器连续关闭：暂停恢复
+
+- 独立报告：`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-DESIGN-REVIEW.md`严格为BLOCKED，不签本组或五页PASS。实际7次成功auxiliary.vision，native01/02/03/04/05/14完整，native06部分；另2次0×0未计成功。110native仍104块未完整（其中103未见），157原来源full3/partial4/unseen150；原42项0PASS/0FAIL/42BLOCKED，11项仅有局部可接受观察，不用其缩减矩阵。PIX-D1/D2/D3及本组MF-V1未完整闭环，新增已证实视觉must-fix为0不代表未见范围无问题。
+- 阻塞依据：run01/run02正常exit0；run03精确PID59560记录2026-10-12T10:39:57.441500的 `WM_DELETE_WINDOW` 后exit0，触发者未暴露。源码专属selection的CLOSE分支不会写该原因日志，因此可确认末次为窗口关闭回调，但不能判断是用户、工具或其它发送者。没有新的工具权限拒绝；不将未知关闭归因用户，也不通过隐藏窗口、拒绝关闭事件或无限重开抵抗可能主动关闭。
+- 父级独立核证：7个精确handle均对应实际成功vision_analysis工具结果行；7份真实capture副本hash/尺寸一致，native06返回979px对声明1024px缺45px。根据每份实际capture尺寸、30px查看器标题区和exclusive source矩形重算157来源覆盖，与子ledger一致。21源/60renderer和Boot集合字节/100前端/840Java无漂移；三个精确自有HWND当前均不存在。证据 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-PARENT-READBACK.json`，完整工具正文未全部读回，保留handle佐证限定。
+- 当时动作：暂停云/诊断恢复及日志/网络同路径派单，先确认查看器关闭是否为用户主动操作、是否可保持后台打开。原授权和原110native/157来源要求继续保留；后续确认已解除该等待，恢复见下节。不重启设计、不操作业务、不读秘密、不新增或运行测试、不提交/推送/部署。总体仍未通过，最终效果图及冻结ZIP不伪签。
+
+### 2026-10-12 用户确认主动关闭后：恢复原云/诊断矩阵
+
+- 用户明确确认此前手动关闭查看器、后续不关闭并要求继续。`PIXEL-REVIEW-RESUME-AUTHORIZATION.json`保存原话、既有只读授权边界、保留6完整native及104待完整native清单；不逐次推定三个历史关闭事件的发送者，不把关闭事件混同工具拒绝。
+- 父级恢复前重新核当前21源码、全部60renderer与Boot资源集合/字节、112allowlist板、157来源PNG及两份捕获报告，均与冻结候选 `index-CW3V7nPt.js`一致；100前端保护无漂移。既有 `collector-runtime/src/main/java/com/wangbin/collector/core/connection/manager/ConnectionManager.java`与前序Java基线有1处差异，当前也不同于HEAD且非纯CRLF差异。本轮未编辑后端，不恢复该用户工作、不重采或打包部署，不再宣当前840Java零漂移；冻结图的像素审查不能推定当前后端合同/健康。记录 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RESUME-PRECHECK.json`。
+- 已实际派 `deleg_697539e5`，新目录 `drawer-corrected-cloud-diagnostic-resumed-review/`及独立恢复报告与历史BLOCKED记录分开。保留前7条实际工具结果及其几何限定，不重审6完整图凑数量；先完整实看native06、核切换到不同native07，再补其余原矩阵和2侧栏。110required native、157来源及42原criteria不减少；PIX-D1/D2/D3、相邻页MF-V1必须凭当前真实像素闭环。恢复派单不是审完或PASS。
+- 查看器只在后台无激活显示，精确自有PID/HWND捕获，不抓其它窗口、不抢焦点；出现新的明确工具同意拒绝仍停止、不绕过。仅在本组结束后关闭自有查看器并核退出，9090/9346保持。本组完成并读回真实证据后才串行日志/网络48native；共享/采集限定PASS保留，五页总体仍未通过，无测试、业务操作、提交或部署。
+
+### 2026-10-12 上游超时后增量核证与有界分批续审
+
+- 中断原因：`deleg_697539e5`真实终止为上游6次空/坏响应及slow response 359s，而不是新的同意拒绝。它留下native06/07两份有效逐图JSON和cap副本；native08的并发错误和无成功分析的unchanged-screen不计seen。其完整报告未生成，不能把failed子任务签成完成。旧自有PID26512/HWND800040已由父级核不存在。
+- 增量父级核证：真实trace存在两个成功vision_analysis-bearing handle，cap副本SHA/尺寸与记录一致，cap从y=30起的整个原板RGB像素与原PNG完全相同。native06的旧右45px缺口已实际补齐，native07为新的完整900top观察；累计9真实分析、8完整native/102未见，157来源full5/partial3/unseen149。工具read_file会截断长分析行的展示，不代表保存JSON已截断；JSON机读没有truncation marker，仍区别子记录文本与父级独立取回raw tool正文。证据 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RESUMED-PARENT-READBACK.json`。
+- 有界实际恢复：父级持有新只读无激活窗口PID41380/HWND598426，allowlist及原PNG不变；native08首试辅助视觉并发限制，保存failure-01且不计seen。60秒固定前台等待后仅更新精确自有窗口caption使新cap可再分析，GetWindowText读回、原PNG hash及非前台窗口核证后，正常capture实际返回native08完整具体分析；900×1058 cap包含900×1028原板，y=30复制像素完全一致。没有换provider、读配置/秘密、伪造响应或通过permission替代路径。
+- 当前核证checkpoint：累计10成功分析（含旧native06部分历史）、9个完整required native、0当前partial、101未见；157来源full6/partial3/unseen148，2sidebar仍未审。42原criteria及成功/留存/真实0与false/disabled/隐藏正文/业务写入/键盘生命周期未审条件保留，本组及五页未PASS；父级native08只签其实际可见范围。记录 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-RECOVERY-CHECKPOINT.json`。
+- 分批不缩减矩阵：已派 `deleg_38289ad8`仅执行下一30板native09–39（跳过已有完整证据native14），逐成功图即保存真实工具文本/handle、cap副本、几何及限定观察；另71required native与2sidebar继续留原矩阵，不因执行批次缩小验收范围。父级持有查看器避免子代理上游失败一并销毁，不由本批关闭或重开；辅助视觉继续串行，新的真实权限拒绝仍停止，技术并发错误仅有界等待重试。日志/网络48板待原第二组完成后串行。
+- 范围与静态核证：本次再次核21源码与60renderer/Boot字节仍同冻结候选，未改生产或介入既有ConnectionManager漂移；`git diff --check`通过。本轮仅scratch查看器/证据、进度与技能流程记录，未新增修改运行测试、未执行业务、未读秘密、未提交推送部署，也未停9346/9090。
+
+### 2026-10-12 30板子批再次超时：保留五图并直接补三图
+
+- `deleg_38289ad8`真实状态failed：上游6次空/坏响应及slow response398s。没有完成其30板目标、没有完整独立批次报告；不以成功5板冒称30板完成。实际native09–13五个成功vision分析结果及逐图JSON/PNG副本均存在，native11初次gateway并发错误不计seen，其一次60秒重试确实成功。没有新的工具同意拒绝，也没有窗口退出，无需再次询问用户关闭来源。
+- 父级逐一机械核5个成功trace前缀/handle、原板SHA、真实capture与副本SHA/尺寸、完整board像素与capture y=30后画布完全相等，各source exclusive crop与板target位置也完全相等。子逐图正文可机读，但session_search精确handle及扩大delegation均返回0sessions，所以保留handle/result-prefix佐证限定，不冒称独立读回子完整raw tool正文。5板范围内云未知/未评估、队列未读取/恢复入口与640抽屉不透字可接受，无该已见增量证实的新must-fix；其它未见范围仍不足证据。
+- 父级直接续审native15/16/17，三次正常`computer_use`确实返回完整具体auxiliary.vision，未换provider或读取配置。原1380/1280画布与capture尺寸/像素完全相等；诊断库存失败显示未知，运行计数未知/过期、独立失败源元数据/恢复入口、默认折叠行保留业务未知与失败，可见范围接受。1600原sidebar仍缺，1280顶图只见部分默认表行，JSON正文被明确脱敏；未以提示文案认证真实留存/成功数据，也未签展开details/全部行密度或MF-V1其它宽度。
+- 新checkpoint机械重算为18真实成功分析（含旧native06部分历史）、17完整required native/0当前partial/93未见，157来源full15/partial4/unseen138；`sidebar-01.png`/`sidebar-02.png`均未审。原110native/157来源/42完整criteria不削减，成功/last-good/真实0与false/disabled、敏感正文、写入/下载、键盘/生命周期未审条件保留。
+- 当前精确父级PID41380/HWND598426仍存在、非前台，留给后续串行小批；本次不重开、不关闭、不抢焦点。已派 `deleg_c237391b`只执行native18/19/20/21/22五板，另88required native及2sidebar明确待续；拆执行批次不是缩验收。日志/网络48native继续原顺序待本组完成，整体及最终冻结效果图/ZIP未完成。
+- 21生产源、60renderer完整路径集合/hash及Boot资源路径集合/hash重新核一致，`git diff --check`exit0；未编辑生产、既有Java工作或测试，未执行业务/导出、读取秘密、提交/推送/部署或停止9090/9346。证据 `BATCH-1-RECOVERY-DESIGN-NOTE.md`、`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-1-PARENT-CHECKS.json`、`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-1-RECOVERY-CHECKPOINT.json`及`drawer-corrected-cloud-diagnostic-parent-continuation/per-image/`。
+
+### 2026-10-12 第2微批完成与第3微批续审
+
+- `deleg_c237391b`实际完成native18/19/20/21/22，五次具体auxiliary.vision成功、没有错误/unchanged-screen或重试充数；报告只签本批观察，原42完整条件全BLOCKED。父级逐一核实际live成功分析前缀/handle、每个record及capture原副本SHA/尺寸、整板RGB与cap y=30后完全相等、来源hash/crop/scale/target相等，核四份汇总记录hash及42条id/priority/criterion原文完全一致。子`observedBoardRectangle`用capture XYWH而非board exclusive corners，父级明确转换后统计，不误算coverage。完整raw子工具正文未独立读回，仍限定成功前缀/handle佐证，不签争议must-fix。
+- 新覆盖机械重算：23实际成功分析（含历史部分native06）、22完整required native/0当前partial/88未见；157来源full21/partial4/unseen132，两sidebar未见。1024/900/640失败库存未知、源失败与业务未知、风险分布与恢复入口有可见证据；每行红色主标签、混合来源稳定排序、完整展开details/字号/密度及动态操作尚未被这五图完整认证，MF-V1本批无drawer。没有足够新must-fix证据不等于未审无缺陷。
+- 已派 `deleg_739e97c3`下一5板native23/24/25/26/27，按原矩阵补390上下、1280×720上下、640诊断drawer及表左右端；另83required native及sidebar01/02仍待，不缩减110/157/42原验收范围。父级持有窗口PID41380/HWND598426、WS_EX_NOACTIVATE、非前台仍存在，最终state native22/index21；本次不关闭/重开/抢焦点，日志/网络48native继续原串行顺序待后。
+- 再核当前21源、全部60renderer与Boot资源路径集合/hash一致，`git diff --check`exit0；仅更新证据与进度，无生产修改、测试新增修改执行、业务动作、secret读取、提交push部署或服务停止。独立报告 `drawer-corrected-cloud-diagnostic-microbatch-2/MICROBATCH-2-DESIGN-REVIEW.md`及父级 `DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-2-PARENT-READBACK.json`已保存；总体和最终冻结效果图/ZIP未完成。
+
+### 2026-10-12 第3微批完成与第4微批续审
+
+- `deleg_739e97c3`实际完整分析native23/24/25/26/27：390上下、1280×720上下、640诊断打开drawer及表左右端。父级逐图核冻结board hash/transform、原capture及留存副本SHA/尺寸、capture去30px标题后整板RGB相等、source hash/crop/target/scale相等，五次正常vision无失败/重试；42条id/priority/criterion原文完全保留、完整状态42BLOCKED。
+- 累计28实际成功分析（含历史部分native06）、27完整required native/0当前partial/83未见；157来源full28/partial4/unseen125，2sidebar仍未见。640诊断导航当前项、关闭及底部实际识别，不能据整体caption认证背板不透字；每行精确红色色相、原字号/密度、全展开元数据和混合状态稳定排序仍未认证，没有足够新增具体must-fix不等于未审无缺陷。
+- 独立raw完整工具正文未取回：父级仅核真实成功handle及live可用42–49字符前缀，子saved完整tool与per-image内部一致。首次固定100字符匹配因live省略失败，改为解码实际可用前缀，不编造余文；路径集合search返回MSYS路径及目录，改用native路径枚举，21源/60renderer/Boot完整集合/hash真实一致。冻结原序派下一28–32，不用词典排序误先选native100。
+- 已派`deleg_4510b619`仅续云1600/1280连续上下及1024连续首板共5；另78required native和2sidebar留原110/157/42矩阵。父级PID41380/HWND598426已核存在/非前台/WS_EX_NOACTIVATE，末状态native27/index26；不关闭/重开/抢焦点。日志/网络48native及最终效果图/ZIP仍按原顺序待续，无本次生产修改、测试、业务/秘密读取、提交/推送/部署/服务停止。
+
+### 2026-10-12 第4微批完成与第5有界批续审
+
+- 云1600/1280连续上下及1024连续首板native28–32五板真实成功。父级核实际工具handle/可用分析前缀、整板与cap去30px标题后RGB完全相同、来源crop与target相同、frozen hash/transform、cap原副本SHA/尺寸、子saved完整tool和逐图正文对应、原42id/priority/criterion完全保留；完整raw工具正文未独立回取，限定继续保留。native28首次实际gateway失败与PNG已核anchor/hash并排除seen，后一次有限同窗重试成功。
+- 机械累计33成功分析（含历史部分native06）、32完整native/0当前partial/78未见；157来源full31/partial6/unseen120，两独立sidebar未见。1600连续来源裁片从x220开始，仅主区partial；板全审不等于来源全审。native29/30/31工具明确读到红色监控能力未知提示，不能移签其它细字、字号/opacity或诊断各行颜色；未知/未读取/风险未评估及只读恢复/Replay/Flush风险说明是本批可见观察，非业务成功或无缺陷认证。
+- 已派`deleg_179cd9fe`有界10板native33–42：云1024尾段/900三段/640与390连续以及诊断1600前三段。每图即时存证，每5图落检查点；其它68required native和2sidebar原范围待续，不缩原110/157/42，原42完整BLOCKED、日志/网络48板、最终效果图/ZIP和五页总体仍PENDING。21源/60renderer/Boot完整集合/hash真实一致；自有PID41380/HWND598426已核存在/非前台/NOACTIVATE，停native32/index31，不关闭/重开/抢焦点；本次仅证据/文档，无生产、测试、业务、秘密、提交/推送/部署或服务停止。
+
+### 2026-10-12 第5批增量恢复、真实标题纠正与第6微批
+
+- 第5批`deleg_179cd9fe`未完成原10板；仅33–40八成功，父级全部核冻结board hash/transform、原capture/留存副本SHA/尺寸、cap去30px标题后整板RGB/source crop完全相等、真实成功handle/可用前缀和完整子saved tool与per-image一致，42原id/priority/criterion全文精确保留。native38的单独tool-result首次写文件Permission denied，补存文件现已实际解析/hash/内容核对，不丢真实成功增量。两个41非成功返回和42未试仍留原未审，原8/10 BLOCKED历史不改为完成。
+- 重试步骤根因：marker只写commentary/JSON，未改native caption，gateway失败和screen_unchanged的PNG hash完全相同，无成功analysis不可复用。父级读viewer producer确认title只在selection切换时更新，核PID41380/HWND598426、非前台/NOACTIVATE及同原PNG/hash后，用实际Win32 SetWindowTextW改title并GetWindowTextW读回，未改viewer源码/生产/业务PNG、未抢焦点。一次材料上已纠正的正常capture真实分析native41成功，原像素完全相等；不是重置重试次数反复撞相同失败路径。完整实际父级正文/cap/record立即保存到`drawer-corrected-cloud-diagnostic-parent-caption-recovery`，明确parent followup而非独立终审。
+- 41所见库存/六摘要未知非0、回压来源读取失败/最后尝试/未成功读取/重试入口及每源时间折叠入口有新可见证据，不认证原字号/每行精确红色/全部展开/混合排序/本组640drawer不透字。新累计42成功分析（含历史partial06）、41完整required native/0当前partial/69未见；157source full42/partial8/unseen107，两sidebar未审；42完整条件全BLOCKED，整体PENDING。核21源/60renderer/Boot完整路径集合/hash真实一致，不据此签当前后端健康或合同。
+- 已派`deleg_9ebdb3f2`第6微批只42/43/44/45/46，补1600诊断中底及1280上中；另64required native和2sidebar留原110/157/42矩阵。父级窗留运行，下一selection会正常更新title；新明确同意拒绝仍停，不重开/抢焦点/换provider。保存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-BATCH-5-PARENT-READBACK.json`及`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-AFTER-PARENT-41-CHECKPOINT.json`，日志/网络48native与最终效果图/ZIP待续；本次无生产/测试/业务/秘密/提交推送部署或服务停止。
+
+### 2026-10-12 第6微批父级核证与第7微批
+
+- `deleg_9ebdb3f2`42–46五板真实成功，父级逐图核实际trace成功handle/可用JSON解码前缀（42–47字符，只作限定佐证，不宣完整raw结果独立取回）、独立保存完整tool与aggregate/逐图正文对应、capture原副本hash/尺寸、整板去30px标题后RGB相等、sourceRect exclusivecorners与target XYWH/scale1来源crop相等；42原id/priority/criterion全文精确保留且全BLOCKED。长行省略标记需从trace展示后缀剥离后才解码，初次核证把展示标记误算分析尾部，已纠正，不是原分析正文漂移。
+- 累计47成功分析（含历史partial06）、46完整required native/0当前partial/64未见；157来源full44/partial11/unseen102，两sidebar未见。本批1600三来源x220主区partial，1280两来源full；44/46库存与摘要未知、43来源名/最后尝试/尚无成功读取、45来源失败与业务未知分列及恢复入口限定可见。45红色只认证错误横幅，八行主标签、混合稳定排序、精确原字号/默认密度、完整来源明细、成功0/false/disabled/last-good及交互生命周期尚未认证，无新确切must-fix不等于无缺陷或PASS。
+- 21源/60renderer/Boot路径集合和hash再次一致，不推论后端健康；父级viewer41380/598426后台NOACTIVATE留运行，核停native46/index45。已派`deleg_0914a7dc`47–51五板（1280诊断中底及1024上中），其余59native/2sidebar保持原110/157/42；历史第5批8/10未完成及父级41单独跟进不改。原42完整BLOCKED、日志/网络48板及最终效果图/ZIP和五页整体PENDING。本次仅证据/文档，无生产、测试、业务、秘密、提交推送部署或服务停止；限定`git diff --check`exit0。
+
+### 2026-10-12 第7微批核证与第8有界批
+
+- `deleg_0914a7dc`完整47–51五板，capture成功5/失败0/重试0；准备阶段误用config.path已按真实file/width/height纠正，不是图像分析失败。父级核五实际tool成功handle/44–47字符可用解码前缀（限定佐证非完整raw独立取回）、独立saved完整tool与aggregate/逐图对应、冻结hash/transform/capture原副本SHA/尺寸、1:1整板去标题30px及来源crop RGB完全相等；42原id/priority/criterion全文精确保留且全BLOCKED。
+- 累计52成功分析（含历史partial06）、51完整native/0当前partial/59未见，157source full49/partial11/unseen97，两sidebar未审。1280诊断中底及1024上中支持库存/运行未知非0、来源失败与业务未知、来源未成功说明、恢复/详情折叠入口、优先关注先于摘要及管线背压中文名/最后尝试时间；没有逐行颜色、精确字号密度/间距、完整每源尝试/成功时间与展开全文认证。真实混合排序、成功0/false/disabled/last-good、诊断drawer不透字/键盘生命周期仍待，未出现确切must-fix不等于无缺陷或总体PASS。
+- 21源/60renderer/Boot集合/hash再次一致，父级owned41380/598426非前台NOACTIVATE核停native51/index50且留运行；第5批8/10未完成及parent41跟进历史保持。已派`deleg_6483344a`52–61有界10板（1024连续中底与900上中）、每5图checkpoint，其余49native/2sidebar保原110/157/42范围；原42完整BLOCKED、日志网络48板及最终效果图/ZIP和五页总体PENDING。本次仅证据/文档，无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0。
+
+### 2026-10-12 第8有界批核证与第9批
+
+- `deleg_6483344a`52–61十板全部真实vision成功，full10/partial0/unseen0、失败0/重试0。父级核实际trace handle/43–49字符可用解码前缀（限定佐证非完整raw独立取回）、独立保存完整tool/aggregate/逐图一致、frozen hash/transform/原capture副本SHA与尺寸、1:1整板去30px标题与每来源crop放板RGB完全相等；42原id/priority/criterion全文精确保留、完整状态全BLOCKED。第5/10图checkpoint JSON真实解析、完成和剩余板名单精确核证、hash另存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-8-CHECKPOINT-PARENT-CHECK.json`。
+- 累计62分析（含历史partial06）、61完整native/0当前partial/49未见，157source full59/partial11/unseen87，两sidebar仍未审。1024中底与900上中库存未知而非0、源失败和业务未知、来源名/尝试/无成功读取、整轮结束与每源时间分开、中文主名/恢复/折叠入口获得限定支持；未确认行红色主标签/原字号密度、全文展开、成功0/false/disabled/last-good/混合稳定排序及生命周期。未新增确切must-fix不等于无视觉缺陷或PASS，原42完整BLOCKED、五页总体PENDING。
+- 21源/60renderer/Boot集合/hash再核一致；owned41380/598426后台NOACTIVATE核停native61/index60、留运行。已派`deleg_aa4d95ad`仅62–71十板、每5图checkpoint，900尾段及640/390多panel连续按实际manifest源矩形核证，另39native/2sidebar保原110/157/42；日志网络48板及最终效果图/ZIP尚未闭环。历史第5批8/10未完成与parent41非独立终审保持，本次无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0。
+
+### 2026-10-12 第9有界批核证与第10批
+
+- `deleg_aa4d95ad`62–71十板full10/partial0/unseen0，实际vision成功10、失败1、重试1；首62 gateway失败保留且不计seen，60秒单次有界恢复记录、实际native caption更新/readback、原PNG不变及恢复capture SHA不同已核。父级独立核11实际tool-result handle/可用前缀，十成功42–49字符前缀与child完整saved tool/aggregate/per-image一致；限定为实际anchor/前缀佐证加saved-evidence内部一致，完整raw tool正文未独立取回。十板整板capture去30px标题后与冻结原板RGB完全相等、22来源tile hash/crop放板像素相等、effectiveScale=1。第5/10图checkpoint完成及剩余有序名单、完整records、counts和hash精确核证，42原id/priority/criterion全文保持且完整条件全BLOCKED。保存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-9-PARENT-READBACK.json`。
+- 累计72成功分析（含历史partial06）、71完整native/0当前partial/39未见；157source矩形联合重算full81/partial11/unseen65，两sidebar待。900尾段及640/390连续可见库存未知非0、来源失败与业务未知、恢复入口/局部details获得限定支持。多panel逐源记录可定位内容与未识别内容，70组级云/线程池/缓存等未定位文字不推广到每panel，71中右组级来源失败不冒逐源认证。红色整页横幅不证逐行主标签；字号密度、全部中文主名/来源时间、全文展开、成功0/false/disabled/last-good/混合排序及生命周期仍不足，未确认新must-fix不等于无缺陷或PASS。
+- 21源/60renderer/Boot完整集合/hash一致；父级owned41380/598426存在、NOACTIVATE/非前台，核停native71/index70/selection70，留运行。已派`deleg_fe64943d`仅72–81十板，每5图checkpoint，补390尾段、640表左右端和1600/1280/1024表左纵向；另29required native及2sidebar留原110/157/42，日志网络48板随后串行。第5批原8/10未完成与parent41非独立终审保持，既有后端/用户修改不碰。本次无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0；原42完整BLOCKED、五页总体及最终效果图/ZIP仍PENDING。
+
+### 2026-10-12 第10有界批核证与第11批
+
+- `deleg_fe64943d`72–81十板full10/partial0/unseen0，具体成功analysis10、失败2、重试2，12实际公共capture返回。75/76各一次gateway失败的handle/可用前缀、独立saved工具/失败记录/aggregate对应和正常PNG核证，均不计seen；每目标单次60秒固定等待与native caption更新/readback记录、source hash不变/NOACTIVATE/非前台及不同恢复capture SHA核证。十成功42–50字符可解码前缀与saved完整tool/aggregate/per-image一致；仍限定实际anchor/前缀佐证及child保存证据内部一致，不冒称父级独立回取全部raw工具正文。冻结板及13来源crop/target hash与RGB全部相等，十capture去30px标题后整板原像素相等、effectiveScale=1。第5/10图checkpoint完成/剩余有序名单、原剩余native与辅助sidebar分列、record/tool/capture引用与hash、原42全文/完整BLOCKED均精确核证，保存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-10-PARENT-READBACK.json`。
+- 累计82分析含历史partial06、81完整native/0当前partial/29未见；原157来源矩形联合full91/partial14/unseen52，两sidebar待。本批13来源full10/partial3，1600三来源仅x220以右、不算full原图。390尾段库存未知非0、640表左右与1600/1280/1024表纵向失败/业务未知、风险摘要及查看/恢复/details入口有局部支持。77明确管线背压中文主名与Pipeline Backpressure辅助，80英文Alarm Backpressure译法不据此猜中文错误。73/74多panel分源定位/不足分列，原tool所称enlarged不改变实际1:1，不能外推全部小字或色相/字号；折叠元数据未展开、不把轮结束当源成功。独立时间/精确密度/全文、真实成功0/false/disabled/last-good/混合排序/业务键盘生命周期及脱敏正文仍不足；无确切新must-fix不等于无缺陷或PASS。
+- 21源/60renderer/Boot完整集合/hash一致；父级owned41380/598426存在、非前台/NOACTIVATE，核停native81/index80/selection80，留运行。已派`deleg_1720e133`仅82–91十板，每5图checkpoint，补1024/900表左及640/390表左右纵向；另19native/2sidebar保原110/157/42，日志网络48板随后串行。第5批原8/10未完成及parent41非独立followup保持，用户/既有后端修改不碰。本次无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0；原42完整BLOCKED、五页总体及最终效果图/ZIP仍PENDING。
+
+### 2026-10-12 第11有界批核证与第12批
+
+- `deleg_1720e133`82–91十板full10/partial0/unseen0，成功10、失败0、重试0。父级核10实际工具结果handle/42–49字符可用JSON解码前缀、完整child saved工具与逐图/aggregate引用/hash/analysis一致，冻结整板/transform/hash、capture原副本SHA/尺寸、去30px标题后整板及17来源crop放板RGB完全相等、effectiveScale=1。第5/10图checkpoint有序完成/剩余本批及当前累计剩余native名单、批外19native与2sidebar分列、record/tool/capture引用/hash、config/manifest/brief SHA与原42全文/完整BLOCKED精确核证。父级准备时按实际successful/failed键及额外briefSha256修正解析，未改证据、不计capture失败；完整raw子tool正文仍未独立取回，仅实际anchor/前缀佐证及saved-evidence内部一致。保存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-11-PARENT-READBACK.json`。
+- 累计92成功分析含历史partial06、91完整native/0当前partial/19未见；原157来源矩形联合full108/partial14/unseen35，两sidebar待。1024/900表左纵向与640/390表左右有局部可见支持，失败主标签与业务未知分开、0/0/8/0是分布不冒业务成功零；native88左右端明确对应，native91每panel处理建议“查看来源详情，再重试完整诊断。”实际描述保留。87/89/90组级文字不推广到每panel小字/红色或精确字号，中文名不由英文倒推。每源尝试/成功时间、折叠长值/元数据、成功0/false/disabled/last-good/混合稳定排序、业务键盘生命周期与脱敏正文仍未审；无确切新生产must-fix不等于无缺陷或PASS。
+- 21源/60renderer/Boot完整集合/hash一致，父级owned41380/598426存在、非前台/NOACTIVATE，核停native91/index90/selection90并留运行。已派`deleg_5408deed`仅92–101十板，每5图checkpoint，审1600/640已展开行来源详情与来源时间账本连续段；另9required native及2sidebar保原110/157/42，日志网络48板随后串行。第5批原8/10未完成与parent41非独立followup保持，用户/既有后端修改不碰。本次无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0；原42完整BLOCKED、五页总体和最终效果图/ZIP仍PENDING。
+
+### 2026-10-12 第12有界批核证与云诊断冻结图收尾批
+
+- `deleg_5408deed`92–101十板full10/partial0/unseen0，成功10/失败0/重试0。父级核10实际tool-result handle与42–45字符可用JSON解码前缀、child完整saved tool/逐图/aggregate refs/hash/analysis内部一致、冻结整板/transform/source SHA、capture原副本SHA及尺寸，去30px原生标题后整板与13来源crop放板RGB完全相等、effectiveScale=1。第5/10图checkpoint原有序完成/剩余名单、record/tool/capture refs/hash、config/manifest/brief SHA及原42全文/完整BLOCKED精确核证。完整raw子tool正文未由父级独立取回，保实际anchor/前缀佐证与保存件内部一致的限定。保存`DRAWER-CORRECTED-CLOUD-DIAGNOSTIC-MICROBATCH-12-PARENT-READBACK.json`。
+- 累计102分析含历史partial06另一次，101完整required native/0当前partial/9未见；原157来源矩形联合full114/partial21/unseen22，两sidebar未审。本批13原来源full6/partial7，七1600截图裁左220px不算原图full。92应用服务展开，94运行/资源/云/配置/缓存/连接/性能/异常具名账本，95异常/存储/性能/背压四具名接口，原分析明确最后尝试`2026/10/12 09:21:44`及尚无成功；94底部存储部分可见不认证完整元数据。100的640`09:21:46`是跨panel具名账本组级支持，未定位每源到左右，不外推每panel细字/色相/时间；其他未识别保留，不拿整轮结束或邻源补齐。99后段来源信息仍board/group描述；101左右明确存储/性能/背压与四通道未知局部支持。中文主名/技术辅助、失败未知/恢复路径获限定观察，不认证成功0/false/disabled、last-good、混合稳定排序、业务键盘生命周期或隐藏脱敏正文。无确切新生产must-fix不等于无视觉缺陷或PASS。
+- 21源/60renderer/Boot完整集合/hash一致，owned41380/598426存在/非前台/NOACTIVATE，核停native101/index100/selection100并留运行。已派`deleg_da14d72e`仅最后102–110九required及sidebar01/02两辅助，按冻结index101–111顺序，成功第5/10及最终11检查点；侧栏21个source join逐一核像素，仍由父级重算157联合覆盖。即便冻结图全部完成，原42完整条件/云诊断/五页仍不得预签PASS；日志网络48板随后串行。第5批原8/10 incomplete、parent41非独立followup保持，用户/既有后端修改不碰。本次无生产/测试/业务/秘密/提交推送部署或服务停止；`git diff --check`exit0；最终效果图/ZIP仍待完整闭环。
 
 ## Baseline 验证结果
 
@@ -1397,3 +1960,369 @@ Smoke 验证后已停止临时 Headless Chrome、Vite dev server 和 mock backen
 - 后续独立优化建议：真实后端 / 真实设备联调、Element Plus bundle 优化、`@vueuse/core` PURE warning 跟踪、compatibility CSS variable 渐进收敛、coverage 体系、Prettier 独立格式化窗口。
 
 Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架构重构正式结束。
+
+## 独立优化：设备配置页 Frontend Design（2026-10-09）
+
+本次不新增 Phase 18，不改变已完成的架构重构结论。按用户“开始修改，使用 Frontend Design 优化页面，业务逻辑和接口调用要正确”的要求，只优化设备配置工作台。
+
+### 范围与实现
+
+- `DeviceOperationShell.vue`：仅配置分区启用 `config-workspace`，整合设备标题、基础信息和辅助操作；控制页、影子页仍保留原侧栏布局。
+- `DeviceConfigPanel.vue`：运行状态集中展示，协议配置按需展开，点位表格与只读详情并列，选中行高亮，窄窗口下详情移至表格下方。
+- `ProtocolDynamicForm.vue` / `protocol-form-utils.ts`：新增配置页可选完整标签展示，保留已知中文映射；原紧凑标签函数签名及其他调用方默认行为不变。
+- 长数值和时间戳采用单行省略及完整内容悬浮提示，不截断原始数据、不改变精度；协议表单末组占满可用宽度，桌面四列、窄窗口两列。
+- 协议连接仍来源于真实 Schema，设备状态仍由共享 `deviceStore` 提供，未修改后端 API、DTO、共享状态、全局主题、Electron Main/Preload 或依赖。
+- 修正点位详情“查看实时”与表格“写入”动作的混用：读写点位也可从详情进入实时查询，表格写入仍沿用既有命令分区提示。
+
+### 业务调用链检查
+
+- 协议配置读取保持 `getProtocol` + `getDeviceConfigBundle`。
+- 保存仍以同一个 Bundle 的 `configVersion` 作为 `baseVersion`，先校验后提交；409 不自动重读重提，保留错误提示和当前草稿。
+- 读请求继续保留设备/协议上下文、latest-request ownership、设备 epoch 校验及卸载失效处理。
+- 启动/停止继续通过 View 调用 `deviceStore.startSmart/stop`，不改本地设备启动路由或运行状态语义。
+- 实时/历史跳转仍携带实际 `deviceId` 和 `pointRef`，未用名称替代稳定点位标识。
+
+### 已执行验证（无测试）
+
+| 命令 | 结果 |
+|---|---|
+| `npm run lint` | 退出 0 |
+| `npm run stylelint` | 退出 0 |
+| `npm run typecheck` | 退出 0 |
+| `npm run build` | 退出 0，renderer / Electron 构建通过 |
+| `npm run build:web` | 退出 0，静态页面资源同步到后端源码目录 |
+
+未新增、修改或运行测试；未运行含测试的 `quality` / `verify`。构建仍提示既有 `@vueuse/core` PURE annotation 和 Element Plus 大 chunk warning，未扩大为依赖/性能优化。
+
+### 真实只读联调与视觉检查
+
+- 使用已构建的 Electron renderer 和现有客户端授权连接真实后端，未读取、输出或导出令牌。
+- 实际设备 `pf_modbus_tcp_fanuc-cnc`：Bundle、协议详情、实时数据和正确的 `/api/device/{deviceId}/runtime` 返回 HTTP 200；配置及运行快照业务码为 200，实时数据包含 16 个点位，运行快照为 `ONLINE` / `ready=true`。
+- 已实际操作：点位选择、分页（第二页 6 行）、编辑器打开/收起、点位/实时/告警/日志切换、详情实时与历史跳转、控制页与影子页导航。
+- 控制/影子分区不带 `config-workspace`，仍显示原侧栏；本次观察期间无 `pageerror`。
+- 1600×1000、1440×900、1280×800、1024×768 的文档和配置工作区无横向溢出，协议分组/字段无横向溢出；表格内部横向滚动为列宽保护措施。
+- 悬浮已验证显示完整原始值，未为了设计而四舍五入。独立截图审查指出的长值断行、标签截断及末组空白已修正；最新 1600×1000 实际页面及协议展开截图经最终像素复核，未见必须修正的遮挡、断行或无意义空白块，状态为 `READY FOR USER VISUAL REVIEW`，不代表用户已接受。
+
+### 未执行及发布边界
+
+- 未提交真实协议配置保存、点位保存、启动/停止、清理缓存、同步或删除，避免改变现有采集环境；写路径仅完成调用链和类型检查，不宣称写入闭环已验证。
+- Web 构建资源已同步到 `collector-boot/src/main/resources/static/desktop`；实查 9090 页面仍引用旧入口脚本，与最新构建不同。未重新打包/重启运行中的后端，不宣称现有 JAR 已加载新版页面。
+- 本次临时设计服务、Vite 和 Electron 验证进程已清理；4311、5173、9341 端口已关闭，9090 原后端仍在运行。
+- 本次不执行 Git 提交或推送；保留任务开始前的其他工作区修改。
+
+## 独立优化：控制 / 设备影子实现与协议连接设计（2026-10-09）
+
+### 范围与 Frontend Design 监督
+
+- 用户明确授权直接实现“批量和协议命令”“设备影子”，沿用已经展示的设备影子设计体系；协议连接配置必须先给整体多协议设计，确认前不实施。
+- 实施范围保存于 `.hermes/plans/device-operations-frontend-design.md`；共享 Shell 只统一设备标题、标签、基础上下文与运行态，未扩展到全局导航、主题、依赖、后端 API/DTO 或 Electron Main/Preload。
+- `ControlPanel.vue`：单点 / 批量 / 协议命令本地标签，左编辑右结果；批量 JSON 格式化及只读预览，结果目标、时间、写入、读回与逐字段返回分开；预览和逐字段结果每页 12 项，完整 JSON 保留。
+- `ShadowPanel.vue`：当前快照的 reported / 已保存 desired / delta 字段对照，右侧独立期望状态草稿，底部历史；完整值详情、原始 JSON、导出与读取动作保留。字段每页 20 项、历史每页 10 条，仅限制显示，不截断完整快照或导出。
+- `DeviceOperationShell.vue`：三个分区共用配置工作台层级，移除控制 / 影子重复侧栏；传输连接与协议就绪使用明确布尔运行快照，不从缓存点位或 running 推断连接正常 / ONLINE。
+- 真实截图检查发现 16 个 reported 字段使影子表格区域达到 820px，推动历史与编辑区失衡；已为状态表格设置 320px 内部滚动、历史表格设置 280px 内部滚动，未减少真实字段或用演示数据替换。
+- 首次独立 Frontend Design 监工没有放行操作页，指出编辑器实际高度未生效、轻量文字动作出现按钮边框、控制结果栏比例不符和历史空态首列折行四项问题。已定位现有全局 / 宿主样式的覆盖关系，仅修复三个组件的局部 scoped 规则，没有扩展全局覆盖层。
+- 修正后批量 JSON 编辑区实际为 185px、命令编辑区 244px，均不可拖拽；desired 编辑区 1600 / 1440 / 1280 宽度为 230px，1024 宽度为 190px。面包屑、分区标签、操作模式、格式化、字段名、原始内容和清理期望状态等轻量动作实际无边框 / 透明背景；真正操作按钮和键盘焦点保留。
+- 控制结果栏宽度实际为 330px、列间距 16px；影子历史空态仍为 `colspan="4"`，修复全局 flex 覆盖后实际 `display: table-cell`、1600 宽度横跨 1312px。真实空历史仍显示“暂无影子历史”，没有补造示例记录。
+- 最后源码修正后已重新执行完整允许门禁，明确 reload 到新入口 `index-vUGtNvUj.js`，等待实际 CNC 内容加载后重拍 1600 / 1440 / 1280 / 1024 图片。二次独立监工已返回：当前 CSS 与真实 DOM 记录支持四项修正，但未能读取 PNG 像素，结论为 `NOT READY — 独立像素复核尚未完成`；这不是新增页面缺陷，也不能写成无视觉问题。
+
+### 保留的业务与异步边界
+
+- 控制继续调用 `writeDevicePoint` / `writeDevicePoints` / `executeDeviceCommand`，保持原参数、确认框、captured target 与 `ONLINE && ready && connected` 禁用条件；右侧最近完成结果以 `actionResult.target` 归属，不伪装成当前选中设备结果。
+- 写入成功与读回成功分别解释；批量部分成功按实际汇总 / 逐字段返回展示；协议命令没有统一执行成功字段时只显示请求完成与原始结果。
+- 影子继续复用三个独立读 owner、版本注入、409 草稿保留和设备切换 reset。新增卸载失效与写目标 generation 校验；成功写返回会废弃较早的 current-shadow 读取，防止旧快照覆盖新版本。
+- 字段对照仅来自当前影子的同一 `state` 快照，不混合独立 delta 查询版本；独立 delta 另显示版本和原始 JSON，不同版本明确提示不合并。
+- 已保存 desired 的摘要不统计 JSON 草稿；缺失 / 0 / null / false 分别显示。保存期望状态不等于设备已执行，也不等于云端已确认。
+
+### 最后源码修改后已执行验证（无测试）
+
+| 命令 | 结果 |
+|---|---|
+| `npm run lint` | 退出 0 |
+| `npm run stylelint` | 退出 0 |
+| `npm run typecheck` | 退出 0 |
+| `npm run build` | 退出 0，renderer / Electron 构建通过 |
+| `npm run build:web` | 退出 0，58 个静态文件同步到后端源码目录 |
+| `git diff --check` | 退出 0 |
+
+未新增、修改或运行测试；未执行包含测试的 quality / verify。保留既有 PURE annotation 和 Element Plus 大 chunk warning，不扩大依赖或性能治理范围。
+
+### 真实后端只读与新构建截图
+
+- 临时 Electron 使用刚构建的 `dist/renderer/index.html`，通过现有授权桥接查询，不提取、输出或保存凭据。
+- 实际设备 `pf_modbus_tcp_fanuc-cnc`：runtime / current shadow / delta / history 均 HTTP 200、业务码 200；运行快照为 ONLINE、ready=true、connected=true；影子 reported 16、desired 0、delta 0、历史 0。版本随真实采集推进，不将截图版本当作固定业务值。
+- 已操作：三种控制模式切换、草稿保留、批量 JSON 格式化保持值一致、影子读取全部、字段完整值、原始 JSON、独立 delta 展开；从 CNC 切到 `pf_ab_pf_proto_ethernet_ip` 后单点草稿清空。
+- 1600 / 1440 / 1280 / 1024 宽度的新构建页面均无文档 / Shell 横向溢出；窄窗口左右面板自然堆叠，表格内部滚动保留列宽与完整值；配置相邻路由仍能加载并显示字段校验通过。
+- 最后修正后的影子状态面板高度约 571px、内部表格高度 320px；16 个真实字段全部保留。当前 16 个字段和空历史未触发字段 / 历史分页，不把静态分页检查宣称为真实多页联调。
+- 两轮真实只读观察均无 pageerror；未提交控制写入、命令、desired 保存 / 清理、缓存清理、设备启停或导出。
+- 新截图与只读记录位于 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/device-operations-frontend-design/`。以最新 `actual-*-final-repair-*.png`、`control-repair-render.json`、`shadow-repair-render.json` 为本轮修正的证据，旧 `actual-*-final-*.png` 保留为首次监工前的历史，不用旧图证明修正完成。
+- 最新截图无文档 / Shell 横向溢出、无 pageerror；另补 1600×1400 影子完整内容图与 1024×768 实际滚到底部图，核对历史及下方操作可达。修正后再次只读访问相邻配置工作台，确认字段校验通过、无文档横向溢出及 pageerror。
+
+### 协议连接配置：当轮仅设计、等待确认（历史，已被下述授权实施更新）
+
+- 主稿 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/protocol-connection-unified-design/protocol-layout.html`，自包含可切换 HTML；真实 Provider 字段来源记录于相邻 `design-notes.md` / `schema-snapshot.json`。
+- 代表协议为 Modbus TCP（12 字段）、EtherNet/IP（13）、OPC UA（35）、MQTT（35）、Modbus RTU（15）。它们是布局代表性覆盖，不是全部协议支持或连接联调声明。
+- 统一外壳、纵向 Schema 分组与自适应字段网格；完整标签上置，端点 / 路由 / 对象等长字段占整行，高级参数逐步展开，条件要求保留，安全字段统一脱敏。
+- 已用真实 Chrome 从现有独立 HTTP 服务加载，HTTP 200；5 协议 × 1600 / 1280 / 1024 宽度共 15 组合，文档 / 面板 / 分组网格无横向溢出，完整标签未裁切，无 pageerror、无业务接口请求。
+- 已演示高级分组展开 / 收起、字段标识显示及保存确认 / 取消；确认只给演示反馈，不写后端、设备或浏览器持久化存储。所有输入为演示占位，安全信息为 `[REDACTED]`。
+- `DeviceConfigPanel.vue`、`ProtocolDynamicForm.vue`、`protocol-form-utils.ts` 的生产协议布局本轮不改；未来仍必须消费协议 Schema，而不是把原型五协议集合做成业务白名单。
+- 协议提案独立监工确认代表 Schema 与 HTML 内嵌字段一致，没有必须修正的视觉阻断项，状态为 `READY FOR USER DESIGN CONFIRMATION`。这是等待用户确认的设计稿，不代表生产保存、连接、全部协议或用户验收已完成。
+
+### 当前待复核与发布边界
+
+- 操作页二次监工只完成代码 / DOM 复核，独立像素复核受工具能力阻塞。已尝试隔离的只读截图对照窗口，桌面捕获未成功，不将失败的尝试伪称通过。最新真实截图和只读对照入口交用户查看，最终视觉确认仍未完成。
+- 只读对照入口为 `http://127.0.0.1:4311/device-operations-frontend-design/visual-review.html`，只展示已有 PNG，不连接业务 API；协议设计入口为 `http://127.0.0.1:4311/protocol-connection-unified-design/protocol-layout.html#ETHERNET_IP`。
+- Web 构建同步源码资源不等于运行中后端 JAR 已部署新版，未重启原后端。
+- 不提交 / 推送，保留任务开始前的仿真器及其他无关修改。已关闭本轮临时 Electron，隔离截图窗口也已退出；9341 / 9342 均关闭，9090 原后端和 4311 只读设计预览仍可访问。没有重启后端或清理用户其他进程。
+
+## 2026-10-09 独立优化：已确认协议连接目标图生产实施
+
+### 授权、实施与影响面
+
+- 用户确认 `ethernet-ip-final-target-1600.png` 并明确授权开始修改，要求 Frontend Design 全程监工和最终通过；此前“生产协议表单不变、等待确认”仅描述历史设计轮，不再代表当前状态。
+- 实施计划：`.hermes/plans/protocol-workbench-approved-design.md`。仅替换设备配置工作台中央协议连接展开区；未修改后端、业务 API / DTO / Schema / storage、Main / Preload、依赖或测试，未新增 Phase 18。
+- 新增 `src/features/protocol/components/WorkbenchProtocolForm.vue`：真实 Schema 分组默认纵向全展开，内容定宽、左对齐自然换行；数字 / 布尔 / 多行文本沿原 model 和验证契约，密码遮罩，未知枚举保留。对象和遗嘱文本保持既有 string 边界，不声称新增 JSON / requiredWhen 校验。
+- 新增 `src/features/protocol/utils/connection-field-presentation.ts`：五种代表协议110字段展示尺寸和标签；未知协议、新增字段按真实类型 / 选项 / 输入语义回退，不设协议白名单，不把像素宽度转成 maxlength / 范围。
+- `DeviceConfigPanel.vue` 接入专用表单，device+protocol key 隔离设备切换；完整说明、条件及能力通过协议徽章详情可达。保留 owner / configSession / baseVersion / CAS、读取 / 差异 / 保存处理。旧 `ProtocolDynamicForm.vue` 和本地设备编辑消费者不变。
+
+### Frontend Design 实施中监工与修正
+
+- 前期监工已实际读取已确认目标PNG像素，给出控件尺寸、纵向分组、宿主CSS赢者和同协议设备生命周期约束。
+- 实施中独立像素监工指出运行卡过高、协议徽章被宿主原生按钮覆盖、字段计数位置和底部截图证据不完整；未把该轮结果伪称 PASS。
+- 已修正运行卡为72px及紧凑状态项 / 标题分隔线、徽章23px / 11px / 常规字重、计数右对齐，底部非主操作透明背景和13px字体；保存是否启用仍由真实业务条件决定。
+- 最终独立 Frontend Design 监工 `deleg_a6db8f58` 已实际读取目标图和所附末次生产截图像素，结论 `PASS`，未发现新的必须修正项。运行卡、徽章、计数、分组密度、窄宽、底部操作和点位可达的必修项均通过。
+- 通过范围：所附 EtherNet/IP 完整图 / 1600底图 / 1024上下图及 MQTT1280 / OPC UA1280 / HTTP1024上图的独立像素复核，另核验五协议三宽度权威运行记录。Modbus及未附图组合仅为记录核验，未冒称逐张像素审查；不是整页逐像素完全一致、业务测试或用户最终验收。
+- 允许差异：真实设备名、地址、路由、运行状态、宿主导航与真实五点位，敏感字段遮罩，协议卡相对目标下移11.625px及完整图更高。监工确认不应为了空态示例隐藏真实数据。
+
+### 末次允许门禁与真实只读核查
+
+| 项目 | 结果 |
+|---|---|
+| `npm run lint` / `npm run stylelint` | 均退出0 |
+| `npm run typecheck` | 退出0 |
+| `npm run build` / `npm run build:web` | 均退出0，Web源码同步57文件 |
+| `git diff --check` | 退出0 |
+
+- 未创建、修改或运行测试，未调用包含测试的 quality / verify。既有 PURE annotation / vendor chunk warning 保留。
+- 临时 Electron 加载新构建 `index-BfV_1SPx.js`、`DeviceWorkbenchView-C9C5tX2r.js`，每条目标路由显式 reload 后截图，通过既有授权桥接只读真实后端，不提取凭据。
+- 真实 EtherNet/IP13 / Modbus TCP12 / MQTT36 / OPC UA36 / HTTP34 字段；MQTT与OPC UA的新增 `subscriptionFallbackStrategy` 来自当前真实 Schema，走展示回退，不隐藏。HTTP证明五协议清单不是支持白名单。当前无真实 Modbus RTU 设备，未宣称其运行联调。
+- 5协议×1600 / 1280 / 1024宽度共15组合，文档 / 表单 / 分组无横向溢出，无 pageerror；真实textarea为85px、resize=vertical，端口112px、槽位104px、输入35px、开关32×18px。全部组合滚动到底可见点位区。
+- 共31张末次截图：每组合上下各一张，另补EtherNet/IP1600×1800完整工作台。目标PNG为1600×1284，生产更高图保留真实5点位，不拼接或伪造目标空态；匹配原1600×1100的上下截图补齐内部滚动证据。
+- 同协议EtherNet/IP设备A→B实际只读切换重置组折叠状态；协议详情13项和整体折叠后字段不可见已核查。未实际保存、启停、清理、写点位、执行协议命令或提交desired。
+- 最终权威证据：`C:/Users/wangbin/AppData/Local/hermes/cache/scratch/designs/protocol-connection-unified-design/production-final-runtime-settled.json` 和 `production-final-*.png`。在真实ready和CSS转场结束后捕获，15组合保存按钮均启用且computed为蓝色；不使用转场初瞬间的灰色作为最终颜色。
+- 截图中凭据 / 连接串 / 敏感对象使用深蓝遮罩，未将 `[REDACTED]` 写入生产model。
+- 运行中9090仍服务 `index-D3SQcMKX.js`，与新构建不同；本轮源码Web同步不等于旧JAR已部署，不重启用户后端。未提交 / 推送，保留原工作树无关修改。
+- 交付前已关闭本轮自有临时Electron，实际复查9341无监听；9090原后端与4311设计预览保留。最终文档更新后 `git diff --check` 退出0。签核与交付摘要为相邻scratch `production-frontend-design-signoff.md`；最终视觉确认留给用户。
+
+## 2026-10-10 独立优化：新建本地临时设备弹窗已批准方案生产实施
+
+### 授权与生产范围
+
+- 用户认可完整视觉方案并要求开始生产实施，Frontend Design 前期、实施中和修正后持续监督；实施计划为 `.hermes/plans/local-device-editor-approved-design.md`。
+- 仅修改 `src/features/device/components/LocalDeviceEditor.vue` 模板及局部展示，引入新增 `LocalDeviceEditorIcon.vue`、`LocalDeviceCloudTargetForm.vue`、`LocalDevicePointFieldGrid.vue`、`LocalDeviceProtocolForm.vue`、`local-device-editor.css`；样式通过本弹窗 scoped 入口隔离。
+- 基础连接、点位建模、告警规则、云平台上报、JSON 高级五 Tab 全部沿批准层次组织；固定标题、导航和底栏，主体滚动，Schema 表与 JSON 文本保留必要的独立滚动。短数字和长文本按内容定宽，不为显示增加业务 maxlength 或范围。
+- 旧协议工作台、共享 `ProtocolDynamicForm.vue`、全局主题、导航、后端、依赖与 Electron Main/Preload 不改；不新增 Phase 18。
+
+### 业务和接口保留核对
+
+- 从 Git 基线保存源码至 scratch 后比较，`const props` 至 `</script>` 的业务状态、handlers、watchers、默认值和载荷构建在 CRLF/LF 归一后完全一致；该区 SHA256 为 `cf21d112287a3471952c8d1e541c97a88674a7886c687f75d8935bf615cfcda0`。
+- 原模板 `v-model` 和事件处理绑定共62处，当前仍为62处，各表达式及次数无减少；点位和共享云身份仍编辑原状态对象。
+- 专用动态协议表单沿既有 Schema 分组、options/default/storage/extJson 与 update/validate/watch 契约；真实协议和字段不是原型白名单。
+- 保留 create/update、`overwrite`、`startAfterSave`、会话 generation 和迟到 Schema 隔离；“保存并测试”仍执行原处理，常驻说明明确保存与条件启动，不执行独立连接测试。JSON 草稿与已应用结构、保存边界不变。
+- 真实新建默认一个点位、设备名称空、云关闭；不将参考示例设备、地址或身份写入生产默认值。
+
+### Frontend Design 实施中发现与修正
+
+- 前期实际看批准五图，并形成尺寸、字体、内容定宽、Schema完整性、共享字段及宿主样式约束。
+- 实施中独立监工 `deleg_a8c395b9` 实际查看附件，发现旧 `implementation/` 图片全为 `#09121e`：遮罩 `#app` 的全视口矩形同时盖住 Teleport 弹窗。该批不具备像素验收条件；旧图和其 DOM 记录不能宣称生产视觉通过，也不据此判定生产页面自身空白。
+- 当前捕获改为截图时隐藏背景子树、仅遮罩密码控件；另定位自有 Electron 最小化导致截图等待，在不抢输入焦点的情况下恢复该捕获窗口。没有改生产渲染器/业务状态以制造截图。
+- 修正基础身份网格，使长字段不再受两个145px短控件槽限制；点位概览补真实完整度进度线；告警补副标题和开关/触发预览语义说明；云映射状态加 badge，云关闭仍显示真实状态。
+- 修正 Schema 末行记录为实际 `tbody` 最后一行，并核对整行矩形可见；高视口图重命名 `tall-top`，不冒充完整内部展开长图。
+- 第一轮修正的38张有效截图提交 `deleg_82a04dcb` 六份 Frontend Design 只读像素复核；该轮没有给整窗无条件PASS，后续问题和最终签收见下文。
+
+### 修正后的允许门禁与真实截图
+
+| 项目 | 结果 |
+|---|---|
+| `npm run lint` / `npm run stylelint` | 均退出0 |
+| `npm run typecheck` | 退出0 |
+| `npm run build` / `npm run build:web` | 均退出0；Web源码同步57个文件 |
+| `git diff --check` | 退出0 |
+
+- 未新增、修改或运行测试；未运行包含测试的 quality/verify。保留既有 PURE annotation 和 vendor 大 chunk warning，不扩大依赖/性能治理。
+- 第一轮修正图为 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/local-device-editor-production/repair-visible/`，报告 `render-report.json`；当轮真实 Electron 加载 `index-CjCD_DAg.js`，既有 preload 桥接可用。最终权威图使用下文 `final-visible/`，不沿用此轮入口冒充末次构建。
+- 38张图、41条记录，PNG抽样均有多种颜色；五 Tab 正常高度底部、点位高级末端与告警规则底部可达，footer可见，记录无文档/弹窗/主体/字段网格横向溢出，无 pageerror/console error。
+- 五张 Schema 参考表均 `atEnd=true`、实际末行整行可见：协议 `addressMode`、点位 `remark`、上报 `additionalConfig.eventMinIntervalMs`、告警 `description`、元数据 `cloudTarget`。JSON文本自身滚到底；像素可读性由本轮独立监工另判，不用 DOM 代替像素。
+- 五种代表协议 MODBUS_TCP/ETHERNET_IP/MQTT/OPC_UA/HTTP，以及1280/1024/640宽度下五 Tab记录均来自真实新建未保存草稿，不是业务连接测试。
+- 未保存、启动、停止、清理或写设备，未提交协议命令/desired；未提交/推送。`build:web` 仅同步后端源码静态资源，不等于运行中9090旧JAR已部署；原后端与既有4311设计服务保留。
+
+### 第二轮实际像素问题闭环与最新构建
+
+- `deleg_82a04dcb` 六份监工均实际查看所附图片；云上报、JSON内部末端及相应窄屏/主体底部获得范围PASS，但基础/点位/告警与协议组仍指出四项必须修正，故当轮没有整窗无条件PASS。
+- 已修正点位编辑卡启用标签为原状态对应的绿色；告警触发预览最后的等级标签复用现有 `alarmLevelClass` 配色；专用协议表单的布尔控件给文字独立自然宽度、禁止折行与收缩；弹窗内 Element 数字输入去除原生 spin 外观，只保留原组件的步进按钮。均不改值、handlers、校验或业务状态。
+- 末次生产修改后再次执行 lint、Stylelint、typecheck、Electron build、Web build，均通过；在仓库原 Git 换行配置下 `git diff --check` 退出0。临时关闭 autocrlf 的检查曾将CRLF误判为尾部空格，已撤回该命令参数，未为此重写或格式化生产文件。
+- 最新权威图片/报告在 scratch `local-device-editor-production/final-visible/`：62图、65记录，新入口 `index-DBqXg9DV.js` 与末次构建一致；PNG抽样空白图为0，无记录横溢、pageerror或console error。另有 `final-source-evidence.json` 保存业务区一致、SHA256和62/62绑定核对结果。
+- 点位/告警启用标签computed为 `rgb(129,213,181)` / `rgb(24,61,54)`，警告预览为 `rgb(244,191,123)` / `rgb(66,55,40)`；协议启用/禁用文字均20px高、nowrap；数字输入appearance为textfield。以上仅为DOM证据，最终仍由实际像素签收。
+- 已补1280/1024/640宽度五Tab底部图，15组均主体到底且footer可见；五协议另按主体高度重叠滚动补9段图片，保留动态Schema全部内容，不拿顶部图代替完整下方覆盖。
+- `deleg_60f7ce4e` 使用末次新图进行最终复核时五个代理全部遭HTTP 429配额限制；该批没有PASS，不要求用户重新提交开发请求。后续恢复小批实际像素复核，最终结论见下文。
+
+### 最终 Frontend Design 附图范围签收
+
+- `deleg_02484114` 实际看最终构建图片，确认编辑卡绿色启用标签、琥珀警告预览与 EtherNet/IP 开关单行通过，640协议末端/footer可见；另一份监工对JSON顶部/文档末端、云顶部、点位高级末端、640 JSON底部与HTTP末端给予范围PASS。
+- 数字控件仍被首份监工怀疑有额外箭头，未据DOM强行放行。父代理读取真实单位和控件结构，并采集125/2000/64三个控件原始局部图及nearest-neighbor三倍像素图；未重画控件或删除单位。
+- `deleg_944209bd` 实际查看高清局部及对应整图，确认数字旁符号是中文计数单位“个”，最右侧只有一套上下步进按钮，明确撤回“双套箭头”must-fix；EtherNet/IP真实字段为“单次最大字段数”而非字节数。另一份监工实际逐图确认MQTT和OPC UA上下分组、HTTP顶部的控件定宽、开关单行、安全/条件说明与可见末端通过。
+- 最终签收范围：`final-visual-review-manifest.json` 列出的18张末次主/滚动截图和4张实际局部图；五Tab、代表五协议、重点640底部及必须修正项已纳入实际像素复核。其余生成图片和65条DOM记录是辅助证据，不冒称62张全都逐图像素签收。
+- 状态为 `READY FOR USER VISUAL REVIEW`：所有已识别的must-fix已闭环或凭高清证据撤回，没有遗留未修must-fix；不是整窗每一像素完全一致、业务保存/启动/连接测试、运行中JAR部署或用户最终验收。
+- 最终截图/签收资料及ZIP位于 scratch `local-device-editor-production/`，仅交付末次有效图片，旧纯色 `implementation/` 不打入交付包。不提交或推送，原无关未追踪文件保留。
+- 已关闭本轮自有Electron `proc_6e027fde0432`；2026-10-10 10:07:44 +0800实际复查9342无监听，9090原后端与4311既有设计服务仍监听。未清理用户其他进程，未重启后端；记录为scratch `cleanup-evidence.json`。
+
+## 2026-10-10 独立优化：设备管理批准方案生产实施
+
+### 范围与业务保留
+
+- 用户批准设备管理设计并要求Frontend Design全程监工后实施；基线 `e94e68fb`，计划 `.hermes/plans/device-management-approved-design.md`。
+- 修改 `src/views/device/DeviceListView.vue`，新增 `DeviceListIcon.vue`、`device-list.css`、`device-list-presentation.ts`。标题/筛选、五列登记册、独立滚动、固定计数栏、状态分层及分组更多菜单均按批准稿落实；1600/1280五列，1024双列，640单列。
+- 共享220px导航/40px顶栏、全局主题、API/DTO/Store/路由、依赖及Electron Main/Preload不改；已交付五Tab本地设备弹窗直接复用，不重新设计，不新增Phase18。
+- 原24处模板业务绑定完整保留，17个原操作按钮的disabled表达式逐项一致；只有启动、停止、刷新配置、清理缓存、删除本地保留逐设备写锁，配置/编辑/导航及更多入口不额外锁定。
+- 最初原业务区与Git来源baseline一致。最终三处命令式确认窗仅增加7行呈现选项：customClass三行、customStyle三行、delete confirmButtonType danger一行；去除这7行后原业务区仍完全一致。不宣称最终逐字节相同，但handler、确认文字/取消分支、watcher、defaults、载荷和生命周期保持不变。
+- 未注入设计示例；运行阶段、通信就绪和采集健康独立显示，缺值未知，旧快照计数/有效时间提示来源。数量首次加载/失败未知与成功0结果分开，旧列表保留上次加载提示。
+
+### 全程 Frontend Design 监督与闭环
+
+- `deleg_992911c7` 实际看批准图，形成实施前尺寸和逐按钮禁用清单。
+- `deleg_a61b5d2c` 实施中实际看生产图：宽屏/窄屏方向通过，筛选无结果主标题重复必须修正；已条件隐藏重复辅助文字，不改空态业务helper。
+- `deleg_17a9c4a8` 首次最终实际看14图：台账/窄屏/空态通过，但两个确认窗横贯窗口、删除按钮蓝色、背景mask盖住部分后果提示不通过；不把该轮标为整体PASS。
+- 确认窗增加本页unique class/style，500px限宽与紧凑边距，删除为红色danger，其余确认蓝色。截图改为只隐藏背景敏感文字，避免mask矩形穿过overlay盖住确认正文；生产数据未改。
+- 最后源码修改后再次六门禁通过，显式reload最新renderer并采图；`deleg_189e6e61` 三组实际逐张审阅4/6/4张末次生产图，对台账、四宽度、菜单、空态及两个确认窗全部给予所附范围PASS，无遗留must-fix。
+
+### 末次门禁、真实截图与边界
+
+| 命令 | 结果 |
+|---|---|
+| npm run lint / npm run stylelint | 均exit0 |
+| npm run typecheck | exit0 |
+| npm run build / npm run build:web | 均exit0；同步57文件 |
+| git diff --check | exit0 |
+
+- 未新增、修改或运行项目测试，不调用含测试的quality/verify；既有PURE annotation/vendor chunk warning保留。
+- 权威证据在 `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/device-management-production/final-confirmation-repaired/`：14张PNG、12条布局记录、2条确认窗记录；入口 `index-eRHN2GYP.js` 与末次构建一致、原preload桥接可用，真实列表31台本地设备。
+- 四宽度没有文档/页面/列表横溢或菜单越界，pageerror/console error为0；1280/1024/640底部实际scroll-at-end且最后一行完整可见。两个确认窗500×215.59375居中，危险删除与普通确认区分，后果文字完整可读。
+- 实际只做行选择/Enter选择、菜单外点击/Escape/resize关闭、删除/清理确认后取消、本地新建弹窗打开/取消；未提交设备写入、启停、同步、导入导出、缓存清理、协议命令或desired。
+- 当前没有远端设备，远端菜单未实际观察；首次loading、成功空列表、请求错误、写锁及导入覆盖确认也未在真实环境观察，不注入状态制造截图。旧五Tab组件源码未改，新弹窗截图超时仅记录DOM打开/取消，不重签弹窗像素。
+- 14图全部实际像素复核，但遮罩内容不评价，640空态没有同宽批准图，仅通过可见布局/层级。真实数据差异、设计免责声明不进入生产导致台账上移、ID换行和确认窗不显示设计预览说明属于允许差异。
+- 当前 `READY FOR USER VISUAL REVIEW`：所附范围PASS不等于全状态逐像素一致、业务写入/采集验证或用户最终视觉接受。
+- dist/renderer与后端源码static/desktop集合/字节一致57文件，仅资源同步不是部署；运行中9090 HTTP200仍为 `index-D3SQcMKX.js`，未替换/重启旧JAR。
+- 2026-10-10 11:26:13 +0800关闭本轮自有 `proc_5c1ca414f31b`，实查9343无监听，9090原后端和4311既有设计服务保持监听。没有清理用户其他实例。
+- 报告 `PRODUCTION-VISUAL-REVIEW.md`、逐图 `final-visual-review-manifest.json`、源码 `final-confirmation-source-evidence.json`、门禁/清理及ZIP位于上述scratch根目录。交付只打包末次14张有效图，不纳入中间失败/待修图或凭据。
+- 未提交/推送本轮代码，无关后端修改与原未追踪文件保留；上一弹窗提交为 `e94e68fb`，不混同本轮设备管理完成。
+
+## 2026-10-10 独立优化：概览 / 实时数据 / 历史趋势批准方案生产实施
+
+### 范围与业务保留
+
+- 用户批准三页方案并授权Frontend Design全程监工；基线与当前HEAD为 `c1c57cbfd7dfa03230b9a4dddbf84eca0088d484`，分支 `feature_2.0`。计划 `.hermes/plans/monitoring-three-pages-approved-design.md`，不新增Phase18。
+- 修改三个View，新增分别由scoped入口加载的dashboard/realtime/history-view.css；不改共享220px导航、40px顶栏、主题、API/DTO/Store/Router、Electron Main/Preload、依赖及本地设备弹窗。
+- 原三个业务script按UTF-8/LF一致；历史只追加 `historyPresentation` 与 `historyChartPresentation` 两个只读展示computed，比较去除新增块前的一行空白分隔。40处model/event/disabled表达式完全一致（6/21/13），56个保护文件散列无漂移。
+- 概览保留六摘要、原真实告警/风险列表、资源环与线程条；批准CSS双栏1.45:1，不沿用早期粗估1.25:1。
+- 实时保留原5秒刷新、完整健康快照、增量/分页/单点请求、13列及原精度；主表420px内滚动，不截损完整数据。
+- 历史保留五查询字段、多选、六摘要、曲线/JSON双栏、5列告警与4列记录；原series.points/color、按样本序号与统一原始数值尺度、统计/格式化/失败保持语义不改。
+
+### 三个 Frontend Design 检查点与修正
+
+- 前期批准三张设计实际图像读取成功，记录在交付证据的PREIMPLEMENTATION-DESIGN-REVIEW.md，原型不是生产验收。
+- 实施中 `deleg_141e90c4 / sa-0-237c3fa9` 加载技能并实际查看三张左右比对与640六视图拼图，返回CHANGES_REQUIRED。
+- 页面浅层选择器修复共享壳覆盖按钮；实时表正文11px提高至12px，作为真实长字段可读性小偏离记录，不舍入；两处UNKNOWN只在模板中文化，原状态/helper/script不改。
+- 云状态点改行内均衡换行；窄拓扑用蛇形grid避免孤箭头；历史两个空态移出宽表滚动区，保留原条件/文案及列结构。
+- 最后源码修改后重新六门禁、reload末次构建及新截图。`deleg_1546e7bd / sa-0-a4d631df` 实际查看四张附图，返回“附图范围PASS，无remaining must-fix”，限宽屏与640当前离线/未选择状态；不是25张逐图签收、全状态通过或用户最终验收。
+- CLI辅助调用遇到429/timeout，概览单图成功后默认provider返回401，整次调用失败；没有修改Hermes/provider/model配置或读取凭据，改用原生images委派。失败CLI未计入成功签收。
+
+### 末次门禁、产物及实际运行记录
+
+- `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；不新增、修改或运行测试，不运行含测试quality/verify。既有PURE/vendor chunk警告保留。
+- 末次真实renderer为 `index-Co4ELAHL.js`，入口与dist一致，preload桥接存在；final-offline含25张原图、3张左右标识比对及1张640六视图拼图。
+- 原图记录覆盖1600/1280/1024/640及窄屏顶/底、局部滚动；25条记录pageerror/console.error均0，外层横向溢出记录0。computed主按钮34px、单点36px、分页29px；精确尺寸来自DOM，不伪称像素模型测量。
+- 修正前真实后端可用时已读取200/500真实行，420px表内滚动末行完全可见，单点JSON末端可达；这些为修正前证据，不能替代末次数据态补审。
+- 57个renderer文件与源码static/desktop完整路径及字节一致，只是build:web资源同步，未打包或部署JAR。
+- 仅截图样式隐藏密码控件与潜在敏感错误自由文本并保留布局，没有注入Store/响应或示例状态；隐藏区域不评价。
+
+### 当前阻塞与交付边界
+
+- 2026-10-10 16:05及16:19实查9090均拒绝连接，父代理未停止或擅自重启后端；待用户启动原服务或明确授权启动后，再采末次真实数据态并让Frontend Design补审。
+- 修正后真实表格正文、UNKNOWN中文标签、长云风险文案及真实告警/历史成功曲线仍未实际观察。原环境历史存储不可用，不修数据库、Redis或配置来制造成功画面。
+- `.editorconfig`要求CRLF；最终实查历史Vue已为766处CRLF、无单独LF，三个新CSS仍LF。完整读取后CRLF write_file被账本误判partial拒绝，拒绝调用未修改文件，未shell绕过；三个CSS格式规范尚未闭环，不能以门禁通过掩盖。
+- 当前 `IMPLEMENTED / ATTACHED-STATE VISUAL PASS / POPULATED-STATE REVIEW PENDING`；整体最终验收尚未满足，用户视觉接受由用户决定。
+- 交付 `C:/Users/wangbin/AppData/Local/hermes/artifacts/monitoring-three-pages-production-v1/`：PRODUCTION-VISUAL-REVIEW.md、末次截图与capture-report、final-contract-check、前期/实施中记录及ZIP；旧待修图不冒充末次产物。
+- 交付前六项允许门禁再次exit0，重建57个renderer文件字节与已送审构建完全一致，入口保持index-Co4ELAHL.js。仅关闭本轮自有截图Electron `proc_5710ec7a4eb8`，原生终端实查9344无监听10061；9090与既有4311亦无监听10061，未启动或停止它们。
+- 未提交、推送、部署或重启9090，不执行设备写入、启停、删除、同步、清缓存、导入导出、点位写入、协议命令或desired提交；无关后端改动和原未追踪文件保持。
+
+### 2026-10-10 用户授权后的原服务恢复补审
+
+- 上述离线交付记录保留为当时事实；用户随后授权启动原现有9090服务，本轮已实际启动既有JAR并确认TCP可连接、health HTTP200/body DOWN，不是全依赖健康或新JAR部署。
+- 前序末次index-Co4ELAHL.js通过原认证桥接补采27张真实原图及4张派生图，未注入数据或执行写入。旧截图程序固定serviceNotRestarted字段不能描述本次生命周期，权威操作是获授权启动已停止服务。
+- deleg_a1783768 / sa-0-a40458a8加载frontend-design并实际看4张附图，当前状态/尺寸PASS，无remaining must-fix；真实指标、长名称/线程值/云状态说明、12px正文及640拓扑/两表空态已补审。
+- 成功历史曲线/记录、真实采集长精度数值、640横滚后所有列及历史曲线中段未覆盖；27原图非逐图签收，敏感隐藏正文不评价。前序三个CSS换行问题未修，用户接受待用户确认。
+- 补审记录：scratch/operations-five-pages-production/RESTORED-THREE-PAGES-REVIEW.md；没有替换前序v1交付包或把五页门禁混成三页新构建。
+
+## 2026-10-10 独立优化：采集配置 / 云平台配置 / 系统诊断 / 日志 / 网络检测五页收口
+
+### 实施与契约边界
+
+- 用户授权在既有深色工业工作台内优化五个运维页面；本轮仅调整五个View模板呈现和各自scoped页面CSS，保留220px导航、40px顶栏、共享主题、Router、API、DTO、Store、请求生命周期、控件模型/事件/disabled及共享组件业务源码。
+- 五页原script均按LF基线一致：采集11、云13、诊断13、日志19、网络16，共72处原绑定；158个既有生产保护文件无漂移。五页View与新页面CSS最终均为CRLF。诊断仅将既有warning状态呈现为琥珀色，未改tone/状态计算。
+- 云平台继续作为真实链路监控，不新增凭据表单或保存逻辑；网络检测、导出、设备写入、启停、删除、同步、缓存清理、云Replay/Flush/测试、协议命令均未执行。
+
+### 允许门禁与真实效果图
+
+- 末次 `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；不新增、修改或运行测试，不调用quality/verify。构建保留既有Vite PURE annotation与vendor chunk warning。
+- 末次renderer入口为 `index-BM7lzMzh.js`；Electron/Web构建资源完整57文件，dist/renderer与后端源码static/desktop路径及字节一致。资源同步不等于运行中9090部署。
+- 末次真实capture为90张原图、12张派生/对比图；入口页面无pageerror/console error，外层无横向溢出。覆盖1600/1280/1024/640及页面底部、内部表格/面板滚动末端；真实数据态仅按当前可达依赖采集。
+- `deleg_4af70a33`对采集、云、诊断、日志、网络所附末次图完成实际像素审查；日志补图 `deleg_2c498bc2`确认左端时间/级别/记录器、右端日志消息及两端空态完整可读。五页当前附图范围均PASS，无remaining must-fix；不等于全部原图逐张签收、所有业务成功/失败状态验证或用户最终视觉接受。
+
+### 运行与交付边界
+
+- 按用户授权启动的是原有JAR；9090可达，`/collector/health` HTTP200但health为 `DOWN`，数据库/Redis等依赖未修复。没有部署新JAR、提交、推送或重启替换运行服务。
+- 本轮自有9345截图Electron已关闭（实查无监听）；用户授权启动的原9090服务保持运行。交付目录为 `C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-production-v1/`，包含五页末次PNG、报告、契约检查、构建日志和ZIP；敏感正文只在截图层隐藏，不改生产数据。
+
+## 2026-10-10 独立任务：五页综合设计分析、打包与9090重启
+
+- 最新用户授权为“综合分析优缺点、提出优化建议、给出效果图，最后重新启动打包9090”。本轮未实施新的设计建议，不修改五页生产Vue/CSS、API/DTO/Store/Router/业务处理，不新增Phase18、不提交推送、不编译或运行测试。
+- 已使用frontend-design读取五页模板/CSS及设计基线，独立源码审查后核实：采集/诊断未知与零值区分、云指标/队列新鲜度、诊断JSON默认展开、日志过滤说明层级、网络当前配置/结果边界。日志已有table/row/columnheader/cell语义，已撤回“缺少行列ARIA”推断。视觉建议与源码确认分别表述。
+- 首次五图独立视觉审查上游超时；重派真实联系图后返回HTTP 401 / API_KEY_DISABLED，未获得像素分析。本轮不作新的视觉PASS、不修改provider或读取凭据，不以旧截图签收新运行状态。
+- diff-check、lint、Stylelint、typecheck、Electron build、Web build均exit0。Git Bash Maven Launcher失败后直接用已安装JDK17/ Classworlds运行。当前工作区16模块生产输入隔离快照 `-pl collector-boot -am -Dmaven.test.skip=true clean package` 为BUILD SUCCESS，未复制/编译测试源。该产物不是新提交版本。
+- 新可执行JAR为 `collector-boot/target/data-collection-service-0.0.1-SNAPSHOT.jar`，SHA-256 `b73e82b1b4f2556535bfcf4be91aa714744a9f230d2c80f7ad3514e564497e1d`。打包前未触碰被旧进程占用的原JAR；已保留本地可执行回滚包 `data-collection-service-pre-frontend-design.jar`。只停止已核实的原9090 PID6540，端口释放后替换并以原JDK/编码/工作目录启动，实际新PID32160。
+- HTTP读回完整57个页面资源均200、路径集合/字节与renderer一致，入口index-BM7lzMzh.js。health HTTP200但DOWN；application/cache为UP，collectionService为DOWN（停止，运行设备0），connections为UNKNOWN。未修依赖、未启动设备、未执行云测试/网络检测等业务写入。
+- 重启后真实Electron renderer补采90张1600/1280/1024/640及内部/底部滚动图，pageerror/console error为0，外层无横向溢出；截图敏感自由文本仅样式隐藏，不改生产数据。新截图不是新建议已实现，也未全部逐像素签收。完整renderer路径/SHA与前次审核构建保持一致。
+- 交付目录 `C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-design-audit-release/` 保存综合报告、真实PNG、安全运行/构建摘要和验证后的ZIP。仅关闭本轮自有9345截图Electron；用户要求的9090新服务保持运行。
+
+## 2026-10-11 独立优化：五页Frontend Design建议实施后的真实像素收口
+
+### 实施、构建与审查身份
+
+- 用户要求按Frontend Design建议实际实施并持续复核，范围仍限定为采集配置、云平台配置、系统诊断、日志、网络检测五页；不改共享组件业务源码、API、Store、Router、请求顺序、参数、权限和业务写入路径。
+- 末次候选真实renderer入口为 `index-DsbgyuIk.js`；审查使用的57个renderer资源在补拍前后按完整相对路径和SHA-256核对一致。9090仍服务前序入口 `index-BM7lzMzh.js`，没有把候选源码冒称为9090已部署。
+- 末次允许门禁 `git diff --check`、`npm run lint`、`npm run stylelint`、`npm run typecheck`、`npm run build`、`npm run build:web` 均实际exit0；未新增、修改或运行测试，未执行quality/verify聚合命令。
+- 首轮独立Frontend Design像素复核为 `deleg_2b4ea181`，实际查看五页40张附图；采集细节、云动作时间和日志行容器补审为 `deleg_d06f90d1`，实际查看8张原尺寸/原像素派生局部图。两次均不是仅读源码或DOM结论。
+
+### 真实图片范围结论
+
+- 48张图片在各自声明的视口、滚动位置和业务状态范围内获得 `PASS`，没有当前图片支持的遗留pixel-level must-fix：采集配置13张、云平台配置10张、系统诊断8张、日志9张、网络检测8张。
+- 采集配置补审确认概览→导出/导入→同步层级、唯一普通蓝色刷新主操作、导入/同步中性outline、640宽协议表左右横滚端点与Custom UDP末行完整可见。
+- 云平台补审确认两条独立读取时间的对齐可读性及Replay/Flush风险说明层级；系统诊断和网络检测保留真实降级/未知/未执行分层，不用伪造成功态取得视觉PASS。
+- 日志补审仅签可见时间、级别、记录器、线程、消息列和行容器结构；原始自由正文在截图层隐藏，不能据此签正文可读性。云详情/Replay/Flush确认、网络成功/失败、导出/同步/检测等未执行状态同样未签业务结果。
+
+### 交付、运行边界与最终状态
+
+- 冻结交付目录：`C:/Users/wangbin/AppData/Local/hermes/artifacts/operations-five-pages-recommendation-final/`。其中包含五页主图、48张明确签收图片、Frontend Design最终报告、构建/契约/脚本差异安全证据、相对路径SHA-256清单及重新打开校验过的ZIP；ZIP哈希成员58、连同manifest归档总成员59，归档SHA-256记录在 `artifact-receipt.json`。
+- 交付总览图为 `effects-contact-sheet.png`；具体真实主图位于 `screenshots/candidate/`，补审局部图位于 `screenshots/supplement/`。报告只把48张列入的当前图片称为PASS，不把候选目录其余图片或历史图片追认为逐图签收。
+- 9090运行边界保持独立：既有服务页面HTTP200，入口仍为 `index-BM7lzMzh.js`，health HTTP200但业务状态为 `DOWN`；本轮不重启、不替换、不修依赖。自有截图Electron已关闭，9345实查无监听。
+- 当前状态：`SCOPED VISUAL PASS / READY FOR USER ACCEPTANCE`。该状态表示Frontend Design对交付图片范围已通过，不等于全部106张逐图签收、敏感正文可读性、未执行业务成功/失败态、业务联调、9090部署或用户最终接受。
+
+## 2026-10-13 全部授权后的五页剩余收口：静态完成，临时认证输入待补
+
+- 本窗口授权原文为“全部授权 把解析来的任务完成”。继承剩余真实状态/交互与生命周期、新build真实图及Frontend Design终审、最终报告和ZIP；不把授权解释为读取秘密、造测试数据、提交push或修改既有业务/服务/运行包。
+- 已重跑lint、Stylelint、typecheck、task-owned scratch Vite renderer build及Electron TypeScript编译，五项exit0；第三方PURE注解/大chunk警告保持原状态。`git diff --check`exit0；没有执行测试或quality/verify聚合命令。
+- `full-closure-authorized/CANDIDATE-IDENTITY.json`冻结最新build的60个完整资源及158个实际源hash，完整资源集合与前序焦点候选完全相同，entry为`index-CUrdtFzV.js`；不能仅以entry相同替代完整集合核证。原Boot资源仅身份记录、未同步替换；HEAD及既有工作树保留。
+- 执行计划与本轮观察工具独立保存在scratch，按真实API定义guard原GET和有限本机网络操作；不读取接口正文/凭据/raw日志，不持久化认证。尚未创建新认证浏览器、截图或accepted-source观察，也没有执行配置提交/同步/ingest/Replay/Flush或制造业务记录。
+- 当前阻塞是输入而非许可：按前轮不保留认证的要求，凭据已不在本窗口内存；不能从`[REDACTED]`恢复。本地任务终端`proc_31798cd5b732`已真实显示不回显输入提示，状态文件读回`WAITING_FOR_LOCAL_EPHEMERAL_CREDENTIAL`，须由用户本地输入原凭据，不发送到聊天。该临时上下文不改9090/9346服务或其配置。
+- 原条款盘点`deleg_3738a697`已完成并实际消费。JSON为266240 bytes、SHA `7b7838fbb20eb30243bafec924f9609f9c7b5e47069048fbcf26c02797385422`；Markdown为83989 bytes、SHA `061dd620e6a87448e54916a363f45c3393b6e81da030399571eafa7583b076d2`。`PARENT-INVENTORY-READBACK.json`逐套对原文件核id/priority/criterion全文、顺序与原文SHA，共120条（云/诊断42、日志/网络42、共享/采集36）一致；28个同名ID的80次出现独立保留。P0/P1/P2为50/38/32，9个输入manifest与9个安全源snapshot全部匹配；原84、旧157子门禁及共享/采集新增51证据路由分支各自保留，208不是原条款数量。10条待采动作不等于已执行；没有签新PASS。历史两套S-NAV-04 FAIL/82 BLOCKED、共享/采集旧限定像素结论及专项`SCOPED_MF_FOCUS_01_PASS`分别保留。
+- 原盘点不能授予或撤销父级既有许可：Q2一次task-owned真实root卸载/cleanup可以观察，但不制造延迟、断网、拦包或竞态，也不把换route当root卸载。真实0/false/空/混排序/accepted-owner/last-good若未自然出现仍缺证；秘密原文不因全部授权可读取。执行计划已按该无测试/无制造状态边界收紧，未改不可变盘点文件或原合同。
+- 新像素终审、真实成功/last-good/混排序/隐藏全文/accepted-owner条件以及最终效果图ZIP仍PENDING。旧PNG或HTTP200不替代本窗口的新证据；秘密全文和现环境不存在的真实状态不能单靠全部授权变为PASS。

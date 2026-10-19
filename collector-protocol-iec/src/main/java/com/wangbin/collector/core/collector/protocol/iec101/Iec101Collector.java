@@ -301,7 +301,7 @@ public class Iec101Collector extends ConnectionBackedCollector {
                             sample.value(),
                             sample.quality(),
                             sample.sourceTimestamp(),
-                            "IEC101");
+                            "IEC101", runtimeGeneration, runtimeConfigVersion);
                     lastProcessResults.put(point.getPointId(), result);
                 }
             }

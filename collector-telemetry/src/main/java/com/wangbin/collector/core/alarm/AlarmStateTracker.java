@@ -28,6 +28,13 @@ public class AlarmStateTracker {
         this.stateRepository = stateRepository;
     }
 
+    /** 预热规则状态，避免首次恢复读取进入设备副作用提交门；不评估或保存状态。 */
+    public void prepareState(String deviceId, String pointId, AlarmRule rule) {
+        if (rule != null) {
+            states.computeIfAbsent(stateKey(deviceId, pointId, rule), this::restoreState);
+        }
+    }
+
     /**
      * 执行当前业务逻辑。
      */

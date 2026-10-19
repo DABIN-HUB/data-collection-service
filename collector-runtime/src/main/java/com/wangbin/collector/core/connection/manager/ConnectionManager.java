@@ -4,6 +4,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
@@ -13,6 +14,7 @@ import com.wangbin.collector.core.port.ExceptionReporter;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,6 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -38,8 +41,8 @@ public class ConnectionManager {
     @Nullable
     private final ExceptionReporter exceptionReporter;
 
-    // 连接存储：deviceId -> ConnectionAdapter
-    private final Map<String, ConnectionAdapter> connections = new ConcurrentHashMap<>();
+    // 登记身份同时拥有适配器、分组和运行代次，旧任务不再重新解析设备别名。
+    private final Map<String, Registration> connections = new ConcurrentHashMap<>();
 
     // 连接分组：groupId -> Set<deviceId>
     private final Map<String, Set<String>> groupConnections = new ConcurrentHashMap<>();
@@ -53,7 +56,31 @@ public class ConnectionManager {
     @Nullable
     private final ExecutorService heartbeatExecutor;
 
-    private final Set<String> heartbeatInProgress = ConcurrentHashMap.newKeySet();
+    private final Map<String, Registration> heartbeatInProgress = new ConcurrentHashMap<>();
+    private final Set<Registration> retiredConnections = ConcurrentHashMap.newKeySet();
+    private volatile boolean closed;
+    private CollectionTaskGuard collectionTaskGuard;
+
+    private static final class Registration {
+        private final ConnectionAdapter adapter;
+        private final String groupId;
+        private final long generation;
+        private final ReentrantLock ioLock = new ReentrantLock();
+        private volatile boolean retired;
+        private boolean resourcesClosed;
+        private boolean removalNotified;
+
+        private Registration(ConnectionAdapter adapter, String groupId, long generation) {
+            this.adapter = adapter;
+            this.groupId = groupId;
+            this.generation = generation;
+        }
+    }
+
+    @Autowired(required = false)
+    public void setCollectionTaskGuard(CollectionTaskGuard collectionTaskGuard) {
+        this.collectionTaskGuard = collectionTaskGuard;
+    }
 
     /**
      * 创建连接管理器。
@@ -98,49 +125,59 @@ public class ConnectionManager {
      * 创建并返回业务对象。
      */
     public ConnectionAdapter createConnection(DeviceInfo deviceInfo, DeviceConnection overrideConfig) {
+        return createConnection(deviceInfo, overrideConfig, 0L);
+    }
+
+    /** 同一有效代次仍可复用已连接适配器，不允许新代次继承旧连接所有权。 */
+    public ConnectionAdapter createConnection(DeviceInfo deviceInfo, DeviceConnection overrideConfig, long generation) {
         if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceId().isBlank()) {
             throw new CollectorException("设备信息无效", null, null);
         }
         String deviceId = deviceInfo.getDeviceId();
-
-        synchronized (connections) {
-            if (connections.containsKey(deviceId)) {
-                ConnectionAdapter existing = connections.get(deviceId);
-                if (existing.isConnected()) {
-                    log.warn("设备 {} 的连接已存在且处于连接状态", deviceId);
-                    return existing;
+        Registration candidate = null;
+        try {
+            DeviceConnection config = overrideConfig != null ? overrideConfig : resolveConnectionConfig(deviceId);
+            if (config == null) throw new CollectorException("连接配置不存在", deviceId, null);
+            while (true) {
+                Registration existing = connections.get(deviceId);
+                if (existing != null) {
+                    synchronized (existing) {
+                        if (connections.get(deviceId) != existing || existing.retired) continue;
+                        if (existing.adapter.isConnected() && isCurrent(existing)
+                                && (generation == 0L || existing.generation == generation)) {
+                            if (candidate != null) closeRegistration(candidate, false);
+                            return existing.adapter;
+                        }
+                    }
                 }
-                // 移除旧的连接
-                removeConnection(deviceId);
-            }
-
-            try {
-                DeviceConnection connectionConfig = overrideConfig != null ? overrideConfig : resolveConnectionConfig(deviceId);
-                if (connectionConfig == null) {
-                    throw new CollectorException("连接配置不存在", deviceId, null);
+                if (candidate == null) {
+                    candidate = new Registration(connectionFactory.createConnection(deviceInfo, config),
+                            deviceInfo.getGroupId(), generation);
                 }
-                validateGroupCapacity(deviceInfo, connectionConfig);
-                // 创建新连接
-                ConnectionAdapter connection = connectionFactory.createConnection(deviceInfo, connectionConfig);
-                connections.put(deviceId, connection);
-
-                // 添加到分组
-                addToGroup(deviceInfo);
-
-                // 通知连接创建
-                notifyConnectionCreated(connection);
-
-                log.info("连接创建成功: {}", deviceId);
-                return connection;
-            } catch (CollectorException e) {
-                log.error("创建连接失败: {}", deviceId, e);
-                recordException(deviceId, e);
-                throw e;
-            } catch (Exception e) {
-                log.error("创建连接失败: {}", deviceId, e);
-                recordException(deviceId, e);
-                throw new CollectorException("创建连接失败", deviceId, null);
+                // 锁序为登记提交门 -> 索引锁；工厂、网络操作和物理关闭均在索引锁外。
+                Object commitGate = existing != null ? existing : candidate;
+                synchronized (commitGate) {
+                    synchronized (connections) {
+                        if (closed || !isGenerationCurrent(deviceId, generation)) {
+                            throw new CollectorException("连接管理器已关闭或运行代次已失效", deviceId, null);
+                        }
+                        if (connections.get(deviceId) != existing) continue;
+                        validateGroupCapacity(deviceInfo, config);
+                        if (existing != null) detachRegistration(existing);
+                        connections.put(deviceId, candidate);
+                        addToGroup(deviceInfo);
+                    }
+                }
+                if (existing != null) closeRegistration(existing, true);
+                Registration created = candidate;
+                publishIfCurrent(created, () -> notifyConnectionCreated(created.adapter));
+                return created.adapter;
             }
+        } catch (Exception e) {
+            if (candidate != null && connections.get(deviceId) != candidate) closeRegistration(candidate, false);
+            recordException(deviceId, e);
+            if (e instanceof CollectorException collectorException) throw collectorException;
+            throw new CollectorException("创建连接失败", deviceId, null, e);
         }
     }
 
@@ -148,140 +185,91 @@ public class ConnectionManager {
      * 建立连接
      */
     public void connect(String deviceId) {
-        ConnectionAdapter connection = getConnection(deviceId);
-        if (connection == null) {
-            throw new CollectorException("连接不存在", deviceId, null);
-        }
+        Registration registration = requireRegistration(deviceId);
+        requireOperation(deviceId, operateIfCurrent(registration, registration.adapter::connect, ConnectionStatus.CONNECTED));
+    }
 
-        try {
-            connection.connect();
-            notifyConnectionStateChanged(connection, ConnectionStatus.CONNECTED);
-            log.info("连接建立成功: {}", deviceId);
-        } catch (Exception e) {
-            log.error("连接建立失败: {}", deviceId, e);
-            notifyConnectionError(connection, e);
-            recordException(deviceId, e);
-            throw new CollectorException("连接建立失败", deviceId, null);
-        }
+    /** 所有者建连只操作捕获身份，身份失效时不访问当前新连接。 */
+    public boolean connectIfOwned(String deviceId, ConnectionAdapter expectedAdapter) {
+        Registration registration = registrationIfOwned(deviceId, expectedAdapter);
+        return registration != null
+                && operateIfCurrent(registration, registration.adapter::connect, ConnectionStatus.CONNECTED);
     }
 
     /**
      * 断开连接
      */
     public void disconnect(String deviceId) {
-        ConnectionAdapter connection = getConnection(deviceId);
-        if (connection == null) {
-            throw new CollectorException("连接不存在", deviceId, null);
-        }
-
-        try {
-            connection.disconnect();
-            notifyConnectionStateChanged(connection, ConnectionStatus.DISCONNECTED);
-            log.info("连接断开成功: {}", deviceId);
-        } catch (Exception e) {
-            log.error("连接断开失败: {}", deviceId, e);
-            notifyConnectionError(connection, e);
-            recordException(deviceId, e);
-            throw new CollectorException("连接断开失败", deviceId, null);
-        }
+        Registration registration = requireRegistration(deviceId);
+        requireOperation(deviceId, operateIfCurrent(registration, registration.adapter::disconnect, ConnectionStatus.DISCONNECTED));
     }
 
     /**
      * 重新连接
      */
     public void reconnect(String deviceId) {
-        ConnectionAdapter connection = getConnection(deviceId);
-        if (connection == null) {
-            throw new CollectorException("连接不存在", deviceId, null);
-        }
+        Registration registration = requireRegistration(deviceId);
+        requireOperation(deviceId, operateIfCurrent(registration, registration.adapter::reconnect, ConnectionStatus.CONNECTED));
+    }
 
-        try {
-            connection.reconnect();
-            notifyConnectionStateChanged(connection, ConnectionStatus.CONNECTED);
-            log.info("重新连接成功: {}", deviceId);
-        } catch (Exception e) {
-            log.error("重新连接失败: {}", deviceId, e);
-            notifyConnectionError(connection, e);
-            recordException(deviceId, e);
-            throw new CollectorException("重新连接失败", deviceId, null);
-        }
+    /** 心跳和异步所有者不能借设备别名重连被替换的新适配器。 */
+    public boolean reconnectIfOwned(String deviceId, ConnectionAdapter expectedAdapter) {
+        Registration registration = registrationIfOwned(deviceId, expectedAdapter);
+        return registration != null
+                && operateIfCurrent(registration, registration.adapter::reconnect, ConnectionStatus.CONNECTED);
     }
 
     /**
      * 发送数据
      */
     public void send(String deviceId, byte[] data) {
-        ConnectionAdapter connection = getConnection(deviceId);
-        if (connection == null) {
-            throw new CollectorException("连接不存在", deviceId, null);
-        }
-
-        try {
-            connection.send(data);
-            log.debug("数据发送成功: {}, 大小: {} bytes", deviceId, data.length);
-        } catch (Exception e) {
-            log.error("数据发送失败: {}", deviceId, e);
-            notifyConnectionError(connection, e);
-            recordException(deviceId, e);
-            throw new CollectorException("数据发送失败", deviceId, null);
-        }
+        Registration registration = requireRegistration(deviceId);
+        requireOperation(deviceId, operateIfCurrent(registration, () -> registration.adapter.send(data), null));
     }
 
     /**
      * 接收数据
      */
     public byte[] receive(String deviceId) {
-        ConnectionAdapter connection = getConnection(deviceId);
-        if (connection == null) {
-            throw new CollectorException("连接不存在", deviceId, null);
-        }
-
-        try {
-            return connection.receive();
-        } catch (Exception e) {
-            log.error("数据接收失败: {}", deviceId, e);
-            notifyConnectionError(connection, e);
-            recordException(deviceId, e);
-            throw new CollectorException("数据接收失败", deviceId, null);
-        }
+        Registration registration = requireRegistration(deviceId);
+        byte[][] result = new byte[1][];
+        requireOperation(deviceId, operateIfCurrent(registration, () -> result[0] = registration.adapter.receive(), null));
+        return result[0];
     }
 
     /**
      * 获取连接
      */
     public ConnectionAdapter getConnection(String deviceId) {
-        return connections.get(deviceId);
+        Registration registration = connections.get(deviceId);
+        return registration != null ? registration.adapter : null;
     }
 
     /**
      * 获取所有连接
      */
     public List<ConnectionAdapter> getAllConnections() {
-        return new ArrayList<>(connections.values());
+        return connections.values().stream().map(registration -> registration.adapter).collect(Collectors.toList());
     }
 
     /**
      * 获取活跃连接
      */
     public List<ConnectionAdapter> getActiveConnections() {
-        return connections.values().stream()
-                .filter(ConnectionAdapter::isConnected)
-                .collect(Collectors.toList());
+        return getAllConnections().stream().filter(ConnectionAdapter::isConnected).collect(Collectors.toList());
     }
 
     /**
      * 获取分组连接
      */
     public List<ConnectionAdapter> getGroupConnections(String groupId) {
-        Set<String> deviceIds = groupConnections.get(groupId);
-        if (deviceIds == null || deviceIds.isEmpty()) {
-            return Collections.emptyList();
+        synchronized (connections) {
+            Set<String> members = groupConnections.get(groupId);
+            if (members == null) return Collections.emptyList();
+            return members.stream().map(connections::get).filter(Objects::nonNull)
+                    .filter(registration -> Objects.equals(registration.groupId, groupId))
+                    .map(registration -> registration.adapter).collect(Collectors.toList());
         }
-
-        return deviceIds.stream()
-                .map(this::getConnection)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
     }
 
     /**
@@ -297,8 +285,8 @@ public class ConnectionManager {
      */
     public Map<String, ConnectionMetrics> getAllConnectionMetrics() {
         Map<String, ConnectionMetrics> metrics = new HashMap<>();
-        connections.forEach((deviceId, connection) -> {
-            metrics.put(deviceId, connection.getMetrics());
+        connections.forEach((deviceId, registration) -> {
+            metrics.put(deviceId, registration.adapter.getMetrics());
         });
         return metrics;
     }
@@ -307,51 +295,103 @@ public class ConnectionManager {
      * 移除连接
      */
     public void removeConnection(String deviceId) {
-        ConnectionAdapter connection = connections.remove(deviceId);
-        if (connection != null) {
-            try {
-                connection.closeResources();
-            } catch (Exception e) {
-                log.error("断开连接失败: {}", deviceId, e);
+        Registration current = connections.get(deviceId);
+        if (current != null) removeRegistration(current);
+    }
+
+    /** 原子比较登记身份并摘除，旧采集器不能清理同设备的新适配器。 */
+    public boolean removeConnectionIfOwned(String deviceId, ConnectionAdapter expectedAdapter) {
+        Registration registration = registrationIfOwned(deviceId, expectedAdapter);
+        if (registration != null && removeRegistration(registration)) return true;
+        for (Registration retired : retiredConnections) {
+            if (retired.adapter == expectedAdapter && Objects.equals(deviceId, retired.adapter.getDeviceId())) {
+                requireClosed(retired, closeRegistration(retired, false));
             }
-
-            // 从分组中移除
-            removeFromGroup(deviceId);
-
-            // 通知连接移除
-            notifyConnectionRemoved(connection);
-
-            log.info("连接移除成功: {}", deviceId);
         }
+        log.debug("忽略失效连接所有者的索引清理: 设备={}", deviceId);
+        return false;
+    }
+
+    private boolean removeRegistration(Registration registration) {
+        synchronized (registration) {
+            synchronized (connections) {
+                if (connections.get(registration.adapter.getDeviceId()) != registration || registration.retired) return false;
+                detachRegistration(registration);
+            }
+        }
+        requireClosed(registration, closeRegistration(registration, true));
+        return true;
+    }
+
+    /** 索引摘除与物理关闭分离，关闭等待只占该登记的I/O锁。 */
+    private void detachRegistration(Registration registration) {
+        registration.retired = true;
+        String deviceId = registration.adapter.getDeviceId();
+        connections.remove(deviceId, registration);
+        heartbeatInProgress.remove(deviceId, registration);
+        if (registration.groupId != null) {
+            Set<String> members = groupConnections.get(registration.groupId);
+            if (members != null && members.remove(deviceId) && members.isEmpty()) {
+                groupConnections.remove(registration.groupId, members);
+            }
+        }
+        retiredConnections.add(registration);
+    }
+
+    private boolean closeRegistration(Registration registration, boolean notifyRemoved) {
+        boolean sendRemoved = false;
+        registration.ioLock.lock();
+        try {
+            if (!registration.resourcesClosed) {
+                registration.adapter.closeResources();
+                registration.resourcesClosed = true;
+                retiredConnections.remove(registration);
+            }
+        } catch (Exception e) {
+            retiredConnections.add(registration);
+            log.error("释放退役连接失败: 设备={}", registration.adapter.getDeviceId(), e);
+        } finally {
+            if (notifyRemoved && !registration.removalNotified) {
+                registration.removalNotified = true;
+                sendRemoved = true;
+            }
+            registration.ioLock.unlock();
+        }
+        if (sendRemoved) notifyConnectionRemoved(registration.adapter);
+        return registration.resourcesClosed;
+    }
+
+    private void requireClosed(Registration registration, boolean released) {
+        if (!released) throw new CollectorException("退役连接资源尚未释放，可按原身份重试", registration.adapter.getDeviceId(), null);
     }
 
     /**
      * 关闭所有连接
      */
     public void closeAllConnections() {
-        List<String> deviceIds = new ArrayList<>(connections.keySet());
-        for (String deviceId : deviceIds) {
+        List<Registration> snapshot;
+        synchronized (connections) {
+            closed = true;
+            snapshot = new ArrayList<>(connections.values());
+        }
+        for (Registration registration : snapshot) {
             try {
-                removeConnection(deviceId);
+                removeRegistration(registration);
             } catch (Exception e) {
-                log.error("关闭连接失败: {}", deviceId, e);
+                log.warn("连接停机清理未完成，继续关闭其他身份: 设备={}", registration.adapter.getDeviceId(), e);
             }
         }
-        connections.clear();
-        groupConnections.clear();
+        // 失败的资源关闭保留身份，重复停机只重试这些资源，不盲清新登记。
+        for (Registration registration : new ArrayList<>(retiredConnections)) closeRegistration(registration, false);
+        if (!retiredConnections.isEmpty()) throw new CollectorException("部分退役连接资源尚未释放", null, null);
     }
 
     /**
      * 关闭分组连接
      */
     public void closeGroupConnections(String groupId) {
-        List<ConnectionAdapter> groupedConnections = getGroupConnections(groupId);
-        for (ConnectionAdapter connection : groupedConnections) {
-            try {
-                removeConnection(connection.getDeviceId());
-            } catch (Exception e) {
-                log.error("关闭分组连接失败: {}", connection.getDeviceId(), e);
-            }
+        for (ConnectionAdapter connection : getGroupConnections(groupId)) {
+            removeConnectionIfOwned(connection.getDeviceId(), connection);
         }
     }
 
@@ -360,48 +400,33 @@ public class ConnectionManager {
      */
     @Scheduled(fixedDelay = 30000) // 每30秒检查一次
     public void startHeartbeatMonitor() {
-        log.debug("开始心跳检查...");
-
-        for (ConnectionAdapter connection : connections.values()) {
-            submitHeartbeat(connection);
-
-        }
+        for (Registration registration : connections.values()) submitHeartbeat(registration.adapter);
     }
 
     /**
      * 处理当前业务流程。
      */
     private void submitHeartbeat(ConnectionAdapter connection) {
-        if (connection == null) {
-            return;
-        }
+        if (connection == null) return;
         String deviceId = connection.getDeviceId();
-        if (deviceId == null || deviceId.isBlank()) {
-            handleHeartbeat(connection);
-            return;
-        }
-        if (!heartbeatInProgress.add(deviceId)) {
-            log.debug("跳过重复心跳任务:设备={}", deviceId);
-            return;
-        }
-        if (heartbeatExecutor == null) {
+        Registration registration = registrationIfOwned(deviceId, connection);
+        if (registration == null || !isCurrent(registration)) return;
+        if (heartbeatInProgress.putIfAbsent(deviceId, registration) != null) return;
+        Runnable task = () -> {
             try {
-                handleHeartbeat(connection);
+                handleHeartbeat(registration);
             } finally {
-                heartbeatInProgress.remove(deviceId);
+                heartbeatInProgress.remove(deviceId, registration);
             }
+        };
+        if (heartbeatExecutor == null) {
+            task.run();
             return;
         }
         try {
-            heartbeatExecutor.submit(() -> {
-                try {
-                    handleHeartbeat(connection);
-                } finally {
-                    heartbeatInProgress.remove(deviceId);
-                }
-            });
+            heartbeatExecutor.submit(task);
         } catch (RejectedExecutionException e) {
-            heartbeatInProgress.remove(deviceId);
+            heartbeatInProgress.remove(deviceId, registration);
             log.warn("心跳任务被拒绝:设备={}, 队列长度={}", deviceId, heartbeatQueueSize(), e);
         }
     }
@@ -419,33 +444,25 @@ public class ConnectionManager {
     /**
      * 处理当前业务流程。
      */
-    private void handleHeartbeat(ConnectionAdapter connection) {
+    private void handleHeartbeat(Registration registration) {
+        ConnectionAdapter connection = registration.adapter;
         try {
+            if (!isCurrent(registration)) return;
+            DeviceConnection config = connection.getConnectionConfig();
             if (!connection.isConnected()) {
-                DeviceConnection disconnectedConfig = connection.getConnectionConfig();
-                if (disconnectedConfig != null && disconnectedConfig.isAutoReconnect()) {
-                    reconnect(connection.getDeviceId());
-                }
+                if (config != null && config.isAutoReconnect()) reconnectIfOwned(connection.getDeviceId(), connection);
                 return;
             }
             ConnectionMetrics metrics = connection.getMetrics();
-            long timeoutThreshold = resolveHeartbeatTimeout(connection);
-
-            if (metrics != null && metrics.isTimeout(timeoutThreshold)) {
-                log.warn("连接心跳超时: {}", connection.getDeviceId());
-                notifyHeartbeatTimeout(connection);
-
-                DeviceConnection cfg = connection.getConnectionConfig();
-                if (cfg != null && cfg.isAutoReconnect()) {
-                    reconnect(connection.getDeviceId());
-                }
+            if (metrics != null && metrics.isTimeout(resolveHeartbeatTimeout(connection))) {
+                if (!publishIfCurrent(registration, () -> notifyHeartbeatTimeout(connection))) return;
+                if (config != null && config.isAutoReconnect()) reconnectIfOwned(connection.getDeviceId(), connection);
             } else {
-                connection.heartbeat();
+                operateIfCurrent(registration, connection::heartbeat, null);
             }
         } catch (Exception e) {
-            log.error("心跳检查失败: {}", connection.getDeviceId(), e);
-            notifyConnectionError(connection, e);
-            recordException(connection.getDeviceId(), e);
+            // I/O异常已由身份提交门处理；失效任务不能发布当前设备错误。
+            log.debug("心跳操作未完成: 设备={}", connection.getDeviceId(), e);
         }
     }
 
@@ -524,7 +541,7 @@ public class ConnectionManager {
             return;
         }
         Set<String> members = groupConnections.get(groupId);
-        if (members != null && members.size() >= maxConnections) {
+        if (members != null && members.size() - (members.contains(deviceInfo.getDeviceId()) ? 1 : 0) >= maxConnections) {
             throw new CollectorException("分组连接数已达到限制", deviceInfo.getDeviceId(), null);
         }
     }
@@ -543,13 +560,74 @@ public class ConnectionManager {
     /**
      * 从分组中移除
      */
-    private void removeFromGroup(String deviceId) {
-        for (Map.Entry<String, Set<String>> entry : groupConnections.entrySet()) {
-            Set<String> deviceIds = entry.getValue();
-            if (deviceIds.remove(deviceId) && deviceIds.isEmpty()) {
-                groupConnections.remove(entry.getKey(), deviceIds);
+    private Registration registrationIfOwned(String deviceId, ConnectionAdapter expectedAdapter) {
+        if (deviceId == null || expectedAdapter == null) return null;
+        Registration registration = connections.get(deviceId);
+        return registration != null && registration.adapter == expectedAdapter ? registration : null;
+    }
+
+    private Registration requireRegistration(String deviceId) {
+        Registration registration = connections.get(deviceId);
+        if (registration == null) throw new CollectorException("连接不存在", deviceId, null);
+        return registration;
+    }
+
+    private boolean isGenerationCurrent(String deviceId, long generation) {
+        return generation == 0L || collectionTaskGuard == null || collectionTaskGuard.isCurrent(deviceId, generation);
+    }
+
+    private boolean isCurrent(Registration registration) {
+        return !closed && !registration.retired
+                && connections.get(registration.adapter.getDeviceId()) == registration
+                && isGenerationCurrent(registration.adapter.getDeviceId(), registration.generation);
+    }
+
+    private boolean publishIfCurrent(Registration registration, Runnable publish) {
+        synchronized (registration) {
+            if (!isCurrent(registration)) return false;
+            if (registration.generation > 0L && collectionTaskGuard != null) {
+                if (!collectionTaskGuard.commitIfCurrent(registration.adapter.getDeviceId(),
+                        registration.generation, () -> { })) return false;
             }
         }
+        // 监听器始终收到捕获的适配器；禁止锁内回调形成登记锁与采集器生命周期锁反转。
+        if (!isCurrent(registration)) return false;
+        publish.run();
+        return true;
+    }
+
+    /** 登记独立I/O锁串行化该适配器；退役先摘表，再等旧操作退出后关闭。 */
+    private boolean operateIfCurrent(Registration registration, ConnectionOperation operation, ConnectionStatus status) {
+        Exception failure = null;
+        registration.ioLock.lock();
+        try {
+            if (!isCurrent(registration)) return false;
+            operation.run();
+        } catch (Exception e) {
+            failure = e;
+        } finally {
+            registration.ioLock.unlock();
+        }
+        if (failure != null) {
+            Exception cause = failure;
+            publishIfCurrent(registration, () -> {
+                notifyConnectionError(registration.adapter, cause);
+                recordException(registration.adapter.getDeviceId(), cause);
+            });
+            throw new CollectorException("连接操作失败", registration.adapter.getDeviceId(), null, cause);
+        }
+        return publishIfCurrent(registration, () -> {
+            if (status != null) notifyConnectionStateChanged(registration.adapter, status);
+        });
+    }
+
+    private void requireOperation(String deviceId, boolean completed) {
+        if (!completed) throw new CollectorException("连接所有权已失效", deviceId, null);
+    }
+
+    @FunctionalInterface
+    private interface ConnectionOperation {
+        void run() throws Exception;
     }
 
     /**

@@ -199,9 +199,12 @@ public class ModbusTcpCollectionChainAcceptanceTest {
                 Runnable::run,
                 Runnable::run,
                 Runnable::run);
+        CollectionTaskGuard guard = new CollectionTaskGuard();
+        long generation = guard.activateNextGeneration(LOCAL_DEVICE_ID);
         CollectorDataPostProcessor postProcessor = new CollectorDataPostProcessor(
-                Runnable::run, pipeline, new CollectionTaskGuard());
-        postProcessor.saveBatchAsync(LOCAL_DEVICE_ID, points, values, processResults);
+                Runnable::run, pipeline, guard);
+        guard.runWithContext(LOCAL_DEVICE_ID, generation,
+                () -> postProcessor.saveBatchAsync(LOCAL_DEVICE_ID, points, values, processResults));
         return contexts;
     }
 

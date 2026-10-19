@@ -6,6 +6,8 @@ import com.wangbin.collector.core.cache.ingress.TelemetryIngressBuffer;
 import com.wangbin.collector.core.cache.ingress.TelemetryIngressBufferResult;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import com.wangbin.collector.core.collector.scheduler.CollectionProcessingReceipt;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -65,9 +67,7 @@ public class CollectorDataPostProcessor {
 
     /** 推送回调没有线程内调度上下文，必须携带采集器创建时的代次。 */
     public void savePointAsync(String deviceId, DataPoint point, Object value, Long generation) {
-        submit(deviceId, point, generation,
-                () -> processPoint(deviceId, point, value, generation),
-                () -> contextForPoint(deviceId, point, value, generation));
+        submitContexts(deviceId, point, generation, contextForPoint(deviceId, point, value, generation));
     }
 
     /**
@@ -78,9 +78,8 @@ public class CollectorDataPostProcessor {
                                Map<String, Object> values,
                                Map<String, ProcessResult> processResults) {
         Long generation = captureGeneration(deviceId);
-        submit(deviceId, null, generation,
-                () -> processTimedBatch(deviceId, points, values, processResults, generation),
-                () -> contextsForBatch(deviceId, points, values, processResults, generation));
+        submitContexts(deviceId, null, generation,
+                contextsForBatch(deviceId, points, values, processResults, generation));
     }
 
     private ProcessResult toProcessResult(Object value) {
@@ -94,82 +93,75 @@ public class CollectorDataPostProcessor {
         fallback.setSuccess(true);
         fallback.setRawValue(value);
         fallback.setProcessedValue(value);
-        fallback.setMessage("fallback process result for telemetry pipeline");
+        fallback.setQuality(-1);
+        fallback.addMetadata(ProcessResultMetadataKeys.COLLECT_TIME, 0L);
+        fallback.addMetadata(ProcessResultMetadataKeys.SOURCE, "UNKNOWN");
+        fallback.setMessage("缺少本轮质量处理快照，仅保留数据，不授予采集成功");
         return fallback;
     }
 
-    private void submit(String deviceId,
-                        DataPoint point,
-                        Long generation,
-                        Runnable task,
-                        Supplier<List<TelemetryPostProcessContext>> rejectedContextsSupplier) {
-        if (deviceId == null || deviceId.isBlank() || task == null) {
-            return;
-        }
+    private void submitContexts(String deviceId, DataPoint point, Long generation,
+                                List<TelemetryPostProcessContext> contexts) {
+        CollectionTaskGuard.CollectionTaskContext invocation = collectionTaskGuard.captureCurrentContext();
+        CollectionProcessingReceipt receipt = invocation != null && deviceId.equals(invocation.deviceId())
+                ? invocation.receipt() : null;
+        if (receipt != null) contexts = contexts.stream()
+                .filter(context -> receipt.claim(context.point().getPointId())).toList();
+        List<TelemetryPostProcessContext> submitted = contexts;
+        submit(deviceId, point, generation, () -> {
+            long startedAt = System.nanoTime();
+            try {
+                for (TelemetryPostProcessContext context : submitted) {
+                    pipeline.processCore(context).whenComplete((valid, error) -> {
+                        if (receipt != null) receipt.complete(context.point().getPointId(),
+                                error == null && Boolean.TRUE.equals(valid),
+                                "CACHE_READ".equals(context.source()) ? "CACHE_READ" :
+                                        error != null ? "PROCESS_ERROR" : Boolean.TRUE.equals(valid) ? null : "QUALITY_BAD",
+                                context.sampleAt());
+                    });
+                }
+            } finally {
+                batchTaskCount.increment();
+                batchTaskItems.add(submitted.size());
+                batchTaskSizes.add(submitted.size());
+                batchTaskLatencyNanos.add(System.nanoTime() - startedAt);
+            }
+        }, () -> submitted, receipt);
+    }
+
+    private void submit(String deviceId, DataPoint point, Long generation, Runnable task,
+                        Supplier<List<TelemetryPostProcessContext>> rejectedContextsSupplier,
+                        CollectionProcessingReceipt receipt) {
+        if (deviceId == null || deviceId.isBlank() || task == null) return;
         try {
             cacheAsyncExecutor.execute(() -> {
                 if (!shouldProcess(deviceId, generation)) {
+                    if (receipt != null) receipt.cancel("PROCESS_ERROR");
                     return;
                 }
                 try {
                     task.run();
-                } catch (Exception e) {
-                    log.error("异步遥测后处理失败，设备={}，点位={}",
-                            deviceId,
-                            point != null ? point.getPointId() : "batch",
-                            e);
+                } catch (Exception exception) {
+                    if (receipt != null) receipt.cancel("PROCESS_ERROR");
+                    log.error("异步遥测核心处理失败，设备={}", deviceId, exception);
                 }
             });
         } catch (RejectedExecutionException exception) {
+            if (receipt != null) receipt.cancel("PROCESS_ERROR");
             handleEntryRejection(deviceId, point, rejectedContextsSupplier, exception);
         }
     }
 
-    private void processPoint(String deviceId, DataPoint point, Object value, Long generation) {
-        List<TelemetryPostProcessContext> contexts = contextForPoint(deviceId, point, value, generation);
-        if (!contexts.isEmpty()) {
-            pipeline.process(contexts.get(0));
-        }
-    }
-
-    private void processTimedBatch(String deviceId,
-                                   List<DataPoint> points,
-                                   Map<String, Object> values,
-                                   Map<String, ProcessResult> processResults,
-                                   Long generation) {
-        int batchSize = points == null ? 0 : points.size();
-        long startedAt = System.nanoTime();
-        try {
-            processBatch(deviceId, points, values, processResults, generation);
-        } finally {
-            batchTaskCount.increment();
-            batchTaskItems.add(batchSize);
-            batchTaskSizes.add(batchSize);
-            batchTaskLatencyNanos.add(System.nanoTime() - startedAt);
-        }
-    }
-
-    private void processBatch(String deviceId,
-                              List<DataPoint> points,
-                              Map<String, Object> values,
-                              Map<String, ProcessResult> processResults,
-                              Long generation) {
-        if (points == null || values == null || values.isEmpty()) {
-            return;
-        }
-        if (!shouldProcess(deviceId, generation)) {
-            return;
-        }
-        for (DataPoint point : points) {
-            if (!shouldProcess(deviceId, generation)) {
-                return;
-            }
-            TelemetryPostProcessContext context = contextForBatchPoint(deviceId, point, values, processResults, generation);
-            if (context != null) {
-                pipeline.process(context);
-            }
-        }
-        log.debug("异步批量遥测后处理成功，设备={}，点位={}", deviceId, points.size());
+    private TelemetryPostProcessContext newContext(String deviceId, DataPoint point,
+                                                  ProcessResult result, Long generation) {
+        CollectionTaskGuard.CollectionTaskContext invocation = collectionTaskGuard.captureCurrentContext();
+        CollectionProcessingReceipt receipt = invocation != null && deviceId.equals(invocation.deviceId())
+                ? invocation.receipt() : null;
+        ProcessResult snapshot = result.snapshot();
+        Object collectTime = snapshot.getMetadata(ProcessResultMetadataKeys.COLLECT_TIME);
+        long sampleAt = collectTime instanceof Number number ? number.longValue() : 0L;
+        return new TelemetryPostProcessContext(deviceId, point, snapshot, snapshot,
+                sampleAt, generation, collectionTaskGuard, receipt, generation == null);
     }
 
     private List<TelemetryPostProcessContext> contextForPoint(String deviceId,
@@ -180,16 +172,10 @@ public class CollectorDataPostProcessor {
             return Collections.emptyList();
         }
         ProcessResult processResult = toProcessResult(value);
-        if (point == null || processResult == null) {
+        if (point == null || processResult == null || !deviceId.equals(point.getDeviceId())) {
             return Collections.emptyList();
         }
-        return List.of(new TelemetryPostProcessContext(
-                deviceId,
-                point,
-                processResult,
-                processResult,
-                System.currentTimeMillis(),
-                generation));
+        return List.of(newContext(deviceId, point, processResult, generation));
     }
 
     private List<TelemetryPostProcessContext> contextsForBatch(String deviceId,
@@ -222,27 +208,19 @@ public class CollectorDataPostProcessor {
         if (!shouldProcess(deviceId, generation)) {
             return null;
         }
-        if (point == null) {
+        if (point == null || !deviceId.equals(point.getDeviceId())) {
             return null;
         }
         String pointId = point.getPointId();
         Object value = values.get(pointId);
-        if (value == null) {
-            return null;
-        }
         ProcessResult collectorResult = processResults != null ? processResults.get(pointId) : null;
+        if (value == null && collectorResult == null) return null;
         Object cacheValue = collectorResult != null ? collectorResult : value;
         ProcessResult processResult = toProcessResult(cacheValue);
         if (processResult == null) {
             return null;
         }
-        return new TelemetryPostProcessContext(
-                deviceId,
-                point,
-                processResult,
-                processResult,
-                System.currentTimeMillis(),
-                generation);
+        return newContext(deviceId, point, processResult, generation);
     }
 
     private void handleEntryRejection(String deviceId,

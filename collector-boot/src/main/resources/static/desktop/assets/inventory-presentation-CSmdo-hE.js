@@ -1,0 +1,1 @@
+function i(e){let o=0;for(const t of e){const n=typeof t.pointCount=="number"?t.pointCount:Array.isArray(t.points)?t.points.length:t.pointTotal??t.pointsCount??t.dataPointCount;if(typeof n!="number"||!Number.isFinite(n)||n<0)return null;o+=n}return Number.isFinite(o)?o:null}export{i as k};

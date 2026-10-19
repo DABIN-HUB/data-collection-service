@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 配置更新事件
@@ -119,6 +120,18 @@ public class ConfigUpdateEvent {
      * 上次配置版本号
      */
     private Long previousVersion;
+
+    /** 删除或有效采集配置改变的旧 pointId；仅用于实时缓存失效，不删除历史。 */
+    @Builder.Default
+    private Set<String> retiredPointIds = Set.of();
+
+    public Set<String> getRetiredPointIds() {
+        return retiredPointIds == null ? Set.of() : Set.copyOf(retiredPointIds);
+    }
+
+    public void setRetiredPointIds(Set<String> pointIds) {
+        this.retiredPointIds = pointIds == null ? Set.of() : Set.copyOf(pointIds);
+    }
 
     /**
      * 变更的配置项详情
@@ -485,6 +498,7 @@ public class ConfigUpdateEvent {
                 .pointCountChange(this.pointCountChange)
                 .configVersion(this.configVersion)
                 .previousVersion(this.previousVersion)
+                .retiredPointIds(getRetiredPointIds())
                 .changeDetails(this.changeDetails != null ? new HashMap<>(this.changeDetails) : null)
                 .affectedComponents(this.affectedComponents != null ? this.affectedComponents.clone() : null)
                 .operator(this.operator)

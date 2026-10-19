@@ -9,7 +9,8 @@ services:
 
   mqtt-publisher:
     image: eclipse-mosquitto:2
-    entrypoint: ["/bin/sh", "/scripts/publish.sh"]
+    # Windows 工作区挂载的脚本可能使用 CRLF，交给 shell 前先统一换行。
+    entrypoint: ["/bin/sh", "-c", "busybox dos2unix < /scripts/publish.sh | /bin/sh"]
     volumes:
       - ./mqtt/publish.sh:/scripts/publish.sh:ro
     depends_on:

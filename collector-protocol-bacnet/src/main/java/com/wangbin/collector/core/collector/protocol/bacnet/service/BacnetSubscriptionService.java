@@ -76,7 +76,7 @@ public class BacnetSubscriptionService {
                     .propertyIdentifier(BacnetPropertyIdentifier.fromId(binding.address().getPropertyIdentifierId()))
                     .arrayIndex(binding.address().getArrayIndex())
                     .issueConfirmedNotifications(binding.issueConfirmedNotifications())
-                    .lifetimeSeconds(0)
+                    .lifetimeSeconds(null)
                     .invokeId(invokeIdSupplier.getAsInt())
                     .remoteDeviceInstance(remoteDeviceInstance)
                     .build();
@@ -88,7 +88,7 @@ public class BacnetSubscriptionService {
                 .objectType(BacnetObjectType.fromId(binding.address().getObjectTypeId()))
                 .objectInstance(binding.address().getInstanceNumber())
                 .issueConfirmedNotifications(binding.issueConfirmedNotifications())
-                .lifetimeSeconds(0)
+                .lifetimeSeconds(null)
                 .invokeId(invokeIdSupplier.getAsInt())
                 .remoteDeviceInstance(remoteDeviceInstance)
                 .build();

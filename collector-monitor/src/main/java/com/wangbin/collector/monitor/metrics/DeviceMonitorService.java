@@ -4,15 +4,14 @@ import com.wangbin.collector.common.domain.enums.ConnectionStatus;
 import com.wangbin.collector.core.connection.adapter.ConnectionAdapter;
 import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.connection.model.ConnectionMetrics;
-import com.wangbin.collector.monitor.health.CollectionServiceHealthTracker;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
+import com.wangbin.collector.core.collector.runtime.DeviceRuntimeState;
+import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 设备与连接监控服务。
@@ -22,33 +21,29 @@ import java.util.stream.Collectors;
 public class DeviceMonitorService {
 
     private final ConnectionManager connectionManager;
-    private final CollectionServiceHealthTracker collectionServiceHealthTracker;
+    private final RuntimeStateCoordinator runtimeStateCoordinator;
 
     public DeviceStatusSnapshot getDeviceStatus() {
         List<ConnectionAdapter> allConnections = connectionManager.getAllConnections();
-        Map<String, ConnectionAdapter> connectionByDevice = allConnections.stream()
-                .collect(Collectors.toMap(ConnectionAdapter::getDeviceId, adapter -> adapter, (a, b) -> a, LinkedHashMap::new));
-
         List<DeviceConnectionSnapshot> snapshots = new ArrayList<>();
-        List<String> runningDevices = new ArrayList<>(collectionServiceHealthTracker.getRunningDevicesSnapshot());
+        List<DeviceRuntimeSnapshot> runtimes = runtimeStateCoordinator.runtimeSnapshots();
+        List<String> runningDevices = runtimes.stream().filter(DeviceRuntimeSnapshot::running)
+                .map(DeviceRuntimeSnapshot::deviceId).toList();
         List<String> missingConnections = new ArrayList<>();
-
-        for (String deviceId : runningDevices) {
-            ConnectionAdapter adapter = connectionByDevice.remove(deviceId);
+        // 按设备别名取共享连接；一个物理适配器不能冒充另一个设备的生命周期。
+        for (DeviceRuntimeSnapshot runtime : runtimes) {
+            String deviceId = runtime.deviceId();
+            ConnectionAdapter adapter = connectionManager.getConnection(deviceId);
             if (adapter != null) {
-                snapshots.add(buildSnapshot(adapter));
+                snapshots.add(buildSnapshot(deviceId, adapter, runtime));
             } else {
-                snapshots.add(buildMissingSnapshot(deviceId));
-                missingConnections.add(deviceId);
+                snapshots.add(buildMissingSnapshot(deviceId, runtime));
+                if (runtime.running()) missingConnections.add(deviceId);
             }
         }
 
-        for (ConnectionAdapter adapter : connectionByDevice.values()) {
-            snapshots.add(buildSnapshot(adapter));
-        }
-
-        int activeConnections = (int) snapshots.stream()
-                .filter(DeviceConnectionSnapshot::isConnected)
+        int activeConnections = (int) allConnections.stream()
+                .filter(ConnectionAdapter::isConnected)
                 .count();
 
         HealthCounter healthCounter = snapshots.stream()
@@ -69,15 +64,16 @@ public class DeviceMonitorService {
     /**
      * 创建并返回业务对象。
      */
-    private DeviceConnectionSnapshot buildSnapshot(ConnectionAdapter connection) {
+    private DeviceConnectionSnapshot buildSnapshot(String deviceId, ConnectionAdapter connection, DeviceRuntimeSnapshot runtime) {
         ConnectionMetrics metrics = connection.getMetrics();
         long idleTime = metrics != null ? metrics.getIdleTime() : 0;
         double successRate = metrics != null ? metrics.getSuccessRate() : 0.0;
 
         return DeviceConnectionSnapshot.builder()
-                .deviceId(connection.getDeviceId())
+                .deviceId(deviceId)
                 .status(connection.getStatus())
-                .connected(connection.isConnected())
+                .connected(runtime.connected())
+                .runtime(runtime)
                 .lastActivityTime(metrics != null ? metrics.getLastActivityTime() : 0L)
                 .idleTime(idleTime)
                 .bytesSent(metrics != null ? metrics.getBytesSent() : 0L)
@@ -91,12 +87,13 @@ public class DeviceMonitorService {
     /**
      * 创建并返回业务对象。
      */
-    private DeviceConnectionSnapshot buildMissingSnapshot(String deviceId) {
+    private DeviceConnectionSnapshot buildMissingSnapshot(String deviceId, DeviceRuntimeSnapshot runtime) {
         return DeviceConnectionSnapshot.builder()
                 .deviceId(deviceId)
-                .status(ConnectionStatus.CONNECTING)
-                .connected(false)
-                .expectedOnly(true)
+                .status(runtime.starting() ? ConnectionStatus.CONNECTING : ConnectionStatus.DISCONNECTED)
+                .connected(runtime.connected())
+                .expectedOnly(runtime.running() || runtime.starting())
+                .runtime(runtime)
                 .lastActivityTime(0L)
                 .idleTime(0L)
                 .bytesSent(0L)
@@ -119,12 +116,14 @@ public class DeviceMonitorService {
          * 执行当前业务逻辑。
          */
         private void accept(DeviceConnectionSnapshot snapshot) {
-            if (snapshot.isConnected() && snapshot.getErrors() == 0) {
+            DeviceRuntimeState.DeviceHealth health = snapshot.getRuntime().deviceHealth();
+            if (health == DeviceRuntimeState.DeviceHealth.ONLINE_HEALTHY) {
                 healthy++;
                 return;
             }
 
-            if (snapshot.getErrors() > 5 || (!snapshot.isConnected() && !snapshot.isExpectedOnly())) {
+            if (health == DeviceRuntimeState.DeviceHealth.DEGRADED
+                    || (snapshot.getRuntime().running() && health == DeviceRuntimeState.DeviceHealth.OFFLINE)) {
                 danger++;
                 return;
             }

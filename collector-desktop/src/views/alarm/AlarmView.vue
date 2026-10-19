@@ -3,7 +3,7 @@
     <div class="section-heading">
       <div class="heading-title-line">
         <h1>告警历史中心</h1>
-        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarms.length }} 条 · 已确认 {{ alarmSummaryDisplay.acknowledged }}</span>
+        <span class="heading-online"><i></i>{{ alarmScopeText }} · {{ alarmHistoryCountText }} · 已确认 {{ alarmSummaryDisplay.acknowledged }}</span>
       </div>
       <div class="heading-actions">
         <button type="button" :disabled="alarms.length === 0 || ackStatusLoading" @click="refreshAlarmAcknowledgements">确认状态批量查询</button>
@@ -11,28 +11,46 @@
       </div>
     </div>
 
+    <p class="alarm-page-note">分别查看告警级别与确认状态；确认记录不等同于告警恢复。</p>
+
     <div class="exact-page-body">
+
       <div class="exact-toolbar">
         <div class="exact-toolbar-group exact-toolbar-filters">
+          <label class="alarm-filter-field">
+            <span>设备范围</span>
           <select v-model="alarmDeviceId" @change="refreshAlarms">
             <option value="">全部设备最近告警</option>
             <option v-for="device in deviceStore.devices" :key="device.normalizedId" :value="device.normalizedId">
               {{ device.displayName || device.normalizedId }}
             </option>
           </select>
+          </label>
+          <label class="alarm-filter-field">
+            <span>告警级别</span>
           <select v-model="alarmLevelFilter" @change="refreshAlarms">
             <option value="">全部级别</option>
             <option value="CRITICAL">严重</option>
             <option value="WARNING">警告</option>
             <option value="INFO">提示</option>
           </select>
+          </label>
+          <label class="alarm-filter-field">
+            <span>时间范围</span>
           <select v-model.number="alarmHours" @change="refreshAlarms">
             <option :value="24">最近 24 小时</option>
             <option :value="72">最近 3 天</option>
             <option :value="168">最近 7 天</option>
           </select>
+          </label>
+          <label class="alarm-filter-field alarm-keyword-field">
+            <span>点位或规则</span>
           <input v-model="alarmKeyword" type="search" placeholder="点位编码或规则 ID" @keydown.enter="refreshAlarms" />
+          </label>
+          <label class="alarm-filter-field alarm-limit-field">
+            <span>返回上限</span>
           <input v-model.number="alarmLimit" type="number" min="10" max="500" step="10" />
+          </label>
           <button type="button" class="primary" :disabled="alarmQueryDisabled" @click="refreshAlarms">查询</button>
         </div>
       </div>
@@ -40,15 +58,11 @@
       <el-alert v-if="alarmReadStatusText" :title="alarmReadStatusText" :type="alarmReadStatusType" :closable="false" />
       <el-alert v-if="ackStatusWarning" :title="ackStatusWarning" type="warning" :closable="false" />
 
-      <div class="exact-diagnostic-cards alarm-summary-cards">
-        <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
-        <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
-        <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
-        <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
-        <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
-      </div>
-
+      <div class="alarm-workspace">
+      <div class="alarm-primary">
       <section class="exact-table-card alarm-ack-table">
+        <div class="alarm-records-head"><h2>告警历史记录</h2><span>级别 / 发生条件 / 处理记录</span></div>
+        <div v-if="alarms.length" class="alarm-table-scroll" tabindex="0" role="region" aria-label="告警历史记录，可横向和纵向滚动">
         <table>
           <thead>
             <tr>
@@ -64,9 +78,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="alarms.length === 0">
-              <td colspan="9" class="exact-empty">{{ alarmEmptyText }}</td>
-            </tr>
             <tr v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)">
               <td>{{ alarmLevelText(alarm.level || alarm.alarmType) }}</td>
               <td>{{ formatTime(alarm.timestamp || alarm.occurTime) }}</td>
@@ -92,7 +103,46 @@
             </tr>
           </tbody>
         </table>
+        </div>
+        <div v-else class="alarm-empty-state" role="status">{{ alarmEmptyText }}</div>
       </section>
+      <section class="alarm-context-panel alarm-trace-panel">
+        <div class="alarm-records-head"><h2>确认记录</h2><span>当前列表，不是操作历史</span></div>
+        <p class="alarm-context-note">确认状态查询与提交确认分开；确认不代表恢复。以下仅展示当前列表已有的确认记录。</p>
+        <div class="alarm-trace-list" tabindex="0" role="region" aria-label="当前列表的确认记录，可独立滚动">
+          <div v-for="alarm in alarms" :key="buildAlarmIdentity(alarm)" class="alarm-trace-row">
+            <strong :title="buildAlarmIdentity(alarm)">{{ alarm.deviceName || alarm.deviceId || '-' }} / {{ alarm.pointCode || alarm.pointId || '-' }}</strong>
+            <span class="status-badge" :class="alarmAckStatusClass(alarm)">{{ alarmAckStatusText(alarm) }}</span>
+            <p :title="alarmAckDetailText(alarm)">{{ alarmAckDetailText(alarm) }}</p>
+          </div>
+          <p v-if="alarms.length === 0" class="alarm-context-note">{{ alarmEmptyText }}；没有可展示的确认记录。</p>
+        </div>
+      </section>
+      </div>
+      <aside class="alarm-aside" aria-label="告警风险与读取上下文">
+        <section class="alarm-context-panel">
+          <div class="alarm-records-head"><h2>风险摘要</h2><span>不代表服务健康</span></div>
+          <div class="exact-diagnostic-cards alarm-summary-cards" aria-label="当前告警历史摘要">
+            <div class="exact-diagnostic-card"><span>告警总数</span><strong>{{ alarmSummaryDisplay.total }}</strong></div>
+            <div class="exact-diagnostic-card"><span>未确认</span><strong>{{ alarmSummaryDisplay.active }}</strong></div>
+            <div class="exact-diagnostic-card"><span>已确认</span><strong>{{ alarmSummaryDisplay.acknowledged }}</strong></div>
+            <div class="exact-diagnostic-card"><span>严重</span><strong>{{ alarmSummaryDisplay.critical }}</strong></div>
+            <div class="exact-diagnostic-card"><span>警告</span><strong>{{ alarmSummaryDisplay.warning }}</strong></div>
+          </div>
+        </section>
+        <section class="alarm-context-panel">
+          <div class="alarm-records-head"><h2>读取上下文</h2><span>历史 / 确认分开</span></div>
+          <dl class="alarm-context-list">
+            <div><dt>当前设备范围</dt><dd>{{ alarmScopeText }}</dd></div>
+            <div><dt>时间 / 上限</dt><dd>最近 {{ alarmHours }} 小时 / {{ alarmLimit }} 条</dd></div>
+            <div><dt>历史读取</dt><dd>{{ alarmReadStatusText || (alarmLastSuccessAt === null ? '尚无成功读取' : '已取得历史记录') }}</dd></div>
+            <div><dt>最后成功</dt><dd>{{ alarmLastSuccessAt === null ? '未知' : new Date(alarmLastSuccessAt).toLocaleString() }}</dd></div>
+            <div><dt>确认状态读取</dt><dd>{{ ackStatusLoading ? '查询中' : ackStatusUnavailable ? '读取不完整' : ackStatusInitialized ? '已查询' : '尚未查询' }}</dd></div>
+          </dl>
+          <p class="alarm-context-note">历史成功时间不证明确认状态查询成功；本页不提供独立确认查询成功时间。</p>
+        </section>
+      </aside>
+      </div>
 
       <div v-if="alarmAckDialogVisible" class="alarm-ack-backdrop" role="dialog" aria-modal="true" aria-labelledby="alarmAckTitle" @click.self="closeAlarmAcknowledgementDialog">
         <section class="alarm-ack-dialog">
@@ -189,10 +239,24 @@ const alarmQueryOwner = createLatestRequestOwner(isSameAlarmQueryContext);
 const alarmAckRefreshOwner = createLatestRequestOwner(isSameAlarmAcknowledgementRefreshContext);
 
 const alarmHistorySummary = computed(() => summarizeAlarmHistory(alarms.value));
-const alarmSummaryDisplay = computed(() => buildAlarmSummaryDisplay(alarmHistorySummary.value, {
-  ackStatusUnavailable: ackStatusUnavailable.value,
-  ackStatusInitialized: ackStatusInitialized.value
-}));
+const hasAlarmLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, currentAlarmQueryContext(), isSameAlarmQueryContext));
+const alarmSummaryDisplay = computed(() => {
+  const summary = buildAlarmSummaryDisplay(alarmHistorySummary.value, {
+    ackStatusUnavailable: ackStatusUnavailable.value,
+    ackStatusInitialized: ackStatusInitialized.value
+  });
+  if (hasAlarmLastGoodForCurrentContext.value) {
+    return summary;
+  }
+  return {
+    ...summary,
+    total: "—",
+    active: "—",
+    critical: "—",
+    warning: "—"
+  };
+});
+const alarmHistoryCountText = computed(() => alarmSummaryDisplay.value.total === "—" ? "数量未知" : `${alarmSummaryDisplay.value.total} 条`);
 const alarmScopeText = computed(() => alarmDeviceId.value ? `设备 ${deviceNameOf(alarmDeviceId.value)}` : "全部设备最近告警");
 const selectedAlarmAckId = computed(() => selectedAlarmForAck.value ? buildAlarmIdentity(selectedAlarmForAck.value) : "");
 const selectedAlarmAckTarget = computed(() => selectedAlarmForAck.value ? `${selectedAlarmForAck.value.deviceName || selectedAlarmForAck.value.deviceId || "-"} / ${selectedAlarmForAck.value.pointName || selectedAlarmForAck.value.pointCode || selectedAlarmForAck.value.pointId || "-"}` : "-");
@@ -202,7 +266,6 @@ const alarmQueryDisabled = computed(() => shouldDisableAlarmSubmit(
   pendingAlarmQueryContext.value,
   currentAlarmQueryContext()
 ));
-const hasAlarmLastGoodForCurrentContext = computed(() => hasLastGoodForContext(lastSuccessfulAlarmQueryContext.value, currentAlarmQueryContext(), isSameAlarmQueryContext));
 const alarmReadStatusText = computed(() => buildContextualReadStatus({
   loading: loading.value,
   error: error.value,
@@ -316,13 +379,16 @@ async function submitAlarmAcknowledgement() {
     return;
   }
   const alarmId = buildAlarmIdentity(alarm);
+  const targetQueryContext = currentAlarmQueryContext();
   acknowledgingAlarmId.value = alarmId;
   alarmAckRefreshOwner.invalidate();
   ackStatusLoading.value = false;
   try {
     const acknowledgement = await acknowledgeAlarm(alarmId, buildAlarmAckPayload(alarmAckNote.value, alarmId));
-    alarmAcknowledgements.value = { ...alarmAcknowledgements.value, [alarmId]: acknowledgement };
-    alarms.value = applyAlarmAcknowledgement(alarms.value, alarmId, acknowledgement);
+    if (isSameAlarmQueryContext(targetQueryContext, currentAlarmQueryContext())) {
+      alarmAcknowledgements.value = { ...alarmAcknowledgements.value, [alarmId]: acknowledgement };
+      alarms.value = applyAlarmAcknowledgement(alarms.value, alarmId, acknowledgement);
+    }
     closeAlarmAcknowledgementDialog();
     ElMessage.success("告警已确认");
   } catch (caught) {
@@ -514,6 +580,218 @@ function currentAlarmAcknowledgementRefreshContext() {
 </script>
 
 <style scoped>
+.exact-page.alarm-view {
+  display: block;
+  padding: 27px 30px 24px;
+  overflow: auto;
+  color: var(--console-text-primary);
+  font-size: 13px;
+  line-height: 1.55;
+  scrollbar-gutter: stable;
+}
+
+.alarm-view .section-heading {
+  min-height: 0;
+  padding: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 0;
+}
+
+.alarm-view .section-heading h1 {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.alarm-view .heading-title-line,
+.alarm-view .heading-actions { flex-wrap: wrap; }
+
+.alarm-view .heading-online {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.alarm-view .alarm-page-note {
+  margin: 6px 0 22px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.alarm-view .exact-page-body {
+  min-height: auto;
+  gap: 17px;
+  overflow: visible;
+}
+.alarm-view .exact-page-body > * { flex-shrink: 0; }
+
+.alarm-view .exact-toolbar {
+  padding: 17px 19px;
+  overflow: visible;
+  border-radius: 8px;
+}
+
+.alarm-view .exact-toolbar-filters {
+  width: 100%;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 15px;
+  overflow: visible;
+}
+
+.alarm-view .alarm-filter-field {
+  display: flex;
+  width: 170px;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.alarm-view .alarm-filter-field > span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+.alarm-view .alarm-keyword-field { width: 250px; }
+.alarm-view .alarm-limit-field { width: 105px; }
+.alarm-view .alarm-filter-field input,
+.alarm-view .alarm-filter-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+.alarm-view .alarm-summary-cards {
+  display: flex;
+  padding: 2px 0 4px;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+}
+
+.alarm-view .alarm-summary-cards .exact-diagnostic-card {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  align-items: baseline;
+  gap: 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.alarm-view .alarm-summary-cards span {
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
+.alarm-view .alarm-summary-cards strong {
+  color: var(--console-text-primary);
+  font-size: 22px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.alarm-view .alarm-summary-cards > div:nth-child(2) strong,
+.alarm-view .alarm-summary-cards > div:nth-child(5) strong { color: var(--console-warning); }
+.alarm-view .alarm-summary-cards > div:nth-child(3) strong { color: var(--console-success); }
+.alarm-view .alarm-summary-cards > div:nth-child(4) strong { color: var(--console-danger); }
+
+.alarm-view .alarm-ack-table {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.alarm-view .alarm-records-head {
+  display: flex;
+  min-height: 55px;
+  padding: 15px 19px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--console-border);
+}
+
+.alarm-view .alarm-records-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.alarm-view .alarm-records-head span {
+  color: var(--console-text-muted);
+  font-size: 11px;
+}
+
+.alarm-view .alarm-table-scroll {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 500px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.alarm-view .alarm-ack-table table {
+  width: 100%;
+  min-width: 1320px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.alarm-view .alarm-ack-table th,
+.alarm-view .alarm-ack-table td {
+  height: 53px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--console-border-soft);
+  font-size: 12px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.alarm-view .alarm-ack-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  height: 40px;
+  color: var(--console-text-muted);
+  background: var(--console-panel-soft);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.alarm-view .alarm-ack-table td:first-child { font-weight: 600; }
+.alarm-view .alarm-ack-table td:nth-child(5) {
+  min-width: 210px;
+  max-width: 340px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.alarm-view .alarm-ack-table td:nth-child(6) { font-variant-numeric: tabular-nums; }
+
+.alarm-view .alarm-ack-table th:last-child,
+.alarm-view .alarm-ack-table td:last-child {
+  position: sticky;
+  right: 0;
+  border-left: 1px solid var(--console-border);
+  background: var(--console-panel);
+}
+
+.alarm-view .alarm-ack-table th:last-child {
+  z-index: 2;
+  background: var(--console-panel-soft);
+}
+.alarm-view .alarm-ack-table tbody tr:hover td { background: var(--console-input-bg-hover); }
+.alarm-view .alarm-ack-table tbody tr:last-child td { border-bottom: 0; }
+
+/* 空态不在宽表中央，窄屏横滚起点仍可读到原来的状态说明。 */
+.alarm-view .alarm-ack-table td.exact-empty { display: none; }
+.alarm-view .alarm-empty-state {
+  padding: 40px 20px;
+  color: var(--console-text-muted);
+  text-align: center;
+}
+
 .alarm-view .alarm-ack-table td:nth-child(8) {
   min-width: 220px;
 }
@@ -546,17 +824,20 @@ function currentAlarmAcknowledgementRefreshContext() {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(2, 6, 23, 0.72);
-  backdrop-filter: blur(3px);
+  overflow: auto;
+  background: rgba(29, 48, 61, 0.46);
 }
 
 .alarm-view .alarm-ack-dialog {
   width: min(560px, 100%);
-  padding: 20px;
-  border: 1px solid rgba(59, 130, 246, 0.38);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(8, 14, 28, 0.98));
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
+  max-height: min(720px, calc(100dvh - 48px));
+  padding: 22px 24px;
+  overflow: auto;
+  border: 1px solid var(--console-border);
+  border-radius: 10px;
+  color: var(--console-text-primary);
+  background: var(--console-panel);
+  box-shadow: var(--console-overlay-shadow);
 }
 
 .alarm-view .alarm-ack-dialog-head {
@@ -564,35 +845,45 @@ function currentAlarmAcknowledgementRefreshContext() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--console-border);
 }
 
 .alarm-view .alarm-ack-dialog-head h2 {
   margin: 2px 0 0;
-  color: #f8fafc;
+  color: var(--console-text-primary);
   font-size: 20px;
 }
 
 .alarm-view .alarm-ack-target {
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid rgba(45, 74, 122, 0.45);
-  border-radius: 12px;
-  color: #dbeafe;
-  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  color: var(--console-text-secondary);
+  background: var(--console-panel-soft);
+  overflow-wrap: anywhere;
 }
 
 .alarm-view .alarm-ack-dialog label {
   display: block;
   margin-bottom: 8px;
-  color: #cbd5e1;
+  color: var(--console-text-muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .alarm-view .alarm-ack-dialog textarea {
   width: 100%;
   min-height: 130px;
+  max-height: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--console-input-border);
+  border-radius: 6px;
+  color: var(--console-text-primary);
+  background: var(--console-input-bg);
+  font: inherit;
   resize: vertical;
 }
 
@@ -609,12 +900,143 @@ function currentAlarmAcknowledgementRefreshContext() {
 
 .alarm-view .alarm-ack-idempotency code {
   display: block;
-  overflow: hidden;
   padding: 8px 10px;
-  border-radius: 10px;
-  color: #93c5fd;
-  background: rgba(2, 6, 23, 0.72);
+  border: 1px solid var(--console-code-border);
+  border-radius: 6px;
+  color: var(--console-code-text);
+  background: var(--console-code-bg);
+  font-family: var(--app-font-family);
+  overflow-wrap: anywhere;
+}
+
+.alarm-view .alarm-ack-dialog > .heading-actions {
+  padding-top: 14px;
+  border-top: 1px solid var(--console-border);
+}
+
+.alarm-view button:focus-visible,
+.alarm-view input:focus-visible,
+.alarm-view select:focus-visible,
+.alarm-view textarea:focus-visible,
+.alarm-view [tabindex="0"]:focus-visible {
+  outline: 2px solid var(--console-input-border-focus);
+  outline-offset: 2px;
+}
+
+.alarm-workspace {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 0.43fr);
+  align-items: start;
+  gap: 18px;
+}
+.alarm-primary,
+.alarm-aside {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 18px;
+}
+.alarm-context-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--console-border);
+  border-radius: 6px;
+  background: var(--console-panel);
+}
+.alarm-view .alarm-aside .alarm-summary-cards {
+  margin: 0;
+  padding: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  border: 0;
+}
+.alarm-context-list {
+  display: grid;
+  margin: 0;
+  padding: 0 18px;
+}
+.alarm-context-list > div {
+  display: grid;
+  padding: 13px 0;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--console-border);
+  font-size: 12px;
+}
+.alarm-context-list dt { color: var(--console-text-muted); }
+.alarm-context-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--console-text-primary);
+  overflow-wrap: anywhere;
+}
+.alarm-context-note {
+  margin: 0;
+  padding: 14px 18px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.alarm-trace-list {
+  max-height: 220px;
+  padding: 0 18px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.alarm-trace-row {
+  display: grid;
+  padding: 12px 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  border-top: 1px solid var(--console-border);
+  font-size: 12px;
+}
+.alarm-trace-row strong {
+  overflow: hidden;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.alarm-trace-row p {
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--console-text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1280px) {
+  .exact-page.alarm-view { padding: 24px; }
+}
+
+@media (max-width: 1000px) {
+  .alarm-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .exact-page.alarm-view { padding: 20px 14px; }
+  .alarm-view .section-heading h1 { font-size: 22px; }
+  .alarm-view .heading-title-line {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .alarm-view .heading-actions { justify-content: flex-start; }
+  .alarm-view .exact-toolbar { padding: 15px; }
+  .alarm-view .alarm-filter-field { width: 100%; }
+  .alarm-view .alarm-limit-field { width: 105px; }
+  .alarm-view .alarm-summary-cards { gap: 12px 20px; }
+  .alarm-view .alarm-records-head {
+    padding: 13px 15px;
+    flex-wrap: wrap;
+  }
+  .alarm-view .alarm-action-row { flex-direction: column; }
+  .alarm-view .alarm-table-scroll { max-height: 420px; }
+  .alarm-view .alarm-ack-backdrop { padding: 14px; }
+  .alarm-view .alarm-ack-dialog {
+    max-height: calc(100dvh - 28px);
+    padding: 16px;
+  }
 }
 </style>

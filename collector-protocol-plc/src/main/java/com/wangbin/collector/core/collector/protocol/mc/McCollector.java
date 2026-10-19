@@ -4,6 +4,7 @@ package com.wangbin.collector.core.collector.protocol.mc;
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
+import com.wangbin.collector.common.domain.enums.DataQuality;
 import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.base.ConnectionBackedCollector;
 import com.wangbin.collector.core.collector.protocol.mc.codec.Mc3eBinaryFrameCodec;
@@ -157,26 +158,35 @@ public class McCollector extends ConnectionBackedCollector {
      */
     @Override
     public Object readPoint(DataPoint point) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         try {
+            checkConnection();
+            validateReadPointOwnership(point);
             McAddress address = requireAddress(point);
             Object rawValue = doReadPoint(point);
             ProcessResult processResult = address.isScalar()
                     ? buildScalarProcessResult(point, address, rawValue)
                     : buildArrayReadProcessResult(point, address, rawValue, "array pass-through read");
-            lastProcessResults.put(point.getPointId(), processResult);
+            ProcessResult snapshot = completeReadProcessResult(point, processResult, rawValue, startTime);
+            addInvocationProcessResult(point.getPointId(), snapshot);
+            if (!processResult.isSuccess()) {
+                reportPointFailure(point, rawValue == null ? "NO_VALUE" : "QUALITY_BAD");
+            }
             totalReadCount.incrementAndGet();
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
             return processResult.getFinalValue();
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, point);
             throw new CollectorException("MC array point read failed", deviceInfo.getDeviceId(),
                     point != null ? point.getPointId() : null, e);
+        } finally {
+            finishInvocationProcessResults();
         }
     }
 
@@ -185,22 +195,38 @@ public class McCollector extends ConnectionBackedCollector {
      */
     @Override
     public Map<String, Object> readPoints(List<DataPoint> points) throws CollectorException {
-        checkConnection();
+        resetInvocationProcessResults();
 
         long startTime = System.currentTimeMillis();
         Map<String, Object> results = new LinkedHashMap<>();
+        Map<String, ProcessResult> invocationResults = new LinkedHashMap<>();
         try {
+            checkConnection();
             List<DataPoint> validPoints = points == null
                     ? Collections.emptyList()
                     : points.stream()
                     .filter(point -> point != null && point.isEnabled())
                     .collect(Collectors.toList());
-            if (validPoints.isEmpty()) {
-                return results;
+            List<DataPoint> readablePoints = new ArrayList<>();
+            for (DataPoint point : validPoints) {
+                try {
+                    validateReadPointOwnership(point);
+                    requireAddress(point);
+                    readablePoints.add(point);
+                } catch (Exception e) {
+                    recordException(e, point);
+                    reportPointFailure(point, "CONFIG_ERROR");
+                    if (point.getPointId() != null && deviceInfo.getDeviceId().equals(point.getDeviceId())) {
+                        ProcessResult failure = ProcessResult.error(null, "点位归属或地址配置无效",
+                                DataQuality.CONFIG_ERROR);
+                        invocationResults.put(point.getPointId(), completeReadProcessResult(point, failure, null, startTime));
+                        results.put(point.getPointId(), null);
+                    }
+                }
             }
 
-            Map<String, Object> rawValues = readPointsByPlan(validPoints);
-            for (DataPoint point : validPoints) {
+            Map<String, Object> rawValues = readPointsByPlan(readablePoints);
+            for (DataPoint point : readablePoints) {
                 String pointId = point.getPointId();
                 if (pointId == null) {
                     continue;
@@ -208,28 +234,18 @@ public class McCollector extends ConnectionBackedCollector {
                 try {
                     McAddress address = requireAddress(point);
                     Object rawValue = rawValues.get(pointId);
-                    if (rawValue == null) {
-                        results.put(pointId, null);
-                        continue;
-                    }
-                    if (address.isScalar()) {
-                        ProcessResult processResult = buildScalarProcessResult(point, address, rawValue);
-                        lastProcessResults.put(pointId, processResult);
-                        if (!processResult.isSuccess()) {
-                            log.warn("MC 数据质量检查失败 {}.{}, 原因:{}",
-                                    deviceInfo.getDeviceId(), point.getPointName(), processResult.getMessage());
-                        }
-                        results.put(pointId, processResult.getFinalValue());
-                    } else {
-                        ProcessResult processResult = buildArrayReadProcessResult(point, address, rawValue,
-                                "array pass-through batch read");
-                        lastProcessResults.put(pointId, processResult);
-                        results.put(pointId, processResult.getFinalValue());
-                    }
+                    ProcessResult processResult = rawValue instanceof ProcessResult failure ? failure : address.isScalar()
+                            ? buildScalarProcessResult(point, address, rawValue)
+                            : buildArrayReadProcessResult(point, address, rawValue, "array pass-through batch read");
+                    invocationResults.put(pointId, completeReadProcessResult(point, processResult,
+                            rawValue instanceof ProcessResult ? null : rawValue, startTime));
+                    results.put(pointId, processResult.getFinalValue());
                 } catch (Exception e) {
                     log.error("MC 批量 点位 处理失败, 设备={}, 点位={}",
                             deviceInfo.getDeviceId(), pointId, e);
                     recordException(e, point);
+                    ProcessResult failure = failedProtocolReadResult(e);
+                    invocationResults.put(pointId, completeReadProcessResult(point, failure, null, startTime));
                     results.put(pointId, null);
                 }
             }
@@ -237,12 +253,16 @@ public class McCollector extends ConnectionBackedCollector {
             totalReadCount.addAndGet(validPoints.size());
             totalReadTime.addAndGet(System.currentTimeMillis() - startTime);
             lastActivityTime = System.currentTimeMillis();
+            setInvocationProcessResults(invocationResults);
             return results;
         } catch (Exception e) {
+            clearInvocationProcessResults();
             totalErrorCount.incrementAndGet();
             lastError = e.getMessage();
             recordException(e, null);
             throw new CollectorException("MC batch point read failed", deviceInfo.getDeviceId(), null, e);
+        } finally {
+            finishInvocationProcessResults();
         }
     }
 
@@ -661,7 +681,7 @@ public class McCollector extends ConnectionBackedCollector {
                         deviceInfo.getDeviceId(), ex.getMessage());
                 for (DataPoint point : points) {
                     recordException(ex, point);
-                    results.put(point.getPointId(), null);
+                    results.put(point.getPointId(), failedProtocolReadResult(ex));
                 }
                 return;
             }
@@ -852,7 +872,7 @@ public class McCollector extends ConnectionBackedCollector {
                 for (DataPoint point : points) {
                     if (point != null && point.getPointId() != null) {
                         recordException(ex, point);
-                        results.put(point.getPointId(), null);
+                        results.put(point.getPointId(), failedProtocolReadResult(ex));
                     }
                 }
                 return;
@@ -991,7 +1011,8 @@ public class McCollector extends ConnectionBackedCollector {
             } catch (Exception singleEx) {
                 log.error("MC 降级 点位 读取 失败, 设备={}, 点位={}",
                         deviceInfo.getDeviceId(), point.getPointId(), singleEx);
-                results.put(point.getPointId(), null);
+                recordException(singleEx, point);
+                results.put(point.getPointId(), failedProtocolReadResult(singleEx));
             }
         }
         lastFallbackCount.addAndGet(fallbackCount);
@@ -1446,7 +1467,14 @@ public class McCollector extends ConnectionBackedCollector {
                                                       Object rawValue,
                                                       String message) {
         validateArrayPointConfiguration(point, address, "read");
-        return buildArrayProcessResult(point, address, rawValue, message);
+        ProcessResult result = rawValue == null
+                ? ProcessResult.error(null, "本轮数组读取没有返回值", DataQuality.BAD)
+                : processArrayQuality(point, rawValue, address.getArraySize());
+        result.addMetadata("arrayValue", true);
+        result.addMetadata("arraySize", address.getArraySize());
+        result.addMetadata("processingMode", "protocol_passthrough");
+        result.addMetadata(CommonMapKeys.ADDRESS, point.getAddress());
+        return result;
     }
 
     /**

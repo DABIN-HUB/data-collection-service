@@ -2,12 +2,11 @@
   <div class="login-page">
     <section class="login-card">
       <div class="login-form-panel">
-        <div class="login-brand">
-          <div class="login-logo">采</div>
-          <div>
-            <h1>数据采集工作台</h1>
-            <p>Collector Studio · v{{ appStore.appVersion }}</p>
-          </div>
+        <p class="login-connection-caption">连接采集服务</p>
+
+        <div class="login-heading">
+          <h1>进入工作台</h1>
+          <p>配置目标服务并验证访问能力。这里不是账号密码登录。</p>
         </div>
 
         <el-form label-position="top" class="login-form" @submit.prevent>
@@ -15,7 +14,8 @@
             <el-input v-model="serverUrl" placeholder="http://127.0.0.1:9090/collector" />
           </el-form-item>
           <el-form-item label="访问令牌">
-            <el-input v-model="token" type="password" show-password placeholder="请输入访问令牌" />
+            <el-input v-model="token" type="password" show-password placeholder="请输入访问令牌" aria-describedby="login-token-help" />
+            <p id="login-token-help" class="login-token-help">令牌用于服务认证；记住后按当前运行环境保存。</p>
           </el-form-item>
           <div class="login-options">
             <el-checkbox v-model="rememberToken">记住令牌</el-checkbox>
@@ -28,33 +28,38 @@
             type="warning"
             :closable="false"
           />
-          <el-alert class="desktop-mode-alert" type="info" :closable="false">
-            <template #title>
-              Electron 平台：{{ appStore.platform }}；后端由用户手动启动，桌面端不会自动拉起 Spring Boot jar。
-            </template>
-          </el-alert>
           <el-button class="login-submit" type="primary" size="large" :loading="testing" @click="enterWorkbench">
+            <svg class="login-submit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 12h16m-6-6 6 6-6 6" />
+            </svg>
             登录并进入工作台
           </el-button>
         </el-form>
 
-        <footer>
-          <span>Copyright © 2026 数据采集工作台</span>
+        <div class="login-connection-boundary" role="note" aria-label="连接操作边界">
+          <strong>测试连接会应用地址与凭据</strong>
+          <p>测试连接与登录均会应用当前地址和令牌；是否记住遵循本页选项。</p>
+          <p>接口访问结果与业务健康分开判断，连接成功不代表采集服务健康。</p>
+        </div>
+
+        <p class="desktop-mode-note">
+          当前运行平台：{{ appStore.platform }}。请先启动采集服务，工作台不会自动启动后端。
+        </p>
+        <footer class="login-footer">
+          <span>数据采集工作台 · v{{ appStore.appVersion }} · © 2026</span>
           <el-button type="primary" link @click="openDocs">打开使用文档</el-button>
         </footer>
       </div>
 
       <div class="login-illustration">
-        <div class="server-stack">
-          <div class="server-card large"></div>
-          <div class="server-card medium"></div>
-          <div class="server-card small"></div>
-          <span class="cube c1"></span>
-          <span class="cube c2"></span>
-          <span class="cube c3"></span>
+        <span class="login-reference-mark" aria-hidden="true">◇</span>
+        <h2>让每一次采集，都有可追溯的上下文。</h2>
+        <p>面向工业现场的连接、采集、告警与上报工作台。把设备身份、数据来源与操作风险放在同一张工作面上。</p>
+        <div class="login-signal">
+          <strong>精密控制台 / Precision Workbench</strong><br />
+          本地客户端就绪 ≠ 服务健康<br />
+          接口访问结果与业务健康分开表达
         </div>
-        <h2>工业协议采集客户端</h2>
-        <p>后端 Spring Boot 服务由你手动启动，桌面端只负责配置、控制、监控和展示。</p>
         <p v-if="appStore.configPath" class="desktop-config-path">本地配置：{{ appStore.configPath }}</p>
       </div>
     </section>
@@ -123,152 +128,293 @@ function openDocs() {
 <style scoped>
 .login-page {
   display: flex;
-  min-height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
   color: var(--console-text-secondary);
-  background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.2), transparent 32%), var(--console-bg);
+  background: var(--console-bg);
 }
 
 .login-card {
   display: grid;
-  width: min(960px, 100%);
-  overflow: hidden;
-  grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.85fr);
-  border: 1px solid var(--console-border-soft);
-  border-radius: var(--console-radius-panel);
+  width: 100%;
+  min-height: 100%;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   background: var(--console-panel);
-  box-shadow: var(--console-overlay-shadow);
 }
 
 .login-form-panel,
 .login-illustration {
-  padding: 32px;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .login-form-panel {
-  background: linear-gradient(180deg, rgba(37, 46, 63, 0.96), rgba(26, 35, 50, 0.96));
+  grid-column: 2;
+  grid-row: 1;
+  padding: 40px;
+  align-items: center;
+  justify-content: center;
+  background: #f4f7f8;
+}
+
+.login-form-panel > * {
+  width: 430px;
+  max-width: 100%;
 }
 
 .login-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
+  gap: 10px;
+  min-height: 44px;
 }
 
 .login-logo {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border: 1px solid rgba(59, 130, 246, 0.48);
-  border-radius: 14px;
-  color: var(--console-text-primary);
-  background: rgba(37, 99, 235, 0.32);
-  font-size: 20px;
-  font-weight: 700;
+  width: 29px;
+  height: 29px;
+  margin-inline: 1.5px;
+  flex: 0 0 auto;
+  color: #84c2c1;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.login-brand h1,
-.login-illustration h2 {
+.login-brand strong {
+  color: var(--console-text-primary);
+  font-size: 16px;
+  letter-spacing: -0.5px;
+}
+
+.login-brand p {
+  margin: 2px 0 0;
+  font-size: 11px;
+}
+
+.login-heading {
+  margin: 0 0 28px;
+}
+
+.login-heading h1 {
   margin: 0;
   color: var(--console-text-primary);
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.55px;
+}
+
+.login-heading p {
+  margin: 8px 0 0;
+  color: var(--console-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .login-brand p,
-.login-illustration p,
-footer {
+.login-footer {
   color: var(--console-text-muted);
 }
 
+.login-connection-caption {
+  margin: 0 0 10px;
+  color: var(--console-text-muted);
+  font-size: 12px;
+}
+
 .login-form {
-  display: grid;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.login-form :deep(.el-form-item) {
+  margin-bottom: 18px;
+}
+
+.login-form :deep(.el-form-item__label) {
+  height: auto;
+  margin-bottom: 7px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.login-form :deep(.el-input__wrapper) {
+  min-height: 41px;
+  padding: 0 11px;
+  border-radius: 5px;
+}
+
+.login-form :deep(.el-input__inner) {
+  height: 41px;
+  font-size: 12px;
+  line-height: 41px;
+}
+
+.login-token-help {
+  margin: 7px 0 0;
+  color: var(--console-text-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.login-form :deep(.el-alert) {
+  margin-top: 12px;
 }
 
 .login-options,
-footer {
+.login-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.login-options {
+  min-height: 29px;
+}
+
+.login-options :deep(.el-checkbox) {
+  height: 29px;
+}
+
+.login-options :deep(.el-checkbox__label),
+.login-options :deep(.el-button) {
+  font-size: 11px;
+}
+
+.login-connection-boundary {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-color-border);
+  color: var(--console-text-muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.login-connection-boundary strong {
+  color: var(--console-text-primary);
+  font-weight: 600;
+}
+
+.login-connection-boundary p {
+  margin: 7px 0 0;
+}
+
+.desktop-mode-note {
+  margin: 18px 0 0;
+  color: var(--console-text-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.login-footer {
+  margin-top: 8px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.login-footer :deep(.el-button) {
+  min-height: 20px;
+  padding: 0;
+  font-size: 10px;
 }
 
 .login-submit {
   width: 100%;
+  height: 42px;
+  margin-top: 22px;
+  font-size: 12px;
+}
+
+.login-submit-icon {
+  width: 18px;
+  height: 18px;
+  margin-right: 7px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .login-illustration {
-  border-left: 1px solid var(--console-border-soft);
-  background: linear-gradient(145deg, rgba(13, 27, 42, 0.9), rgba(16, 29, 49, 0.94));
-}
-
-.server-stack {
   position: relative;
-  height: 180px;
-  margin-bottom: 24px;
+  grid-column: 1;
+  grid-row: 1;
+  padding: 72px;
+  overflow: hidden;
+  justify-content: flex-start;
+  color: #d9e5e8;
+  background: var(--app-color-sidebar);
 }
 
-.server-card,
-.cube {
+.login-illustration h2 {
+  margin: 0;
+  max-width: 460px;
+  color: #f4fbfa;
+  font-size: 33px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.04em;
+}
+
+.login-reference-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 14px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #7ac4c1;
+  color: #9ee0d9;
+  font-weight: 700;
+  letter-spacing: -2px;
+}
+
+.login-illustration p {
+  max-width: 430px;
+  margin: 16px 0 0;
+  color: #a4b9be;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.login-signal {
+  margin-top: 82px;
+  padding-left: 16px;
+  border-left: 2px solid #6bc7c1;
+  color: #aac3c5;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.login-illustration::after {
   position: absolute;
-  display: block;
-  border: 1px solid rgba(82, 121, 166, 0.58);
-  border-radius: var(--console-radius-lg);
-  background: rgba(18, 38, 59, 0.86);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
-}
-
-.server-card.large {
-  inset: 18px 32px auto 8px;
-  height: 76px;
-}
-
-.server-card.medium {
-  right: 12px;
-  bottom: 44px;
-  width: 62%;
-  height: 58px;
-}
-
-.server-card.small {
-  bottom: 8px;
-  left: 34px;
-  width: 42%;
-  height: 42px;
-}
-
-.cube {
-  width: 18px;
-  height: 18px;
-  border-color: rgba(34, 211, 238, 0.52);
-  background: rgba(34, 211, 238, 0.18);
-}
-
-.cube.c1 {
-  top: 8px;
-  right: 36px;
-}
-
-.cube.c2 {
-  top: 102px;
-  left: 8px;
-}
-
-.cube.c3 {
-  right: 26px;
-  bottom: 12px;
+  right: -100px;
+  bottom: -100px;
+  width: 420px;
+  height: 420px;
+  border: 1px solid rgb(116 205 199 / 25%);
+  border-radius: 50%;
+  box-shadow: 0 0 0 35px rgb(116 205 199 / 6%), 0 0 0 70px rgb(116 205 199 / 4%);
+  content: '';
+  pointer-events: none;
 }
 
 .desktop-config-path {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 840px) {
+@media (width <= 900px) {
   .login-page {
-    padding: 20px;
+    padding: 0;
   }
 
   .login-card {
@@ -276,8 +422,13 @@ footer {
   }
 
   .login-illustration {
-    border-top: 1px solid var(--console-border-soft);
-    border-left: 0;
+    display: none;
+  }
+
+  .login-form-panel {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 32px 24px;
   }
 }
 </style>
