@@ -20,6 +20,8 @@ import com.wangbin.collector.core.collector.runtime.PointRuntimeStateSnapshot;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.Outcome;
 import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,9 +40,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -112,7 +118,7 @@ class ConfigConsoleApplicationServiceTest {
         LocalDeviceConfigRequest request = localRequest("handoff");
         request.setStartAfterSave(true);
         when(lifecycleCoordinator.getIntentRevision("handoff")).thenReturn(7L);
-        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false)))
+        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false), isNull()))
                 .thenReturn(new ConfigManager.DeviceConfigCommitResult("handoff", 10L, 11L, 1));
         when(lifecycleCoordinator.startDeviceAfterConfigSave("handoff", 7L))
                 .thenReturn(new DeviceLifecycleCoordinator.StartAfterConfigSaveResult(true, "RESTART_PENDING"));
@@ -135,7 +141,7 @@ class ConfigConsoleApplicationServiceTest {
         LocalDeviceConfigRequest request = localRequest("stop-save");
         request.setStartAfterSave(true);
         when(lifecycleCoordinator.getIntentRevision("stop-save")).thenReturn(8L);
-        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false)))
+        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false), isNull()))
                 .thenReturn(new ConfigManager.DeviceConfigCommitResult("stop-save", 10L, 11L, 1));
         when(lifecycleCoordinator.startDeviceAfterConfigSave("stop-save", 8L))
                 .thenReturn(new DeviceLifecycleCoordinator.StartAfterConfigSaveResult(false, "STOP_SUPERSEDED"));
@@ -157,7 +163,7 @@ class ConfigConsoleApplicationServiceTest {
                 request.getDevice(),
                 request.getConnection(),
                 request.getPoints(),
-                false)).thenReturn(new ConfigManager.DeviceConfigCommitResult("local-create", 0L, 1L, 1));
+                false, null)).thenReturn(new ConfigManager.DeviceConfigCommitResult("local-create", 0L, 1L, 1));
         when(lifecycleCoordinator.startDeviceAfterConfigSave("local-create", 0L))
                 .thenReturn(new DeviceLifecycleCoordinator.StartAfterConfigSaveResult(true, "ACCEPTED"));
 
@@ -170,20 +176,29 @@ class ConfigConsoleApplicationServiceTest {
         assertEquals(Boolean.TRUE, result.getData().getTemporaryConfig());
         assertEquals(Boolean.TRUE, result.getData().getStarted());
         assertEquals(1, result.getData().getPointCount());
+        assertEquals(Boolean.TRUE, result.getData().getSaved());
+        assertEquals(Boolean.TRUE, result.getData().getChanged());
+        assertEquals(1L, result.getData().getConfigVersion());
+        verify(configManager).saveLocalDeviceConfigWithResult(
+                request.getDevice(), request.getConnection(), request.getPoints(), false, null);
         verify(lifecycleCoordinator).startDeviceAfterConfigSave("local-create", 0L);
     }
 
     @Test
     void createLocalDeviceShouldRejectDuplicateWithoutOverwrite() {
         LocalDeviceConfigRequest request = localRequest("local-dup");
-        when(configManager.saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false)))
+        request.setStartAfterSave(true);
+        when(configManager.saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false), isNull()))
                 .thenThrow(new IllegalArgumentException("local temporary device already exists: local-dup"));
 
         ConfigApiException exception = assertThrows(ConfigApiException.class,
                 () -> service.createLocalDevice(request));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getHttpStatus());
-        assertEquals("local temporary device already exists: local-dup", exception.getMessage());
+        assertEquals("本地配置操作失败，请检查设备、连接和点位配置", exception.getMessage());
+        verify(configManager).saveLocalDeviceConfigWithResult(
+                request.getDevice(), request.getConnection(), request.getPoints(), false, null);
+        verify(lifecycleCoordinator, never()).startDeviceAfterConfigSave(eq("local-dup"), anyLong());
         verify(collectionService, never()).startLocalDevice("local-dup");
     }
 
@@ -195,7 +210,7 @@ class ConfigConsoleApplicationServiceTest {
                 request.getDevice(),
                 request.getConnection(),
                 request.getPoints(),
-                true)).thenReturn(new ConfigManager.DeviceConfigCommitResult("local-overwrite", 0L, 1L, 1));
+                true, null)).thenReturn(new ConfigManager.DeviceConfigCommitResult("local-overwrite", 0L, 1L, 1));
 
         ApiResult<LocalDeviceConfigResponse> result = service.createLocalDevice(request);
 
@@ -204,27 +219,29 @@ class ConfigConsoleApplicationServiceTest {
                 request.getDevice(),
                 request.getConnection(),
                 request.getPoints(),
-                true);
+                true, null);
     }
 
     @Test
     void updateLocalDeviceShouldUseMatchingPathDeviceIdAndOverwrite() {
         LocalDeviceConfigRequest request = localRequest("path-id");
+        request.setBaseVersion(73L);
         when(configManager.saveLocalDeviceConfigWithResult(
                 request.getDevice(),
                 request.getConnection(),
                 request.getPoints(),
-                true)).thenReturn(new ConfigManager.DeviceConfigCommitResult("path-id", 0L, 1L, 1));
+                true, 73L)).thenReturn(new ConfigManager.DeviceConfigCommitResult("path-id", 73L, 74L, 1));
 
         ApiResult<LocalDeviceConfigResponse> result = service.updateLocalDevice("path-id", request);
 
         assertEquals("path-id", request.getDevice().getDeviceId());
         assertEquals("path-id", result.getData().getDeviceId());
+        assertEquals(74L, result.getData().getConfigVersion());
         verify(configManager).saveLocalDeviceConfigWithResult(
                 request.getDevice(),
                 request.getConnection(),
                 request.getPoints(),
-                true);
+                true, 73L);
     }
 
     @Test
@@ -232,14 +249,14 @@ class ConfigConsoleApplicationServiceTest {
         LocalDeviceConfigRequest request = localRequest("body-id");
         assertThrows(ConfigApiException.class, () -> service.updateLocalDevice("path-id", request));
         assertEquals("body-id", request.getDevice().getDeviceId());
-        verify(configManager, never()).saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(true));
+        verify(configManager, never()).saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(true), any());
     }
 
     @Test
     void startFailureAfterSaveShouldRemainSuccessfulSave() {
         LocalDeviceConfigRequest request = localRequest("start-failure");
         request.setStartAfterSave(true);
-        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false)))
+        when(configManager.saveLocalDeviceConfigWithResult(any(), any(), anyList(), eq(false), isNull()))
                 .thenReturn(new ConfigManager.DeviceConfigCommitResult("start-failure", 0L, 1L, 1));
         when(lifecycleCoordinator.startDeviceAfterConfigSave("start-failure", 0L)).thenThrow(new IllegalStateException("连接失败"));
         LocalDeviceConfigResponse response = service.createLocalDevice(request).getData();
@@ -247,6 +264,9 @@ class ConfigConsoleApplicationServiceTest {
         assertEquals(Boolean.TRUE, response.getStartRequested());
         assertEquals(Boolean.FALSE, response.getStarted());
         assertEquals("FAILED", response.getStartStatus());
+        assertEquals(1L, response.getConfigVersion());
+        assertEquals(1, response.getPointCount());
+        assertEquals("启动失败，请检查设备运行状态和服务日志", response.getStartError());
         verify(lifecycleCoordinator).startDeviceAfterConfigSave("start-failure", 0L);
     }
 
@@ -288,7 +308,10 @@ class ConfigConsoleApplicationServiceTest {
                 () -> service.deleteLocalDevice("local-running"));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getHttpStatus());
-        assertEquals("设备正在运行且停止失败，未删除: local-running", exception.getMessage());
+        assertEquals("本地配置操作失败，请检查设备、连接和点位配置", exception.getMessage());
+        verify(configManager).isLocalTemporaryDevice("local-running");
+        verify(collectionService).isDeviceRunning("local-running");
+        verify(collectionService).stopDevice("local-running");
         verify(configManager, never()).deleteLocalDeviceConfig("local-running");
     }
 
@@ -300,7 +323,9 @@ class ConfigConsoleApplicationServiceTest {
                 () -> service.deleteLocalDevice("remote-delete"));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getHttpStatus());
-        assertEquals("只能删除本地临时设备配置: remote-delete", exception.getMessage());
+        assertEquals("本地配置操作失败，请检查设备、连接和点位配置", exception.getMessage());
+        verify(configManager).isLocalTemporaryDevice("remote-delete");
+        verify(collectionService, never()).isDeviceRunning("remote-delete");
         verify(collectionService, never()).stopDevice("remote-delete");
         verify(configManager, never()).deleteLocalDeviceConfig("remote-delete");
     }
@@ -462,9 +487,7 @@ class ConfigConsoleApplicationServiceTest {
     }
 
     @Test
-    void importConfigsShouldRestoreMaskedConnectionValues() {
-        DeviceConnection existing = connection("import-mask", "127.0.0.1");
-        existing.setPassword("placeholder-value");
+    void importConfigsShouldDeferMaskedConnectionRestorationToManager() {
         DeviceConnection incoming = connection("import-mask", "127.0.0.1");
         incoming.setPassword(SensitiveConfigSanitizer.MASKED_VALUE);
         ConfigBundle bundle = ConfigBundle.builder()
@@ -472,14 +495,23 @@ class ConfigConsoleApplicationServiceTest {
                 .connection(incoming)
                 .points(List.of(point("import-mask", "temperature", "40001")))
                 .build();
-        when(configManager.getConnectionConfig("import-mask")).thenReturn(existing);
+
         when(configManager.replaceDeviceContextsAtomically(anyList())).thenReturn(true);
         ArgumentCaptor<List<DeviceContext>> captor = ArgumentCaptor.forClass(List.class);
 
-        service.importConfigs(importRequest(List.of(bundle)));
+        ApiResult<ConfigImportResult> result = service.importConfigs(importRequest(List.of(bundle)));
 
         verify(configManager).replaceDeviceContextsAtomically(captor.capture());
-        assertEquals("placeholder-value", captor.getValue().get(0).getConnectionConfig().getPassword());
+        assertEquals("success", result.getStatus());
+        assertEquals(1, result.getData().getSuccess());
+        assertEquals(SensitiveConfigSanitizer.MASKED_VALUE,
+                captor.getValue().get(0).getConnectionConfig().getPassword());
+        assertEquals(SensitiveConfigSanitizer.MASKED_VALUE, incoming.getPassword());
+        assertFalse(incoming == captor.getValue().get(0).getConnectionConfig());
+        assertEquals("import-mask", captor.getValue().get(0).getDeviceId());
+        assertEquals("temperature", captor.getValue().get(0).getDataPoints().get(0).getPointCode());
+        verify(configManager, never()).getConnectionConfig("import-mask");
+        verify(collectionService, never()).reloadAllDevices();
     }
 
     @Test
@@ -562,6 +594,92 @@ class ConfigConsoleApplicationServiceTest {
         DataPoint projected = response.getPoints().get(0);
         assertEquals(1, projected.getAlarmRule().size());
         assertEquals("r1", projected.getAlarmRule().get(0).getRuleId());
+    }
+
+    @Test
+    void localSaveShouldPropagateCommittedFailureWithoutStartingOrPretendingRollback() {
+        for (Outcome outcome : List.of(Outcome.COMMITTED_RECONCILED,
+                Outcome.COMMITTED_RECOVERY_REQUIRED, Outcome.COMMITTED_APPLY_FAILED)) {
+            String deviceId = "save-" + outcome.name();
+            LocalDeviceConfigRequest request = localRequest(deviceId);
+            request.setStartAfterSave(true);
+            request.setBaseVersion(91L);
+            WangbinConfigurationPersistenceException failure =
+                    new WangbinConfigurationPersistenceException(outcome, List.of(deviceId));
+            when(configManager.saveLocalDeviceConfigWithResult(
+                    request.getDevice(), request.getConnection(), request.getPoints(), false, 91L))
+                    .thenThrow(failure);
+
+            WangbinConfigurationPersistenceException actual = assertThrows(
+                    WangbinConfigurationPersistenceException.class, () -> service.createLocalDevice(request));
+
+            assertSame(failure, actual);
+            assertEquals(outcome, actual.getOutcome());
+            assertTrue(actual.isCommitted());
+            assertEquals(outcome == Outcome.COMMITTED_RECONCILED, actual.isReconciled());
+            assertEquals(List.of(deviceId), actual.getDeviceIds());
+            verify(configManager).saveLocalDeviceConfigWithResult(
+                    request.getDevice(), request.getConnection(), request.getPoints(), false, 91L);
+            verify(lifecycleCoordinator, never()).startDeviceAfterConfigSave(eq(deviceId), anyLong());
+            verify(collectionService, never()).startLocalDevice(deviceId);
+            verify(collectionService, never()).getDeviceRuntimeSnapshot(deviceId);
+        }
+    }
+
+    @Test
+    void localDeleteShouldPropagateCommittedFailureWithoutPretendingRollback() {
+        for (Outcome outcome : List.of(Outcome.COMMITTED_RECONCILED,
+                Outcome.COMMITTED_RECOVERY_REQUIRED, Outcome.COMMITTED_APPLY_FAILED)) {
+            String deviceId = "delete-" + outcome.name();
+            when(configManager.isLocalTemporaryDevice(deviceId)).thenReturn(true);
+            when(collectionService.isDeviceRunning(deviceId)).thenReturn(true);
+            when(collectionService.stopDevice(deviceId)).thenReturn(true);
+            WangbinConfigurationPersistenceException failure =
+                    new WangbinConfigurationPersistenceException(outcome, List.of(deviceId));
+            when(configManager.deleteLocalDeviceConfig(deviceId)).thenThrow(failure);
+
+            WangbinConfigurationPersistenceException actual = assertThrows(
+                    WangbinConfigurationPersistenceException.class, () -> service.deleteLocalDevice(deviceId));
+
+            assertSame(failure, actual);
+            assertEquals(outcome, actual.getOutcome());
+            assertTrue(actual.isCommitted());
+            assertEquals(outcome == Outcome.COMMITTED_RECONCILED, actual.isReconciled());
+            assertEquals(List.of(deviceId), actual.getDeviceIds());
+            verify(collectionService).stopDevice(deviceId);
+            verify(configManager).deleteLocalDeviceConfig(deviceId);
+            verify(collectionService, never()).startLocalDevice(deviceId);
+            verify(lifecycleCoordinator, never()).startDeviceAfterConfigSave(eq(deviceId), anyLong());
+        }
+    }
+
+    @Test
+    void importShouldPropagateCommittedBatchFailureWithoutReportingUnchangedConfiguration() {
+        for (Outcome outcome : List.of(Outcome.COMMITTED_RECONCILED,
+                Outcome.COMMITTED_RECOVERY_REQUIRED, Outcome.COMMITTED_APPLY_FAILED)) {
+            String firstId = "import-first-" + outcome.name();
+            String secondId = "import-second-" + outcome.name();
+            ConfigImportRequest request = importRequest(List.of(bundle(firstId), bundle(secondId)));
+            request.setReloadAfterImport(true);
+            WangbinConfigurationPersistenceException failure =
+                    new WangbinConfigurationPersistenceException(outcome, List.of(firstId, secondId));
+            doThrow(failure).when(configManager).replaceDeviceContextsAtomically(anyList());
+
+            WangbinConfigurationPersistenceException actual = assertThrows(
+                    WangbinConfigurationPersistenceException.class, () -> service.importConfigs(request));
+
+            assertSame(failure, actual);
+            assertEquals(outcome, actual.getOutcome());
+            assertTrue(actual.isCommitted());
+            assertEquals(outcome == Outcome.COMMITTED_RECONCILED, actual.isReconciled());
+            assertEquals(List.of(firstId, secondId), actual.getDeviceIds());
+        }
+        ArgumentCaptor<List<DeviceContext>> captor = ArgumentCaptor.forClass(List.class);
+        verify(configManager, times(3)).replaceDeviceContextsAtomically(captor.capture());
+        for (List<DeviceContext> submitted : captor.getAllValues()) {
+            assertEquals(2, submitted.size());
+        }
+        verify(collectionService, never()).reloadAllDevices();
     }
 
     private void stubDiffInputs(String deviceId,

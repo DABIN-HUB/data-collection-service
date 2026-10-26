@@ -6,6 +6,7 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
 import com.wangbin.collector.core.config.validator.ProtocolPointValidator;
 import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
@@ -218,15 +219,34 @@ class ConfigManagerLocalDeviceTest {
         doThrow(new IllegalStateException("listener failed")).when(eventPublisher).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
         DeviceInfo replacement = device("event-failure");
         replacement.setDeviceName("committed");
-        assertTrue(configManager.updateDeviceConfig(replacement));
+        // 发布失败发生在配置提交后，必须暴露失败而不是回滚配置或返回成功。
+        WangbinConfigurationPersistenceException legacyFailure = assertThrows(
+                WangbinConfigurationPersistenceException.class, () -> configManager.updateDeviceConfig(replacement));
+        assertEquals(WangbinConfigurationPersistenceException.Outcome.COMMITTED_APPLY_FAILED, legacyFailure.getOutcome());
+        assertTrue(legacyFailure.isCommitted());
+        assertFalse(legacyFailure.isReconciled());
+        assertEquals(List.of("event-failure"), legacyFailure.getDeviceIds());
         assertEquals("committed", configManager.getDevice("event-failure").getDeviceName());
         long nextVersion = configManager.getDeviceConfigVersion("event-failure");
         assertTrue(nextVersion > version);
         DeviceInfo bundleDevice = device("event-failure");
         bundleDevice.setDeviceName("bundle committed");
-        configManager.replaceDeviceContextAtomically("event-failure", bundleDevice, null, List.of(), nextVersion);
+        WangbinConfigurationPersistenceException bundleFailure = assertThrows(
+                WangbinConfigurationPersistenceException.class, () -> configManager.replaceDeviceContextAtomically(
+                        "event-failure", bundleDevice, null, List.of(), nextVersion));
+        assertEquals(WangbinConfigurationPersistenceException.Outcome.COMMITTED_APPLY_FAILED, bundleFailure.getOutcome());
+        assertTrue(bundleFailure.isCommitted());
+        assertFalse(bundleFailure.isReconciled());
+        assertEquals(List.of("event-failure"), bundleFailure.getDeviceIds());
         assertEquals("bundle committed", configManager.getDevice("event-failure").getDeviceName());
-        assertTrue(configManager.getDeviceConfigVersion("event-failure") > nextVersion);
+        long committedVersion = configManager.getDeviceConfigVersion("event-failure");
+        assertTrue(committedVersion > nextVersion);
+        // 已提交失败不能让旧草稿绕过 CAS，也不能隐式重复发布或推进版本。
+        assertThrows(ConfigVersionConflictException.class, () -> configManager.replaceDeviceContextAtomically(
+                "event-failure", bundleDevice, null, List.of(), nextVersion));
+        assertEquals("bundle committed", configManager.getDeviceContext("event-failure").getDeviceInfo().getDeviceName());
+        assertEquals(committedVersion, configManager.getDeviceConfigVersion("event-failure"));
+        verify(eventPublisher, times(3)).publishEvent(org.mockito.ArgumentMatchers.any(ConfigUpdateEvent.class));
     }
 
     @Test

@@ -118,6 +118,8 @@ export interface ConfigBundle {
 }
 
 export interface LocalDeviceConfigRequest {
+  /** 编辑时携带 JVM configVersion；新建设备可省略，不使用 SQLite revision。 */
+  baseVersion?: number;
   device: Partial<DeviceInfo> & Record<string, unknown>;
   connection: Partial<DeviceConnection> & Record<string, unknown>;
   points: DataPoint[];

@@ -364,7 +364,12 @@ public final class ConfigurationJsonCodec {
         }
         if (value.isTextual()) return value.textValue();
         if (value.isBoolean()) return value.booleanValue();
-        if (value.isIntegralNumber()) return value.bigIntegerValue();
+        if (value.isIntegralNumber()) {
+            // 恢复常规整数的运行期类型；超出范围仍保留大整数，不能截断协议扩展值。
+            if (value.canConvertToInt()) return value.intValue();
+            if (value.canConvertToLong()) return value.longValue();
+            return value.bigIntegerValue();
+        }
         if (value.isFloatingPointNumber()) return value.decimalValue();
         throw invalid("配置值类型不合法");
     }
