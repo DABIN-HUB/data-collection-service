@@ -33,4 +33,12 @@ public class LocalDeviceConfigRequest {
     private List<DataPoint> points = new ArrayList<>();
     private boolean overwrite;
     private boolean startAfterSave;
+    /** 编辑时的 JVM 配置版本；省略时保留旧调用方覆盖语义。 */
+    private Long baseVersion;
+
+    /** 兼容历史五参数构造方式。 */
+    public LocalDeviceConfigRequest(DeviceInfo device, DeviceConnection connection, List<DataPoint> points,
+                                    boolean overwrite, boolean startAfterSave) {
+        this(device, connection, points, overwrite, startAfterSave, null);
+    }
 }

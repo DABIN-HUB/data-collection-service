@@ -1,7 +1,7 @@
 package com.wangbin.collector.core.config.manager;
 
 
-import com.alibaba.fastjson2.JSON;
+
 import com.wangbin.collector.common.constant.CommonMapKeys;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
@@ -10,7 +10,15 @@ import com.wangbin.collector.core.collector.scheduler.AdaptiveCollectionUtil;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
 import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.persistence.StoredDeviceConfiguration;
+import com.wangbin.collector.core.config.persistence.ConfigurationConflictException;
+import com.wangbin.collector.core.config.persistence.DeviceConfiguration;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.Outcome;
+import java.util.function.Supplier;
+import com.wangbin.collector.core.config.persistence.WangbinLocalConfigurationPersistence;
 import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
+import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
 import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.config.validator.ProtocolPointValidator;
 import com.wangbin.collector.core.report.validator.FieldUniquenessValidator;
@@ -81,6 +89,285 @@ public class ConfigManager {
     private final ProtocolConnectionValidator protocolConnectionValidator;
     private final List<ProtocolPointValidator> pointValidators;
     private final LocalDeviceConfigStore localDeviceConfigStore;
+    private final WangbinLocalConfigurationPersistence localConfigurationPersistence;
+    /** 持久化修订仅由现有读写锁保护，不与JVM配置版本或远端版本共用。 */
+    private final Map<String, Long> localConfigurationRevisions = new HashMap<>();
+
+    /** 对账失败时只封闭目标设备，缓存清理不能解除该保护。 */
+    private final Set<String> localRecoveryRequired = new HashSet<>();
+    private final SensitiveConfigSanitizer sensitiveConfigSanitizer = new SensitiveConfigSanitizer();
+
+    public boolean isSqlitePersistenceEnabled() {
+        return localConfigurationPersistence != null;
+    }
+
+    private void requireConfigurationReadable(String deviceId) {
+        if (localRecoveryRequired.contains(deviceId)) {
+            throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
+        }
+    }
+
+    /** 调用者持有写锁；缓存清除不改变权威来源，也不提前安装候选或修订。 */
+    private DeviceContext localCurrentContext(String deviceId) {
+        requireConfigurationReadable(deviceId);
+        DeviceContext current = deviceContextCache.get(deviceId);
+        if (current != null) return current;
+        return localConfigurationPersistence.findDevice(deviceId)
+                .map(item -> localConfigurationPersistence.toRuntime(item.configuration())).orElse(null);
+    }
+
+    private DeviceContext prepareLocalCandidate(DeviceContext input) {
+        if (input == null || input.getDeviceInfo() == null || !StringUtils.hasText(input.getDeviceId())) {
+            throw new IllegalArgumentException("设备及设备ID不能为空");
+        }
+        String id = input.getDeviceId();
+        requireConfigurationReadable(id);
+        DeviceContext previous = localCurrentContext(id);
+        if (!isLocalTemporaryDeviceInfo(input.getDeviceInfo())
+                || previous != null && !isLocalTemporaryDeviceInfo(previous.getDeviceInfo())) {
+            throw new IllegalArgumentException("SQLite用户写入仅支持本地临时设备: " + id);
+        }
+        input = DeviceContext.of(input.getDeviceInfo(), input.getConnectionConfig(), input.getDataPoints());
+        restoreMaskedConfiguration(input, previous);
+        validateConfigSource(previous == null ? null : previous.getDeviceInfo(), input.getDeviceInfo());
+        Map<String, List<DataPoint>> points = new HashMap<>();
+        validateImportContext(input, new HashSet<>(), points);
+        validateProtocolPoints(input.getDeviceInfo(), points.get(id));
+        DeviceConnection connection = input.copyConnectionConfig();
+        if (connection != null) connection.setDeviceId(id);
+        DeviceContext candidate = DeviceContext.of(input.getDeviceInfo(), connection, points.get(id));
+        validateLocalRecoverability(candidate);
+        return candidate;
+    }
+
+    /** 所有写入口在锁内恢复掩码，禁止旧页面锁外读取秘密后覆盖并发赢家。 */
+    private void restoreMaskedConfiguration(DeviceContext incoming, DeviceContext existing) {
+        sensitiveConfigSanitizer.restoreMaskedValues(incoming.getDeviceInfo(), existing == null ? null : existing.getDeviceInfo());
+        sensitiveConfigSanitizer.restoreMaskedValues(incoming.getConnectionConfig(), existing == null ? null : existing.getConnectionConfig());
+    }
+
+    /** 编码与恢复必须对称；无效配置在任何数据库写入之前拒绝。 */
+    private void validateLocalRecoverability(DeviceContext candidate) {
+        if (!isSqlitePersistenceEnabled()) return;
+        try {
+            localConfigurationPersistence.toRuntime(localConfigurationPersistence.fromRuntime(candidate));
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("配置无法无损恢复，请检查 device/connection/points 字段结构");
+        }
+    }
+
+    private void requireBaseVersion(String id, Long expectedVersion) {
+        if (expectedVersion == null) return;
+        long current = deviceConfigVersions.getOrDefault(id, 0L);
+        if (current != expectedVersion) throw new ConfigVersionConflictException(id, expectedVersion, current);
+    }
+
+    /** 候选构造、来源校验和事务提交都在原写锁内；事件始终在解锁后发布。 */
+    private Map<String, DeviceConfigCommitResult> commitLocalAggregates(
+            Supplier<Map<String, DeviceContext>> candidateFactory, ConfigUpdateType type, String source) {
+        List<ConfigUpdateEvent> events = new ArrayList<>();
+        RuntimeException operationFailure = null;
+        lock.writeLock().lock();
+        try {
+            Map<String, DeviceContext> requested = candidateFactory.get();
+            Map<String, DeviceContext> previous = new LinkedHashMap<>();
+            Map<String, DeviceContext> changes = new LinkedHashMap<>();
+            Map<String, Long> versions = new HashMap<>();
+            Map<String, DeviceConfiguration> encoded = new LinkedHashMap<>();
+            Map<String, Long> expectedRevisions = new HashMap<>();
+            Map<String, DeviceConfigCommitResult> results = new LinkedHashMap<>();
+            for (var entry : requested.entrySet()) {
+                String id = entry.getKey();
+                requireConfigurationReadable(id);
+                DeviceContext before = localCurrentContext(id);
+                if (before != null && !isLocalTemporaryDeviceInfo(before.getDeviceInfo())) {
+                    throw new IllegalArgumentException("SQLite用户写入不支持远端设备: " + id);
+                }
+                DeviceContext candidate = entry.getValue() == null ? null : prepareLocalCandidate(entry.getValue());
+                long version = deviceConfigVersions.getOrDefault(id, 0L);
+                previous.put(id, before);
+                versions.put(id, version);
+                results.put(id, new DeviceConfigCommitResult(id, version, version,
+                        candidate == null ? 0 : candidate.getDataPoints().size()));
+                if (sameDeviceConfiguration(before, candidate)) continue;
+                changes.put(id, candidate);
+                if (candidate != null) encoded.put(id, localConfigurationPersistence.fromRuntime(candidate));
+                expectedRevisions.put(id, localConfigurationRevisions.getOrDefault(id, 0L));
+            }
+            if (changes.isEmpty()) return results;
+            List<String> ids = List.copyOf(changes.keySet());
+            Map<String, Long> committedRevisions;
+            try {
+                committedRevisions = localConfigurationPersistence.transaction(writer -> {
+                    // 全库身份包含已清缓存设备，禁止同批普通编辑暗中转移既有pointId。
+                    Map<String, String> owners = new HashMap<>();
+                    for (StoredDeviceConfiguration stored : writer.listDevices()) {
+                        for (var point : stored.configuration().points()) owners.put(point.pointId(), stored.configuration().deviceId());
+                    }
+                    for (DeviceContext context : deviceContextCache.values()) {
+                        if (!isLocalTemporaryDeviceInfo(context.getDeviceInfo())) {
+                            for (DataPoint point : context.getDataPoints()) {
+                                if (StringUtils.hasText(point.getPointId())) owners.putIfAbsent(point.getPointId(), context.getDeviceId());
+                            }
+                        }
+                    }
+                    for (DeviceConfiguration config : encoded.values()) {
+                        for (var point : config.points()) {
+                            String owner = owners.putIfAbsent(point.pointId(), config.deviceId());
+                            if (owner != null && !owner.equals(config.deviceId())) {
+                                throw new IllegalArgumentException("点位身份已属于其他设备，禁止转移pointId");
+                            }
+                        }
+                    }
+                    Map<String, Long> revisions = new HashMap<>();
+                    for (var entry : changes.entrySet()) {
+                        String id = entry.getKey();
+                        if (entry.getValue() == null) writer.deleteDevice(id, expectedRevisions.get(id));
+                        else revisions.put(id, writer.saveDevice(encoded.get(id), expectedRevisions.get(id)).revision());
+                    }
+                    return revisions;
+                });
+            } catch (ConfigurationConflictException conflict) {
+                try {
+                    reconcileLocalAggregates(ids, previous, versions, events, source + "-conflict");
+                } catch (RuntimeException recoveryFailure) {
+                    localRecoveryRequired.addAll(ids);
+                    markConfigMutation();
+                }
+                throw new WangbinConfigurationPersistenceException(Outcome.CONFLICT, ids);
+            } catch (IllegalArgumentException validationFailure) {
+                throw validationFailure;
+            } catch (RuntimeException failure) {
+                throw new WangbinConfigurationPersistenceException(Outcome.WRITE_FAILED, ids);
+            }
+            try {
+                installLocalAggregates(changes, committedRevisions, previous, versions, events, type, source);
+            } catch (RuntimeException publicationFailure) {
+                events.clear();
+                try {
+                    reconcileLocalAggregates(ids, previous, versions, events, source + "-reconciled");
+                } catch (RuntimeException recoveryFailure) {
+                    localRecoveryRequired.addAll(ids);
+                    markConfigMutation();
+                    throw new WangbinConfigurationPersistenceException(Outcome.COMMITTED_RECOVERY_REQUIRED, ids);
+                }
+                throw new WangbinConfigurationPersistenceException(Outcome.COMMITTED_RECONCILED, ids);
+            }
+            for (String id : ids) {
+                DeviceContext candidate = changes.get(id);
+                results.put(id, new DeviceConfigCommitResult(id, versions.get(id), deviceConfigVersions.get(id),
+                        candidate == null ? 0 : candidate.getDataPoints().size()));
+            }
+            return results;
+        } catch (RuntimeException failure) {
+            operationFailure = failure;
+            throw failure;
+        } finally {
+            lock.writeLock().unlock();
+            try {
+                publishConfigurationEvents(events, operationFailure == null
+                        || operationFailure instanceof WangbinConfigurationPersistenceException persistenceFailure && persistenceFailure.isCommitted());
+            } catch (RuntimeException applicationFailure) {
+                // 不让对账事件故障覆盖原始 CAS/写入结果。
+                if (operationFailure != null) operationFailure.addSuppressed(applicationFailure);
+                else throw applicationFailure;
+            }
+        }
+    }
+
+    /** 先准备全部事件及新版本，随后安装缓存；发生故障由调用方从权威源重建。 */
+    private void installLocalAggregates(Map<String, DeviceContext> candidates, Map<String, Long> revisions,
+                                        Map<String, DeviceContext> previous, Map<String, Long> previousVersions,
+                                        List<ConfigUpdateEvent> events, ConfigUpdateType type, String source) {
+        Map<String, Long> newVersions = new LinkedHashMap<>();
+        List<ConfigUpdateEvent> prepared = new ArrayList<>();
+        for (var entry : candidates.entrySet()) {
+            String id = entry.getKey();
+            DeviceContext candidate = entry.getValue();
+            long version = nextConfigVersion();
+            newVersions.put(id, version);
+            ConfigUpdateEvent event = configChangeEvent(id, candidate == null ? ConfigUpdateType.LOCAL_DELETE : type,
+                    source, previousVersions.getOrDefault(id, 0L), version,
+                    previous.get(id) == null || candidate == null
+                            || isConnectionChanged(previous.get(id).getDeviceInfo(), candidate.getDeviceInfo())
+                            || !sameConnectionConfiguration(previous.get(id).getConnectionConfig(), candidate.getConnectionConfig()));
+            event.setRetiredPointIds(retiredPointIds(previous.get(id), candidate));
+            prepared.add(event);
+        }
+        for (var entry : candidates.entrySet()) {
+            String id = entry.getKey();
+            restoreDeviceContext(id, entry.getValue());
+            if (entry.getValue() == null) localConfigurationRevisions.remove(id);
+            else localConfigurationRevisions.put(id, revisions.get(id));
+        }
+        for (var entry : candidates.entrySet()) {
+            if (entry.getValue() == null) registerDeletedConfigurationVersion(entry.getKey(), newVersions.get(entry.getKey()));
+            else deviceConfigVersions.put(entry.getKey(), newVersions.get(entry.getKey()));
+        }
+        localRecoveryRequired.removeAll(candidates.keySet());
+        markConfigMutation();
+        events.addAll(prepared);
+    }
+
+    /** 对账使用单一事务快照，不重试用户写入、不覆盖外部赢家。 */
+    private void reconcileLocalAggregates(List<String> ids, Map<String, DeviceContext> previous,
+                                          Map<String, Long> versions, List<ConfigUpdateEvent> events, String source) {
+        Map<String, StoredDeviceConfiguration> stored = localConfigurationPersistence.transaction(writer -> {
+            Map<String, StoredDeviceConfiguration> snapshot = new LinkedHashMap<>();
+            for (String id : ids) snapshot.put(id, writer.findDevice(id).orElse(null));
+            return snapshot;
+        });
+        Map<String, DeviceContext> candidates = new LinkedHashMap<>();
+        Map<String, Long> revisions = new HashMap<>();
+        for (String id : ids) {
+            StoredDeviceConfiguration item = stored.get(id);
+            DeviceContext candidate = item == null ? null : localConfigurationPersistence.toRuntime(item.configuration());
+            if (candidate != null) {
+                validateDeviceContext(id, candidate.getDeviceInfo(), candidate.getConnectionConfig(), candidate.getDataPoints());
+                revisions.put(id, item.revision());
+            }
+            if (!sameDeviceConfiguration(previous.get(id), candidate) || localRecoveryRequired.contains(id)
+                    || !deviceContextCache.containsKey(id) && candidate != null) {
+                candidates.put(id, candidate);
+            } else {
+                // 相同业务配置仍需修复已被部分发布污染的缓存，并吸收权威修订。
+                restoreDeviceContext(id, candidate);
+                if (item == null) localConfigurationRevisions.remove(id);
+                else localConfigurationRevisions.put(id, item.revision());
+                if (versions.getOrDefault(id, 0L) > 0) deviceConfigVersions.put(id, versions.get(id));
+            }
+        }
+        if (!candidates.isEmpty()) installLocalAggregates(candidates, revisions, previous, versions, events, ConfigUpdateType.ALL, source);
+        localRecoveryRequired.removeAll(ids);
+    }
+
+    private Map<String, DeviceContext> oneLocalAggregate(String id, DeviceContext context) {
+        Map<String, DeviceContext> result = new LinkedHashMap<>();
+        result.put(id, context);
+        return result;
+    }
+
+    private DeviceConfigCommitResult saveSqliteLocalDevice(DeviceInfo input, DeviceConnection connection,
+                                                           List<DataPoint> points, boolean overwrite, Long baseVersion) {
+        String id = input.getDeviceId();
+        return commitLocalAggregates(() -> {
+            requireBaseVersion(id, baseVersion);
+            validateLocalDevice(input, id);
+            validateDeviceIdentity(id, connection.getDeviceId());
+            validatePointIdentities(id, points, true);
+            validateLocalPoints(id, points == null ? List.of() : points);
+            DeviceContext existing = localCurrentContext(id);
+            if (existing != null && !overwrite) throw new IllegalArgumentException("本地设备已存在: " + id);
+            DeviceContext snapshot = DeviceContext.of(input, connection, points);
+            DeviceInfo device = snapshot.getDeviceInfo();
+            DeviceConnection candidateConnection = snapshot.copyConnectionConfig();
+            List<DataPoint> candidatePoints = new ArrayList<>(snapshot.copyDataPoints());
+            normalizeLocalDevice(device, existing == null ? null : existing.getDeviceInfo());
+            normalizeLocalConnection(device, candidateConnection);
+            normalizeLocalPoints(device, candidatePoints);
+            return oneLocalAggregate(id, DeviceContext.of(device, candidateConnection, candidatePoints));
+        }, ConfigUpdateType.LOCAL, "local-save").get(id);
+    }
 
     /** 保留旧的四参数构造方式，供嵌入式调用方兼容。 */
     public ConfigManager(ConfigSyncService configSyncService,
@@ -98,17 +385,30 @@ public class ConfigManager {
                 protocolConnectionValidatorProvider, null);
     }
 
-    @Autowired
     public ConfigManager(ConfigSyncService configSyncService,
                          ApplicationEventPublisher eventPublisher,
                          FieldUniquenessValidator fieldUniquenessValidator,
                          LocalDeviceConfigStore localDeviceConfigStore,
                          ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider,
                          ObjectProvider<ProtocolPointValidator> pointValidatorProvider) {
+        this(configSyncService, eventPublisher, fieldUniquenessValidator, localDeviceConfigStore,
+                protocolConnectionValidatorProvider, pointValidatorProvider, null);
+    }
+
+    /** 权威配置来源在构造时选定，属性变动不能在运行中热切换来源。 */
+    @Autowired
+    public ConfigManager(ConfigSyncService configSyncService,
+                         ApplicationEventPublisher eventPublisher,
+                         FieldUniquenessValidator fieldUniquenessValidator,
+                         LocalDeviceConfigStore localDeviceConfigStore,
+                         ObjectProvider<ProtocolConnectionValidator> protocolConnectionValidatorProvider,
+                         ObjectProvider<ProtocolPointValidator> pointValidatorProvider,
+                         ObjectProvider<WangbinLocalConfigurationPersistence> persistenceProvider) {
         this.configSyncService = configSyncService;
         this.eventPublisher = eventPublisher;
         this.fieldUniquenessValidator = fieldUniquenessValidator;
         this.localDeviceConfigStore = localDeviceConfigStore;
+        this.localConfigurationPersistence = persistenceProvider == null ? null : persistenceProvider.getIfAvailable();
         this.protocolConnectionValidator = protocolConnectionValidatorProvider != null
                 ? protocolConnectionValidatorProvider.getIfAvailable(ProtocolConnectionValidator::new)
                 : new ProtocolConnectionValidator();
@@ -123,7 +423,7 @@ public class ConfigManager {
     public void init() {
         log.info("配置管理器初始化开始...");
         restorePersistedLocalTemporaryContexts();
-        loadAllConfig();
+        if (!isSqlitePersistenceEnabled()) loadAllConfig();
         startConfigSync();
         log.info("配置管理器初始化完成");
     }
@@ -132,6 +432,10 @@ public class ConfigManager {
      * 从本地快照恢复非远端托管设备。
      */
     private void restorePersistedLocalTemporaryContexts() {
+        if (localConfigurationPersistence != null) {
+            restoreSqliteLocalConfigurations();
+            return;
+        }
         if (localDeviceConfigStore == null) {
             return;
         }
@@ -148,6 +452,47 @@ public class ConfigManager {
         }
     }
 
+    /** SQLite恢复全部候选先校验后发布，失败不退回JSON、不创建空库、不发启停事件。 */
+    private void restoreSqliteLocalConfigurations() {
+        lock.writeLock().lock();
+        try {
+            List<StoredDeviceConfiguration> stored = localConfigurationPersistence.restore();
+            Map<String, DeviceContext> candidates = new LinkedHashMap<>();
+            Map<String, Long> revisions = new HashMap<>();
+            Set<String> pointIds = new HashSet<>();
+            for (StoredDeviceConfiguration item : stored) {
+                String deviceId = item.configuration().deviceId();
+                DeviceContext context = localConfigurationPersistence.toRuntime(item.configuration());
+                if (!Objects.equals(deviceId, context.getDeviceId())
+                        || !isLocalTemporaryDeviceInfo(context.getDeviceInfo())
+                        || candidates.putIfAbsent(deviceId, context) != null) {
+                    throw new IllegalStateException("SQLite恢复失败，字段=deviceId/configSource");
+                }
+                for (DataPoint point : context.getDataPoints()) {
+                    if (!StringUtils.hasText(point.getPointId()) || !pointIds.add(point.getPointId())) {
+                        throw new IllegalStateException("SQLite恢复失败，字段=pointId，设备=" + deviceId);
+                    }
+                }
+                try {
+                    validateRestoredDeviceContext(deviceId, context);
+                } catch (RuntimeException exception) {
+                    // 协议校验器的原异常可能包含连接参数，不传播其消息或cause。
+                    throw new IllegalStateException("SQLite恢复校验失败，设备=" + deviceId + "，字段=device/connection/points");
+                }
+                revisions.put(deviceId, item.revision());
+            }
+            for (var entry : candidates.entrySet()) {
+                restoreDeviceContext(entry.getKey(), entry.getValue());
+                deviceConfigVersions.put(entry.getKey(), nextConfigVersion());
+            }
+            localConfigurationRevisions.clear();
+            localConfigurationRevisions.putAll(revisions);
+            log.info("SQLite本地配置恢复完成，设备数量={}", candidates.size());
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * 加载所有配置
      */
@@ -156,12 +501,14 @@ public class ConfigManager {
         long startRevision = configMutationRevision.get();
         Map<String, DeviceContext> previousContexts;
         Map<String, Long> previousVersions;
+        LocalAuthoritySnapshot localSnapshot;
         List<DeviceContext> localTemporaryContexts;
         lock.readLock().lock();
         try {
             previousContexts = new HashMap<>(deviceContextCache);
             previousVersions = new HashMap<>(deviceConfigVersions);
-            localTemporaryContexts = snapshotLocalTemporaryContexts();
+            localSnapshot = snapshotLocalAuthority();
+            localTemporaryContexts = localSnapshot.contexts();
         } finally {
             lock.readLock().unlock();
         }
@@ -237,8 +584,16 @@ public class ConfigManager {
                     log.warn("full configuration refresh aborted because live config changed during remote load");
                     return;
                 }
+                // 在安装前重读同一权威全集，缓存 clear 不能把本地身份让给远端。
+                localSnapshot = snapshotLocalAuthority();
+                for (String localId : localIds) {
+                    candidateDevices.remove(localId);
+                    candidateConnections.remove(localId);
+                    candidatePoints.remove(localId);
+                    candidateContexts.remove(localId);
+                }
                 mergeLocalTemporaryCandidates(candidateDevices, candidateConnections, candidatePoints, candidateContexts,
-                        snapshotLocalTemporaryContexts());
+                        localSnapshot.contexts());
                 for (String deviceId : candidateContexts.keySet()) {
                     if (sameDeviceConfiguration(previousContexts.get(deviceId), candidateContexts.get(deviceId))) {
                         DeviceContext previous = previousContexts.get(deviceId);
@@ -257,6 +612,10 @@ public class ConfigManager {
                 pointCache.putAll(candidatePoints);
                 deviceContextCache.clear();
                 deviceContextCache.putAll(candidateContexts);
+                if (isSqlitePersistenceEnabled()) {
+                    localConfigurationRevisions.clear();
+                    localConfigurationRevisions.putAll(localSnapshot.revisions());
+                }
                 reconcileConfigVersions(previousContexts, previousVersions);
                 for (String deviceId : candidateContexts.keySet()) {
                     if (!sameDeviceConfiguration(previousContexts.get(deviceId), candidateContexts.get(deviceId))) {
@@ -280,11 +639,37 @@ public class ConfigManager {
             } finally {
                 lock.writeLock().unlock();
             }
-            committedEvents.forEach(this::publishCommittedEvent);
+            publishConfigurationEvents(committedEvents, false);
             log.info("配置加载完成，共加载 {} 个设备配置", candidateContexts.size());
         } catch (RuntimeException exception) {
             log.error("full configuration refresh aborted, live cache preserved, reason={}", exception.getMessage(), exception);
         }
+    }
+
+    private record LocalAuthoritySnapshot(List<DeviceContext> contexts, Map<String, Long> revisions) {}
+
+    /** 只读权威全集；不安装缓存、不重放迁移、不调用远端。调用方持有配置锁。 */
+    private LocalAuthoritySnapshot snapshotLocalAuthority() {
+        if (!isSqlitePersistenceEnabled()) return new LocalAuthoritySnapshot(snapshotLocalTemporaryContexts(), Map.of());
+        List<StoredDeviceConfiguration> stored = localConfigurationPersistence.transaction(writer -> writer.listDevices());
+        List<DeviceContext> contexts = new ArrayList<>();
+        Map<String, Long> revisions = new LinkedHashMap<>();
+        Set<String> pointIds = new HashSet<>();
+        for (StoredDeviceConfiguration item : stored) {
+            String id = item.configuration().deviceId();
+            DeviceContext context = localConfigurationPersistence.toRuntime(item.configuration());
+            if (!id.equals(context.getDeviceId()) || !isLocalTemporaryDeviceInfo(context.getDeviceInfo())
+                    || revisions.putIfAbsent(id, item.revision()) != null) {
+                throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(id));
+            }
+            validateDeviceContext(id, context.getDeviceInfo(), context.getConnectionConfig(), context.getDataPoints());
+            for (DataPoint point : context.getDataPoints()) {
+                if (!pointIds.add(point.getPointId())) throw new WangbinConfigurationPersistenceException(
+                        Outcome.CONFIGURATION_UNAVAILABLE, List.of(id));
+            }
+            contexts.add(context);
+        }
+        return new LocalAuthoritySnapshot(contexts, revisions);
     }
 
     private void mergeLocalTemporaryCandidates(Map<String, DeviceInfo> candidateDevices,
@@ -331,6 +716,10 @@ public class ConfigManager {
     private boolean sameDeviceConfiguration(DeviceContext left, DeviceContext right) {
         if (left == right) return true;
         if (left == null || right == null) return false;
+        if (localConfigurationPersistence != null && isLocalTemporaryDeviceInfo(left.getDeviceInfo())
+                && isLocalTemporaryDeviceInfo(right.getDeviceInfo())) {
+            return localConfigurationPersistence.equivalent(left, right);
+        }
         return Objects.equals(effectiveDevice(left.getDeviceInfo()), effectiveDevice(right.getDeviceInfo()))
                 && sameConnectionConfiguration(left.getConnectionConfig(), right.getConnectionConfig())
                 && Objects.equals(effectivePoints(left), effectivePoints(right));
@@ -452,6 +841,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             return deviceCache.get(deviceId);
         } finally {
             lock.readLock().unlock();
@@ -466,7 +856,8 @@ public class ConfigManager {
     public List<DeviceInfo> getAllDevices() {
         lock.readLock().lock();
         try {
-            return new ArrayList<>(deviceCache.values());
+            return deviceCache.entrySet().stream().filter(entry -> !localRecoveryRequired.contains(entry.getKey()))
+                    .map(Map.Entry::getValue).toList();
         } finally {
             lock.readLock().unlock();
         }
@@ -483,6 +874,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             return deviceContextCache.get(deviceId);
         } finally {
             lock.readLock().unlock();
@@ -494,6 +886,7 @@ public class ConfigManager {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             return deviceConfigVersions.getOrDefault(deviceId, 0L);
         } finally {
             lock.readLock().unlock();
@@ -506,10 +899,9 @@ public class ConfigManager {
         lock.readLock().lock();
         try {
             DeviceContext context = deviceContextCache.get(deviceId);
+            requireConfigurationReadable(deviceId);
             DeviceContext copy = context == null ? null : DeviceContext.of(
-                    JSON.parseObject(JSON.toJSONString(context.getDeviceInfo()), DeviceInfo.class),
-                    JSON.parseObject(JSON.toJSONString(context.getConnectionConfig()), DeviceConnection.class),
-                    JSON.parseArray(JSON.toJSONString(context.getDataPoints()), DataPoint.class));
+                    context.getDeviceInfo(), context.getConnectionConfig(), context.getDataPoints());
             return new DeviceConfigurationSnapshot(copy, deviceConfigVersions.getOrDefault(deviceId, 0L));
         } finally {
             lock.readLock().unlock();
@@ -578,7 +970,8 @@ public class ConfigManager {
         Objects.requireNonNull(action, "操作不能为空");
         lock.readLock().lock();
         try {
-            if (deviceConfigVersions.getOrDefault(deviceId, 0L) != expectedVersion) return false;
+            if (localRecoveryRequired.contains(deviceId)
+                    || deviceConfigVersions.getOrDefault(deviceId, 0L) != expectedVersion) return false;
             action.run();
             return true;
         } finally {
@@ -598,7 +991,8 @@ public class ConfigManager {
     public List<DeviceContext> getAllDeviceContexts() {
         lock.readLock().lock();
         try {
-            return new ArrayList<>(deviceContextCache.values());
+            return deviceContextCache.entrySet().stream().filter(entry -> !localRecoveryRequired.contains(entry.getKey()))
+                    .map(Map.Entry::getValue).toList();
         } finally {
             lock.readLock().unlock();
         }
@@ -615,6 +1009,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             List<DataPoint> points = pointCache.get(deviceId);
             return points != null ? points : Collections.emptyList();
         } finally {
@@ -648,6 +1043,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             List<DataPoint> points = pointCache.get(deviceId);
             if (points != null) {
                 return points.stream()
@@ -674,6 +1070,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             List<DataPoint> points = pointCache.get(deviceId);
             if (points != null) {
                 return points.stream()
@@ -698,6 +1095,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             return connectionCache.get(deviceId);
         } finally {
             lock.readLock().unlock();
@@ -711,7 +1109,20 @@ public class ConfigManager {
      * @return 是否更新成功
      */
     public boolean updateDeviceConfig(DeviceInfo device) {
+        return updateDeviceConfig(device, false);
+    }
+
+    private boolean updateDeviceConfig(DeviceInfo device, boolean remoteReload) {
         Objects.requireNonNull(device, "设备信息不能为空");
+        if (isSqlitePersistenceEnabled() && !remoteReload) {
+            DeviceInfo inputDevice = device;
+            commitLocalAggregates(() -> {
+                DeviceContext current = localCurrentContext(inputDevice.getDeviceId());
+                if (current == null) throw new IllegalArgumentException("设备不存在");
+                return oneLocalAggregate(inputDevice.getDeviceId(), DeviceContext.of(inputDevice, current.getConnectionConfig(), current.getDataPoints()));
+            }, ConfigUpdateType.DEVICE, "device-edit");
+            return true;
+        }
         ConfigUpdateEvent event;
 
         try {
@@ -723,7 +1134,10 @@ public class ConfigManager {
                 return false;
             }
 
+            if (remoteReload && isLocalTemporaryDevice(deviceId)) return false;
             DeviceInfo oldDevice = deviceCache.get(deviceId);
+            device = DeviceContext.of(device, null, List.of()).getDeviceInfo();
+            if (!remoteReload) sensitiveConfigSanitizer.restoreMaskedValues(device, oldDevice);
             validateConfigSource(oldDevice, device);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
             DeviceContext candidate = DeviceContext.of(device, connectionCache.get(deviceId), pointCache.get(deviceId));
@@ -788,6 +1202,14 @@ public class ConfigManager {
     private boolean updateDataPoints(String deviceId, List<DataPoint> points, boolean validateNewPoints) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         Objects.requireNonNull(points, "数据点列表不能为空");
+        if (isSqlitePersistenceEnabled() && validateNewPoints) {
+            commitLocalAggregates(() -> {
+                DeviceContext current = localCurrentContext(deviceId);
+                if (current == null) throw new IllegalArgumentException("设备不存在");
+                return oneLocalAggregate(deviceId, DeviceContext.of(current.getDeviceInfo(), current.getConnectionConfig(), points));
+            }, ConfigUpdateType.POINTS, "points-edit");
+            return true;
+        }
         ConfigUpdateEvent event;
 
         try {
@@ -797,7 +1219,7 @@ public class ConfigManager {
                 log.warn("设备不存在，无法更新数据点: {}", deviceId);
                 return false;
             }
-            if (!validateNewPoints && isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) return false;
+            if (!validateNewPoints && isLocalTemporaryDevice(deviceId)) return false;
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
 
@@ -866,6 +1288,15 @@ public class ConfigManager {
 
     private boolean updateConnectionConfig(String deviceId, DeviceConnection connection, boolean remoteReload) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (isSqlitePersistenceEnabled() && !remoteReload) {
+            DeviceConnection inputConnection = connection;
+            commitLocalAggregates(() -> {
+                DeviceContext current = localCurrentContext(deviceId);
+                if (current == null) throw new IllegalArgumentException("设备不存在");
+                return oneLocalAggregate(deviceId, DeviceContext.of(current.getDeviceInfo(), inputConnection, current.getDataPoints()));
+            }, ConfigUpdateType.CONNECTION, "connection-edit");
+            return true;
+        }
         ConfigUpdateEvent event;
 
         try {
@@ -875,7 +1306,7 @@ public class ConfigManager {
                 log.warn("设备不存在，无法更新连接配置: {}", deviceId);
                 return false;
             }
-            if (remoteReload && isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) return false;
+            if (remoteReload && isLocalTemporaryDevice(deviceId)) return false;
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
 
@@ -883,6 +1314,7 @@ public class ConfigManager {
                 validateDeviceIdentity(deviceId, connection.getDeviceId());
                 connection = DeviceContext.of(null, connection, List.of()).copyConnectionConfig();
                 connection.setDeviceId(deviceId);
+                if (!remoteReload) sensitiveConfigSanitizer.restoreMaskedValues(connection, connectionCache.get(deviceId));
                 protocolConnectionValidator.validate(deviceCache.get(deviceId), connection);
             }
             if (sameConnectionConfiguration(connectionCache.get(deviceId), connection)) return true;
@@ -927,15 +1359,38 @@ public class ConfigManager {
     }
 
     private void publishCommittedEvent(ConfigUpdateEvent event) {
-        try {
-            eventPublisher.publishEvent(event);
-        } catch (RuntimeException exception) {
-            log.error("配置已提交，但配置变更事件发布失败: {}", event.getDeviceId(), exception);
-        } finally {
-            if (ConfigUpdateType.LOCAL_DELETE.getValue().equals(event.getConfigType()) && event.getConfigVersion() != null) {
-                releaseDeletedConfigurationVersion(event.getDeviceId(), event.getConfigVersion());
+        publishConfigurationEvents(List.of(event), true);
+    }
+
+    /** 逐设备发布，单个监听故障不阻止其余设备通知；失败不回滚已提交配置。 */
+    private void publishConfigurationEvents(List<ConfigUpdateEvent> events, boolean committed) {
+        Set<String> failedIds = new LinkedHashSet<>();
+        for (ConfigUpdateEvent event : events) {
+            try {
+                eventPublisher.publishEvent(event);
+            } catch (RuntimeException exception) {
+                log.error("配置变更应用失败，设备={}", event.getDeviceId(), exception);
+                failedIds.add(event.getDeviceId());
+                if (isSqlitePersistenceEnabled()) {
+                    lock.writeLock().lock();
+                    try {
+                        // 复用目标封闭/显式 refresh 对账路径，不重试数据库写入。
+                        if (Objects.equals(deviceConfigVersions.get(event.getDeviceId()), event.getConfigVersion())) {
+                            localRecoveryRequired.add(event.getDeviceId());
+                            markConfigMutation();
+                        }
+                    } finally {
+                        lock.writeLock().unlock();
+                    }
+                }
+            } finally {
+                if (ConfigUpdateType.LOCAL_DELETE.getValue().equals(event.getConfigType()) && event.getConfigVersion() != null) {
+                    releaseDeletedConfigurationVersion(event.getDeviceId(), event.getConfigVersion());
+                }
             }
         }
+        if (!failedIds.isEmpty()) throw new WangbinConfigurationPersistenceException(
+                committed ? Outcome.COMMITTED_APPLY_FAILED : Outcome.CONFIGURATION_UNAVAILABLE, List.copyOf(failedIds));
     }
 
     /** 单设备原子提交结果。 */
@@ -959,6 +1414,26 @@ public class ConfigManager {
         DeviceContext candidate = DeviceContext.of(device, connection, safePoints);
         validateImportContext(candidate, new HashSet<>(), new HashMap<>());
         validateProtocolPoints(candidate.getDeviceInfo(), candidate.getDataPoints());
+        validateLocalRecoverability(candidate);
+    }
+
+    /** 已由 SQLite codec 解码的配置只做运行期语义校验，不再次要求测试桥接或读取源执行回编码。 */
+    private void validateRestoredDeviceContext(String deviceId, DeviceContext context) {
+        if (context == null || context.getDeviceInfo() == null) {
+            throw new IllegalArgumentException("恢复设备配置不能为空");
+        }
+        validateDeviceIdentity(deviceId, context.getDeviceInfo().getDeviceId());
+        DeviceConnection connection = context.copyConnectionConfig();
+        if (connection != null) {
+            validateDeviceIdentity(deviceId, connection.getDeviceId());
+            protocolConnectionValidator.validate(context.getDeviceInfo(), connection);
+        }
+        List<DataPoint> points = context.copyDataPoints();
+        validatePointIdentities(deviceId, points, true);
+        points.forEach(point -> point.setDeviceId(deviceId));
+        normalizeDataPointCollectionPolicy(context.getDeviceInfo(), points);
+        if (fieldUniquenessValidator != null) fieldUniquenessValidator.validate(deviceId, points);
+        validateProtocolPoints(context.getDeviceInfo(), points);
     }
 
 
@@ -971,6 +1446,18 @@ public class ConfigManager {
                                                                      List<DataPoint> points,
                                                                      long expectedVersion) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (isSqlitePersistenceEnabled()) {
+            return commitLocalAggregates(() -> {
+                requireConfigurationReadable(deviceId);
+                long current = deviceConfigVersions.getOrDefault(deviceId, 0L);
+                if (current != expectedVersion) throw new ConfigVersionConflictException(deviceId, expectedVersion, current);
+                if (device == null) throw new IllegalArgumentException("设备信息不能为空");
+                validateDeviceIdentity(deviceId, device.getDeviceId());
+                DeviceContext copy = DeviceContext.of(device, connection, points);
+                copy.getDeviceInfo().setDeviceId(deviceId);
+                return oneLocalAggregate(deviceId, copy);
+            }, ConfigUpdateType.ALL, "config-bundle").get(deviceId);
+        }
         ConfigUpdateEvent pendingEvent;
         DeviceConfigCommitResult commitResult;
         lock.writeLock().lock();
@@ -995,6 +1482,9 @@ public class ConfigManager {
             DeviceConnection candidateConnection = snapshot.copyConnectionConfig();
             if (candidateConnection != null) candidateConnection.setDeviceId(deviceId);
             DeviceContext candidate = DeviceContext.of(candidateDevice, candidateConnection, snapshot.copyDataPoints());
+            restoreMaskedConfiguration(candidate, contextBackup.get(deviceId));
+            candidateDevice = candidate.getDeviceInfo();
+            candidateConnection = candidate.getConnectionConfig();
             Map<String, List<DataPoint>> normalized = new HashMap<>();
             validateImportContext(candidate, new HashSet<>(), normalized);
             validateProtocolPoints(candidateDevice, normalized.get(deviceId));
@@ -1031,12 +1521,32 @@ public class ConfigManager {
     /** 原子替换一组设备上下文，任一配置校验失败时不修改现有缓存。 */
     public boolean replaceDeviceContextsAtomically(List<DeviceContext> contexts) {
         if (CollectionUtils.isEmpty(contexts)) return false;
+        if (isSqlitePersistenceEnabled()) {
+            List<DeviceContext> inputContexts = contexts;
+            commitLocalAggregates(() -> {
+                Map<String, DeviceContext> candidates = new LinkedHashMap<>();
+                for (DeviceContext context : inputContexts) {
+                    if (context == null || context.getDeviceInfo() == null || !StringUtils.hasText(context.getDeviceId())) {
+                        throw new IllegalArgumentException("导入设备及设备ID不能为空");
+                    }
+                    if (candidates.putIfAbsent(context.getDeviceId(), DeviceContext.of(context.getDeviceInfo(),
+                            context.getConnectionConfig(), context.getDataPoints())) != null) {
+                        throw new IllegalArgumentException("导入设备ID重复");
+                    }
+                }
+                return candidates;
+            }, ConfigUpdateType.ALL, "config-import");
+            return true;
+        }
         List<ConfigUpdateEvent> events = new ArrayList<>();
         lock.writeLock().lock();
         try {
+            contexts = contexts.stream().map(context -> DeviceContext.of(context.getDeviceInfo(),
+                    context.getConnectionConfig(), context.getDataPoints())).toList();
             Set<String> deviceIds = new HashSet<>();
             Map<String, List<DataPoint>> normalizedPoints = new HashMap<>();
             for (DeviceContext context : contexts) {
+                restoreMaskedConfiguration(context, deviceContextCache.get(context.getDeviceId()));
                 validateImportContext(context, deviceIds, normalizedPoints);
                 validateProtocolPoints(context.getDeviceInfo(), normalizedPoints.get(context.getDeviceId()));
             }
@@ -1080,7 +1590,7 @@ public class ConfigManager {
         } finally {
             lock.writeLock().unlock();
         }
-        events.forEach(this::publishCommittedEvent);
+        publishConfigurationEvents(events, true);
         log.info("设备配置批量原子导入完成，变更设备数量: {}", events.size());
         return true;
     }
@@ -1140,8 +1650,17 @@ public class ConfigManager {
                                                                    DeviceConnection connection,
                                                                    List<DataPoint> points,
                                                                    boolean overwrite) {
+        return saveLocalDeviceConfigWithResult(device, connection, points, overwrite, null);
+    }
+
+    /** 可选编辑 CAS；旧重载保留覆盖语义，比较与掩码恢复均在同一写锁内。 */
+    public DeviceConfigCommitResult saveLocalDeviceConfigWithResult(DeviceInfo device,
+                                                                   DeviceConnection connection,
+                                                                   List<DataPoint> points,
+                                                                   boolean overwrite, Long baseVersion) {
         Objects.requireNonNull(device, "device config is required");
         Objects.requireNonNull(connection, "connection config is required");
+        if (isSqlitePersistenceEnabled()) return saveSqliteLocalDevice(device, connection, points, overwrite, baseVersion);
 
         String deviceId = normalizeDeviceId(device.getDeviceId());
         validateLocalDevice(device, deviceId);
@@ -1160,9 +1679,12 @@ public class ConfigManager {
 
         lock.writeLock().lock();
         try {
+            requireBaseVersion(deviceId, baseVersion);
             DeviceInfo existing = deviceCache.get(deviceId);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
             Long previousVersion = deviceConfigVersions.get(deviceId);
+            sensitiveConfigSanitizer.restoreMaskedValues(device, existing);
+            sensitiveConfigSanitizer.restoreMaskedValues(connection, previousContext == null ? null : previousContext.getConnectionConfig());
             if (existing != null && !isLocalTemporaryDeviceInfo(existing)) {
                 throw new IllegalArgumentException("device already exists from non-local config source: " + deviceId);
             }
@@ -1224,6 +1746,12 @@ public class ConfigManager {
      */
     public boolean deleteLocalDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (isSqlitePersistenceEnabled()) {
+            return !commitLocalAggregates(() -> {
+                if (localCurrentContext(deviceId) == null) return Map.of();
+                return oneLocalAggregate(deviceId, null);
+            }, ConfigUpdateType.LOCAL_DELETE, "local-delete").isEmpty();
+        }
         ConfigUpdateEvent event;
 
         lock.writeLock().lock();
@@ -1273,7 +1801,9 @@ public class ConfigManager {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         lock.readLock().lock();
         try {
-            return isLocalTemporaryDeviceInfo(deviceCache.get(deviceId));
+            return isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))
+                    || isSqlitePersistenceEnabled() && (localRecoveryRequired.contains(deviceId)
+                    || localConfigurationPersistence.findDevice(deviceId).isPresent());
         } finally {
             lock.readLock().unlock();
         }
@@ -1287,7 +1817,7 @@ public class ConfigManager {
     public List<String> getAllDeviceIds() {
         lock.readLock().lock();
         try {
-            return new ArrayList<>(deviceCache.keySet());
+            return deviceCache.keySet().stream().filter(id -> !localRecoveryRequired.contains(id)).toList();
         } finally {
             lock.readLock().unlock();
         }
@@ -1304,6 +1834,7 @@ public class ConfigManager {
 
         lock.readLock().lock();
         try {
+            requireConfigurationReadable(deviceId);
             return deviceCache.containsKey(deviceId);
         } finally {
             lock.readLock().unlock();
@@ -1318,6 +1849,24 @@ public class ConfigManager {
      */
     public boolean refreshDeviceConfig(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (isSqlitePersistenceEnabled() && (isLocalTemporaryDevice(deviceId) || localConfigurationRevisionsContains(deviceId))) {
+            List<ConfigUpdateEvent> events = new ArrayList<>();
+            lock.writeLock().lock();
+            try {
+                Map<String, DeviceContext> previous = oneLocalAggregate(deviceId, deviceContextCache.get(deviceId));
+                Map<String, Long> versions = Map.of(deviceId, deviceConfigVersions.getOrDefault(deviceId, 0L));
+                try {
+                    reconcileLocalAggregates(List.of(deviceId), previous, versions, events, "local-refresh");
+                } catch (RuntimeException failure) {
+                    localRecoveryRequired.add(deviceId);
+                    throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
+                }
+                return isCachedDeviceConfigAvailable(deviceId);
+            } finally {
+                lock.writeLock().unlock();
+                publishConfigurationEvents(events, false);
+            }
+        }
         if (isLocalTemporaryDevice(deviceId)) {
             return isCachedDeviceConfigAvailable(deviceId);
         }
@@ -1334,10 +1883,20 @@ public class ConfigManager {
     /**
      * 检查缓存中是否具备启动前刷新要求的设备和点位配置。
      */
+    private boolean localConfigurationRevisionsContains(String deviceId) {
+        lock.readLock().lock();
+        try {
+            return localConfigurationRevisions.containsKey(deviceId) || localRecoveryRequired.contains(deviceId);
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     private boolean isCachedDeviceConfigAvailable(String deviceId) {
         lock.readLock().lock();
         try {
             DeviceInfo device = deviceCache.get(deviceId);
+            requireConfigurationReadable(deviceId);
             List<DataPoint> points = pointCache.get(deviceId);
             return device != null && points != null && !points.isEmpty();
         } finally {
@@ -1422,6 +1981,9 @@ public class ConfigManager {
      * 将当前所有本地设备配置持久化为可恢复快照。
      */
     private void persistLocalTemporaryContexts() {
+        if (localConfigurationPersistence != null) {
+            throw new IllegalStateException("SQLite权威模式禁止旧JSON写入，请通过本地聚合事务提交配置");
+        }
         if (localDeviceConfigStore != null) {
             localDeviceConfigStore.save(snapshotLocalTemporaryContexts());
         }
@@ -1521,7 +2083,7 @@ public class ConfigManager {
      * 校验业务条件和参数边界。
      */
     private void validateLocalPoints(String deviceId, List<DataPoint> points) {
-        if (CollectionUtils.isEmpty(points)) {
+        if (CollectionUtils.isEmpty(points) && !isSqlitePersistenceEnabled()) {
             throw new IllegalArgumentException("at least one data point is required for local device: " + deviceId);
         }
         for (DataPoint point : points) {
@@ -1751,11 +2313,10 @@ public class ConfigManager {
      * 启动配置同步监听
      */
     private void startConfigSync() {
-        // 启动定时同步任务
-        configSyncService.startSyncTask();
-
-        // 注册配置变更监听
+        // 先注册监听；SQLite 启动只恢复本地，首轮远端读取交给既有同步执行器。
         configSyncService.registerConfigListener(this::handleConfigChange);
+        // 不新增恢复调度器；异步首次刷新与后续定时刷新共用同步服务。
+        configSyncService.startSyncTask();
 
         log.info("配置同步监听已启动");
     }
@@ -1819,7 +2380,7 @@ public class ConfigManager {
             if (device != null) {
                 validateDeviceIdentity(deviceId, device.getDeviceId());
                 if (isLocalTemporaryDevice(deviceId)) return;
-                updateDeviceConfig(device);
+                updateDeviceConfig(device, true);
                 log.info("设备配置重载成功: {}", deviceId);
             } else {
                 // 读取期间若身份转为本地，不接受远端删除。
@@ -1844,7 +2405,7 @@ public class ConfigManager {
         ConfigUpdateEvent event;
         lock.writeLock().lock();
         try {
-            if (remoteReload && isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))) return;
+            if (remoteReload && isLocalTemporaryDevice(deviceId)) return;
             long previousVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
             DeviceContext previousContext = deviceContextCache.get(deviceId);
             boolean changed = deviceCache.remove(deviceId) != null;

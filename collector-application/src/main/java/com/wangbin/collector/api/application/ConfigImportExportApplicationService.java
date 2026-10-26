@@ -46,7 +46,7 @@ public class ConfigImportExportApplicationService {
         List<DeviceContext> contexts = configManager.getAllDeviceContexts();
         List<ConfigBundle> bundles = contexts.stream()
                 .map(ctx -> ConfigBundle.builder()
-                        .device(ctx.getDeviceInfo())
+                        .device(sensitiveConfigSanitizer.sanitize(ctx.getDeviceInfo()))
                         .connection(sensitiveConfigSanitizer.sanitize(ctx.getConnectionConfig()))
                         .points(ctx.getDataPoints())
                         .build())
@@ -109,20 +109,45 @@ public class ConfigImportExportApplicationService {
                 && !deviceId.equals(bundle.getConnection().getDeviceId())) {
             return error("导入设备与连接身份冲突: " + deviceId);
         }
-        DeviceInfo device = bundle.getDevice() != null ? bundle.getDevice() : configManager.getDevice(deviceId);
+        DeviceInfo existing = configManager.getDevice(deviceId);
+        DeviceInfo sourceDevice = bundle.getDevice() != null ? bundle.getDevice() : existing;
+        DeviceConnection sourceConnection = bundle.getConnection() != null
+                ? bundle.getConnection() : configManager.getConnectionConfig(deviceId);
+        List<DataPoint> sourcePoints = bundle.getPoints() == null
+                ? configManager.getDataPoints(deviceId) : bundle.getPoints();
+        for (DataPoint point : sourcePoints) {
+            if (point == null || (StringUtils.hasText(point.getDeviceId()) && !deviceId.equals(point.getDeviceId()))) {
+                return error("导入设备与点位身份冲突");
+            }
+        }
+        DeviceContext candidate = DeviceContext.of(sourceDevice, sourceConnection, sourcePoints);
+        DeviceInfo device = candidate.getDeviceInfo();
         if (device == null) {
             return error("导入设备不存在且未提供设备基础信息: " + deviceId);
         }
+        if (existing != null) {
+            if (StringUtils.hasText(device.getConfigSource())
+                    && !java.util.Objects.equals(existing.getConfigSource(), device.getConfigSource())) {
+                return error("导入不能修改设备配置来源");
+            }
+            device.setConfigSource(existing.getConfigSource());
+            device.setTemporaryConfig(existing.getTemporaryConfig());
+        }
+        if (configManager.isSqlitePersistenceEnabled()) {
+            boolean local = ConfigManager.CONFIG_SOURCE_LOCAL.equalsIgnoreCase(device.getConfigSource())
+                    && Boolean.TRUE.equals(device.getTemporaryConfig());
+            if (!local || (existing != null && !configManager.isLocalTemporaryDevice(deviceId))) {
+                return error("SQLite 模式仅支持明确本地来源的导入，不支持远端或混合导入");
+            }
+        }
         device.setDeviceId(deviceId);
 
-        DeviceConnection connection = bundle.getConnection() != null
-                ? bundle.getConnection() : configManager.getConnectionConfig(deviceId);
+        DeviceConnection connection = candidate.copyConnectionConfig();
         if (connection != null) {
             connection.setDeviceId(deviceId);
-            sensitiveConfigSanitizer.restoreMaskedValues(connection, configManager.getConnectionConfig(deviceId));
+            // 保留掩码直至 Manager 的整批写锁，避免覆盖并发秘密更新。
         }
-        List<DataPoint> points = CollectionUtils.isEmpty(bundle.getPoints())
-                ? configManager.getDataPoints(deviceId) : bundle.getPoints();
+        List<DataPoint> points = candidate.copyDataPoints();
         importContexts.add(DeviceContext.of(device, connection, points));
         deviceIds.add(deviceId);
         return null;

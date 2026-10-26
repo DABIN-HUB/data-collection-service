@@ -10,7 +10,12 @@ import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.collector.CollectionService;
 import com.wangbin.collector.core.collector.scheduler.DeviceLifecycleCoordinator;
 import com.wangbin.collector.core.config.manager.ConfigManager;
-import lombok.RequiredArgsConstructor;
+import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
+import com.wangbin.collector.core.config.security.SensitiveConfigSanitizer;
+import com.wangbin.collector.core.config.persistence.ConfigurationConflictException;
+import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -21,12 +26,36 @@ import org.springframework.util.StringUtils;
  * <p>只承接本地临时设备的创建、更新、读取和删除用例，保持远端配置不可被本地入口误删。</p>
  */
 @Service
-@RequiredArgsConstructor
 public class LocalDeviceConfigApplicationService {
 
     private final ConfigManager configManager;
     private final CollectionService collectionService;
     private final DeviceLifecycleCoordinator lifecycleCoordinator;
+    private final SensitiveConfigSanitizer sensitiveConfigSanitizer;
+
+    /** 保留既有直接调用构造器；脱敏器不含依赖或生命周期。 */
+    public LocalDeviceConfigApplicationService(ConfigManager configManager, CollectionService collectionService,
+                                               DeviceLifecycleCoordinator lifecycleCoordinator) {
+        this(configManager, collectionService, lifecycleCoordinator, new SensitiveConfigSanitizer());
+    }
+
+    /** 兼容仅注册旧依赖的 Spring 上下文，不使用字段注入。 */
+    @Autowired
+    public LocalDeviceConfigApplicationService(ConfigManager configManager, CollectionService collectionService,
+                                               DeviceLifecycleCoordinator lifecycleCoordinator,
+                                               ObjectProvider<SensitiveConfigSanitizer> sanitizerProvider) {
+        this(configManager, collectionService, lifecycleCoordinator,
+                sanitizerProvider.getIfAvailable(SensitiveConfigSanitizer::new));
+    }
+
+    private LocalDeviceConfigApplicationService(ConfigManager configManager, CollectionService collectionService,
+                                                DeviceLifecycleCoordinator lifecycleCoordinator,
+                                                SensitiveConfigSanitizer sensitiveConfigSanitizer) {
+        this.configManager = configManager;
+        this.collectionService = collectionService;
+        this.lifecycleCoordinator = lifecycleCoordinator;
+        this.sensitiveConfigSanitizer = sensitiveConfigSanitizer;
+    }
 
     /**
      * 创建本地临时设备。
@@ -64,8 +93,8 @@ public class LocalDeviceConfigApplicationService {
             return error("只能读取本地临时设备配置: " + deviceId);
         }
         ConfigBundle bundle = ConfigBundle.builder()
-                .device(device)
-                .connection(snapshot.context().copyConnectionConfig())
+                .device(sensitiveConfigSanitizer.sanitize(device))
+                .connection(sensitiveConfigSanitizer.sanitize(snapshot.context().copyConnectionConfig()))
                 .points(snapshot.context().copyDataPoints())
                 .build();
         LocalDeviceConfigResponse response = LocalDeviceConfigResponse.builder()
@@ -100,8 +129,10 @@ public class LocalDeviceConfigApplicationService {
                     .build();
             return deleted ? success("本地临时设备已删除", response)
                     : error("本地临时设备不存在: " + deviceId);
+        } catch (WangbinConfigurationPersistenceException | ConfigurationConflictException | ConfigVersionConflictException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
-            return error(exception.getMessage());
+            return error("本地配置操作失败，请检查设备、连接和点位配置");
         }
     }
 
@@ -126,12 +157,17 @@ public class LocalDeviceConfigApplicationService {
         }
         try {
             String deviceId = device.getDeviceId();
+            if (StringUtils.hasText(device.getConfigSource())
+                    && !ConfigManager.CONFIG_SOURCE_LOCAL.equalsIgnoreCase(device.getConfigSource())) {
+                return error("本地设备不能修改为远端来源");
+            }
+            // 掩码在 Manager 写锁内、版本核对后恢复。
             long intentRevision = lifecycleCoordinator.getIntentRevision(deviceId);
             ConfigManager.DeviceConfigCommitResult commit = configManager.saveLocalDeviceConfigWithResult(
                     device,
                     request.getConnection(),
                     request.getPoints(),
-                    overwrite || request.isOverwrite());
+                    overwrite || request.isOverwrite(), request.getBaseVersion());
             if (commit == null) {
                 return error("保存本地临时设备失败: " + device.getDeviceId());
             }
@@ -182,8 +218,10 @@ public class LocalDeviceConfigApplicationService {
                 default -> "本地临时设备已保存";
             };
             return success(message, response);
+        } catch (WangbinConfigurationPersistenceException | ConfigurationConflictException | ConfigVersionConflictException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
-            return error(exception.getMessage());
+            return error("本地配置操作失败，请检查设备、连接和点位配置");
         }
     }
 
