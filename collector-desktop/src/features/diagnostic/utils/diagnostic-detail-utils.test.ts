@@ -4,6 +4,7 @@ import { createApp } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import DiagnosticDetailPanel from "../components/DiagnosticDetailPanel.vue";
+import { createDiagnosticSources } from "@/features/operations/diagnostic-presentation";
 
 import {
   buildCacheDetail,
@@ -73,7 +74,11 @@ describe("diagnostic-detail-utils", () => {
 
   it("监控表格显示独立的采集健康与就绪列，旧服务端显示未知", () => {
     const root = document.createElement("div");
+    const sources = createDiagnosticSources();
+    sources.deviceConnectionMetrics.lastAttemptAt = 1;
+    sources.deviceConnectionMetrics.lastSuccessAt = 1;
     const app = createApp(DiagnosticDetailPanel, {
+      sources, loading: false,
       cacheMetrics: {}, performanceMetrics: {}, exceptionStats: {}, storageMetrics: {}, pipelineMetrics: {},
       deviceMetrics: { connections: [
         { deviceId: "offline", connected: true, runtime: { deviceId: "offline", deviceHealth: "OFFLINE", ready: false, healthReason: "采集器已停止" } },

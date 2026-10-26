@@ -1,5 +1,25 @@
 # collector-desktop 前端架构重构进度
 
+## 最新请求：发布阻断R1（2026-10-26，按停止门交付）
+
+当前状态：`MQTT_DEFAULT_PASS / OPC_TEST_COMPILE_PASS / FRONTEND_REGRESSION_PASS / TDENGINE_STARTUP_PARTIAL / SQLITE_EXTRA_POSTCOMMIT_503 / RELEASE_NOT_READY`。不创建Phase18，不扩改SQLite/历史架构或Windows安装。
+
+- 本轮无前端生产/测试/依赖变更；完整npm verify exit0，78文件626项全过，lint/stylelint/typecheck/build/build:web均通过。61项renderer/Boot静态源码/最终JAR完整集合及字节一致。
+- 最终JAR SHA256 `b7fb482372cb1dd9f1b951c8a9b793c21bfe8b71260b424465e99567fbc6a00f`；默认willTopic空字符串的V3/V5真实UI15检查/6脱敏PNG通过，包括保存重开、正常重启/新Chrome恢复、不自动采集、页面手动采停和新鲜质量时间，未部署9090。
+- 后端最后相关选择集51类456项0fail/error、2原skip；OPC目标8项/模块29项通过。C只取消runner预热，历史拒绝时多设备实时正常；超时场景登录未完成。额外SQLite探针重启后保存两次503但请求新值已持久化，未闭，不沿用旧核心PASS。
+- 按用户停止门不扩改公共补偿/Redis/Writer或SQLite。十项报告与九门禁见根`docs/sqlite-persistence/release-blockers-r1/FINAL-GATES.md`；Windows安装NOT_TESTED、RELEASE_READY=FAIL。保留外部保护文件漂移披露，未add/commit/push/reset/clean。
+
+下方2026-10-23及更早记录均为相应候选的冻结历史，不能替代本轮门禁。
+
+## 最新请求：SQLite最终收尾测试契约与真实UI验收（2026-10-23）
+
+当前状态：`FRONTEND_REGRESSION_PASS / SQLITE_CORE_PASS / UI_DEFAULT_MQTT_BLOCKED / BACKEND_BOOT_TEST_COMPILE_BLOCKED / WINDOWS_INSTALL_NOT_TESTED / RELEASE_NOT_READY`。这是独立SQLite收尾，不创建Phase18，也不接续下面历史视觉任务。
+
+- 仅按显式授权修改7个前端测试契约：真实scoped CSS、Header语义、稳定UUID、Router/props/ElPopover/Schema Mock、ElSelect宿主及保存重试；不改生产Vue/TS、依赖或全局timeout，不删测试/skip。
+- `npm.cmd --prefix collector-desktop run verify`实际exit0：78文件、626项全过，无unhandled error；lint/stylelint/typecheck/build/build:web均通过。61个renderer/Boot静态源/JAR文件路径及字节一致；新构件SHA为`80ad486bcf0af045ad5207f8b6abc40bbf940b9e6c755f9813cabf8e5d85d652`，未部署9090或操作既有服务。
+- 新候选真实浏览器A–F专项29检查/16脱敏截图通过，含实际保存、点位增删身份、两轮关停重启、新浏览器、页面启停采集及错误草稿；MQTT需显式willTopic:null。默认空字符串遗嘱会导致现有驱动初始化失败，未修驱动，不能签无条件UI/发布PASS。OPC测试编译、Windows跨账号正式安装及TDengine条件性启动阻断另列。
+- 详细六问表与十项交付见仓库根`docs/sqlite-persistence/scope-review/FINAL-ACCEPTANCE.md`、FRONTEND-REGRESSION.md、UI-CRUD.md；下方历史部署/像素状态不代表本候选已部署或人工视觉签收。未add/commit/push/reset/clean。
+
 ## 最新请求：设备管理配置工作台主辅布局修正与9090重部署（2026-10-17）
 
 当前状态：`IMPLEMENTED / STATIC_GATES_PASS / DEPLOYED_9090 / SHELL_VISUAL_PASS / INNER_WORKBENCH_PIXEL_ACCEPTANCE_BLOCKED`。本轮只调整“设备管理 → 设备配置工作台”标签页的呈现布局：把原先占据较大空间的运行状态、协议连接配置收窄为左侧配置轨，把点位列表、实时数据、告警、日志和点位详情扩展为右侧主工作区；未修改 API、DTO、Store、Router、Schema、请求生命周期、默认值、业务 handler 或保存/执行边界。
@@ -2326,3 +2346,12 @@ Phase 17 已完成并通过最终验收。本轮 `collector-desktop` 前端架�
 - 原条款盘点`deleg_3738a697`已完成并实际消费。JSON为266240 bytes、SHA `7b7838fbb20eb30243bafec924f9609f9c7b5e47069048fbcf26c02797385422`；Markdown为83989 bytes、SHA `061dd620e6a87448e54916a363f45c3393b6e81da030399571eafa7583b076d2`。`PARENT-INVENTORY-READBACK.json`逐套对原文件核id/priority/criterion全文、顺序与原文SHA，共120条（云/诊断42、日志/网络42、共享/采集36）一致；28个同名ID的80次出现独立保留。P0/P1/P2为50/38/32，9个输入manifest与9个安全源snapshot全部匹配；原84、旧157子门禁及共享/采集新增51证据路由分支各自保留，208不是原条款数量。10条待采动作不等于已执行；没有签新PASS。历史两套S-NAV-04 FAIL/82 BLOCKED、共享/采集旧限定像素结论及专项`SCOPED_MF_FOCUS_01_PASS`分别保留。
 - 原盘点不能授予或撤销父级既有许可：Q2一次task-owned真实root卸载/cleanup可以观察，但不制造延迟、断网、拦包或竞态，也不把换route当root卸载。真实0/false/空/混排序/accepted-owner/last-good若未自然出现仍缺证；秘密原文不因全部授权可读取。执行计划已按该无测试/无制造状态边界收紧，未改不可变盘点文件或原合同。
 - 新像素终审、真实成功/last-good/混排序/隐藏全文/accepted-owner条件以及最终效果图ZIP仍PENDING。旧PNG或HTTP200不替代本窗口的新证据；秘密全文和现环境不存在的真实状态不能单靠全部授权变为PASS。
+
+## 2026-10-23 SQLite最终收尾详细记录（独立任务，停止在本轮）
+
+- 布局/Header原样聚焦复现9+2失败，保留12+11项并对齐真实SFC/scoped外部CSS及Headers大小写无关/Main权威注入；不恢复历史布局或不安全renderer头。
+- point.store保留稳定UUID；CloudView补memory Router和当前中文按钮；device-request-lifecycle补ElPopover/协议标识并保留真实交错断言；diagnostic挂载补正式sources/loading。四文件子任务中断后父任务读diff并独立聚焦exit0，不把子任务中断当通过。
+- LocalDeviceEditor宿主仅隔离ElSelect展示开销，保持默认5s；启动失败后的直接重试不再隐式第二次启动，设备/点位UUID及草稿/payload断言保留。连续三次19/19及最终全量626/626通过。
+- 同一新构件核心HTTP/SQLite103检查通过；真实UI专项29检查和三浏览器两次重启通过，COMMIT后持续缓存失败实际503/committed=true且页面明确不要重复提交。没有新增生产故障入口或修改字节码。
+- 真实MQTT默认空willTopic仍失败，页面配置null后才通过实际值/quality100/新鲜时间及页面停止。此规避不能算修复，UI正式总门FAIL；未越界改驱动。
+- 最终候选生产Java/Vue/TS相对入场未改；额外受保护Prototype.psm1漂移归属未确认、原样保留且不入候选。所有未测/阻断、构件身份、清理和安全证据包见FINAL-ACCEPTANCE.md；不自动进入后续开发。

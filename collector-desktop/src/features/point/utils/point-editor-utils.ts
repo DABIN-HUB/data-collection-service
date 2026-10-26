@@ -1,3 +1,4 @@
+import { createLocalPointId } from "@/features/device/utils/local-device-utils";
 import type { RealtimePointRow } from "@/types/monitor";
 import type { DataPoint } from "@/types/point";
 import type { ProtocolFieldConfig } from "@/types/protocol";
@@ -43,7 +44,7 @@ export function buildIncrementalPoints(options: BuildIncrementalPointsOptions): 
   return Array.from({ length: count }, (_unused, index) => {
     const suffix = String(index + 1).padStart(3, "0");
     return {
-      pointId: `local-${options.pointCodePrefix}_${suffix}`,
+      pointId: createLocalPointId(),
       pointCode: `${options.pointCodePrefix}_${suffix}`,
       pointName: `${options.pointNamePrefix}${suffix}`,
       address: incrementAddress(options.baseAddress, index * options.addressStep),
@@ -93,6 +94,7 @@ export function buildPointLocationTarget(point: Pick<DataPoint, "pointId" | "poi
 /** 只为缺失模式的点位补默认值，不改写历史配置中的显式 collectionMode。 */
 export function normalizePointRows(rows: DataPoint[], fallbackCollectionMode = "POLLING"): DataPoint[] {
   return rows.map((row, index) => {
+    if (row.id !== undefined && !row.pointId?.trim()) throw new Error("历史点位缺少 pointId，请先修复身份，不能重新生成");
     const pointCode = row.pointCode || `point_${String(index + 1).padStart(3, "0")}`;
     return {
       readWrite: "R",
@@ -100,7 +102,7 @@ export function normalizePointRows(rows: DataPoint[], fallbackCollectionMode = "
       status: 1,
       ...row,
       collectionMode: row.collectionMode || fallbackCollectionMode,
-      pointId: row.pointId || `local-${pointCode}`,
+      pointId: row.pointId || createLocalPointId(),
       pointCode
     };
   });

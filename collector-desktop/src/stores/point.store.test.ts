@@ -51,7 +51,7 @@ describe("point.store", () => {
 
     expect(store.getPoints("dev-1")).toHaveLength(1);
     expect(store.getPoints("dev-1")[0]).toMatchObject({
-      pointId: "local-point_001",
+      pointId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
       pointCode: "point_001",
       pointName: "点位001",
       address: "40001",
@@ -88,7 +88,10 @@ describe("point.store", () => {
 
     store.replacePoints("dev-1", [{ pointCode: "pressure", pointName: "压力" }]);
 
-    expect(store.getPoints("dev-1")[0]).toMatchObject({ pointId: "local-pressure", pointCode: "pressure" });
+    expect(store.getPoints("dev-1")[0]).toMatchObject({
+      pointId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+      pointCode: "pressure"
+    });
     expect(store.getSelectedIds("dev-1")).toEqual([]);
   });
 

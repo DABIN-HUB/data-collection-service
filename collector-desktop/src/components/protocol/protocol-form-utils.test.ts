@@ -28,6 +28,34 @@ describe("protocol-form-utils", () => {
     });
   });
 
+  it("顶层三项超时读取 Ms 外部字段并提交为 Ms，扩展同名字段不改名", () => {
+    const timeoutFields: ProtocolFieldConfig[] = ["connectTimeout", "readTimeout", "writeTimeout"].map((name) => ({ name, type: "integer", storage: "topLevel", defaultValue: "1000" }));
+    const base = { connectTimeoutMs: 1201, readTimeoutMs: 2302, writeTimeoutMs: 3403, extJson: { readTimeout: 9, unknown: null } };
+    const model = extractProtocolModel(timeoutFields, base);
+    expect(model).toEqual({ connectTimeout: 1201, readTimeout: 2302, writeTimeout: 3403 });
+    expect(buildConnectionPayload(timeoutFields, model, base)).toEqual(base);
+    expect(extractProtocolModel(timeoutFields, { readTimeout: 42 }).readTimeout).toBe(42);
+    expect(buildConnectionPayload([{ name: "readTimeout", storage: "extJson" }], { readTimeout: 7 }).extJson).toEqual({ readTimeout: 7 });
+  });
+
+  it("对象字段以 JSON 回显并解析，未知嵌套与 null 保留，非法形状阻断保存", () => {
+    const objectFields: ProtocolFieldConfig[] = [{ name: "headers", label: "请求头", type: "object", storage: "extJson" }];
+    const headers = { nested: [1, null, { value: "x" }], empty: "", optional: null };
+    const base = { extJson: { headers, unknown: { flag: false } } };
+    const model = extractProtocolModel(objectFields, base);
+    expect(JSON.parse(String(model.headers))).toEqual(headers);
+    expect(buildConnectionPayload(objectFields, model, base)).toEqual(base);
+    expect(validateProtocolModel(objectFields, { headers: "[1]" })).toContain("请求头必须是 JSON 对象");
+    expect(() => buildConnectionPayload(objectFields, { headers: "{" }, base)).toThrow();
+    expect(buildConnectionPayload(objectFields, { headers: "" }, base).extJson).toEqual({ headers: null, unknown: { flag: false } });
+  });
+
+  it("integer 缺省为数值且不接受小数", () => {
+    const integerFields: ProtocolFieldConfig[] = [{ name: "count", label: "数量", type: "integer", defaultValue: "3" }];
+    expect(buildProtocolInitialModel(integerFields)).toEqual({ count: 3 });
+    expect(validateProtocolModel(integerFields, { count: 1.5 })).toContain("数量必须是整数");
+  });
+
   it("按字段分组且保留原始顺序", () => {
     expect(groupProtocolFields(fields).map((group) => [group.name, group.fields.map((field) => field.name)])).toEqual([
       ["基础连接", ["host", "port"]],

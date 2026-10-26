@@ -10,6 +10,13 @@ import type { ProtocolSchema } from "@/types/protocol";
 
 vi.mock("@/api/config.api", () => ({ createLocalDevice: vi.fn(), updateLocalDevice: vi.fn() }));
 vi.mock("@/api/protocol.api", () => ({ getProtocol: vi.fn() }));
+vi.mock("element-plus", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("element-plus")>();
+  const { defineComponent } = await import("vue");
+  // 仅隔离 happy-dom 中昂贵的下拉控件渲染，编辑器、子表单和保存会话仍真实执行。
+  const SelectStub = defineComponent({ render: () => null });
+  return { ...actual, ElSelect: SelectStub };
+});
 
 import { alarmRules, parseBooleanOption, serializeAlarmRules, type AlarmRule } from "@/features/point/utils/point-draft-utils";
 import localDeviceEditorSource from "../components/LocalDeviceEditor.vue?raw";
@@ -43,6 +50,14 @@ function deferred<T>() {
 }
 
 interface EditorState {
+  protocol: string;
+  points: DataPoint[];
+  configJson: string;
+  schemaReady: boolean;
+  duplicatePoint: () => void;
+  onProtocolChanged: () => Promise<void>;
+  buildConfigSnapshot: () => { device: Record<string, unknown>; connection: Record<string, unknown> };
+  addAlarmRuleForCurrent: () => void;
   deviceId: string;
   deviceName: string;
   saving: boolean;
@@ -86,6 +101,68 @@ const adaptive = {
 };
 
 describe("LocalDeviceEditor 保存会话", () => {
+  it("改名保存及高级 JSON 在完整设备和连接 base 上往返，并使用读取版本", async () => {
+    const { state } = mountEditor();
+    const bundle = { configVersion: 7, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP", remark: "保留", authConfig: { custom: [null, 1] } }, connection: { deviceId: "historic", connectionType: "MODBUS_TCP", host: "saved", authParams: { secret: "masked" }, extJson: { custom: { empty: "", nil: null } } }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002", pointChangeThreshold: 0 }] };
+    state.reset(bundle);
+    state.deviceName = "改名";
+    const snapshot = state.buildConfigSnapshot();
+    expect(snapshot.device).toMatchObject({ remark: "保留", authConfig: { custom: [null, 1] } });
+    expect(snapshot.connection).toMatchObject(bundle.connection);
+    state.applyConfigSnapshot({ ...snapshot, device: { ...snapshot.device, remark: "JSON 修改" }, connection: { ...snapshot.connection, extJson: { custom: { changed: true } } } });
+    vi.mocked(updateLocalDevice).mockResolvedValue({ deviceId: "historic", saved: true, configVersion: 8 });
+    await state.save();
+    expect(vi.mocked(updateLocalDevice).mock.calls[0][1]).toMatchObject({ baseVersion: 7, device: { deviceName: "改名", remark: "JSON 修改", authConfig: { custom: [null, 1] } }, connection: { host: "saved", authParams: { secret: "masked" }, extJson: { custom: { changed: true } } }, points: [{ pointId: "p1", pointChangeThreshold: 0 }] });
+  });
+
+  it("Schema 加载中与失败均不可保存，迟到成功后才允许", async () => {
+    const pending = deferred<ProtocolSchema>();
+    vi.mocked(getProtocol).mockReturnValueOnce(pending.promise);
+    const { state } = mountEditor([]);
+    state.deviceName = "Schema 尚未就绪";
+    await state.save();
+    expect(createLocalDevice).not.toHaveBeenCalled();
+    expect(state.error).toContain("协议字段");
+    pending.reject(new Error("读取失败"));
+    await pending.promise.catch(() => undefined);
+    await nextTick();
+    await state.save();
+    expect(createLocalDevice).not.toHaveBeenCalled();
+    expect(state.schemaReady).toBe(false);
+  });
+
+  it("复制进入草稿即分配 UUID，保存失败重试不改变身份", async () => {
+    const { state, visible, saved } = mountEditor();
+    const identity = state.deviceId;
+    state.deviceName = "设备";
+    const originalId = state.points[0].pointId;
+    state.duplicatePoint();
+    const copyId = state.points[1].pointId;
+    const draft = JSON.stringify(state.points);
+    expect(copyId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(copyId).not.toBe(originalId);
+    vi.mocked(createLocalDevice).mockRejectedValue(new Error("保存失败"));
+    await state.save();
+    expect(state.error).toBe("保存失败");
+    expect(JSON.stringify(state.points)).toBe(draft);
+    await state.save();
+    expect(vi.mocked(createLocalDevice).mock.calls.map(([payload]) => payload.points[1].pointId)).toEqual([copyId, copyId]);
+    expect(vi.mocked(createLocalDevice).mock.calls.map(([payload]) => payload.device.deviceId)).toEqual([identity, identity]);
+    expect(state.deviceId).toBe(identity);
+    expect(JSON.stringify(state.points)).toBe(draft);
+    expect(state.saving).toBe(false);
+    expect(visible.value).toBe(true);
+    expect(saved).not.toHaveBeenCalled();
+  });
+
+  it("对象告警明确保留，新增规则不能覆盖原规则", () => {
+    const { state } = mountEditor();
+    state.points[0].alarmRule = '{"custom":{"threshold":0,"unknown":null}}';
+    state.addAlarmRuleForCurrent();
+    expect(state.points[0].alarmRule).toBe('{"custom":{"threshold":0,"unknown":null}}');
+    expect(state.error).toContain("原规则保留");
+  });
+
   it("配置重启待完成不是启动失败，保持同一设备身份并结束保存会话", async () => {
     const { state, visible, saved } = mountEditor();
     const identity = state.deviceId;
@@ -115,14 +192,28 @@ describe("LocalDeviceEditor 保存会话", () => {
     const identity = state.deviceId;
     state.deviceName = "新设备";
     state.startAfterSave = true;
-    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: identity, saved: true, started: false, startStatus: "FAILED", startError: "连接失败" });
+    const draft = JSON.stringify(state.points);
+    vi.mocked(createLocalDevice)
+      .mockResolvedValueOnce({ deviceId: identity, saved: true, started: false, startStatus: "FAILED", startError: "连接失败" })
+      .mockResolvedValueOnce({ deviceId: identity, saved: true, started: false });
     await state.save();
+    expect(vi.mocked(createLocalDevice).mock.calls[0][0]).toMatchObject({ overwrite: false, startAfterSave: true, device: { deviceId: identity, deviceName: "新设备" } });
     expect(visible.value).toBe(true);
     expect(state.deviceId).toBe(identity);
+    expect(state.deviceName).toBe("新设备");
+    expect(JSON.stringify(state.points)).toBe(draft);
+    expect(state.startAfterSave).toBe(false);
+    expect(state.saving).toBe(false);
     expect(state.error).toContain("配置已保存，但启动失败");
     expect(saved).toHaveBeenCalledWith(identity);
     await state.save();
-    expect(vi.mocked(createLocalDevice).mock.calls[1][0]).toMatchObject({ overwrite: true, startAfterSave: true, device: { deviceId: identity } });
+    expect(createLocalDevice).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(createLocalDevice).mock.calls[1][0]).toMatchObject({ overwrite: true, startAfterSave: false, device: { deviceId: identity, deviceName: "新设备" } });
+    expect(vi.mocked(createLocalDevice).mock.calls[1][0].points).toEqual(vi.mocked(createLocalDevice).mock.calls[0][0].points);
+    expect(visible.value).toBe(false);
+    expect(state.error).toBe("");
+    expect(saved).toHaveBeenCalledTimes(2);
+    expect(updateLocalDevice).not.toHaveBeenCalled();
     expect(localDeviceEditorSource).not.toContain("await startLocalDevice");
   });
 
