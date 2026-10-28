@@ -389,15 +389,19 @@ public class HistoryWriteBuffer {
             try {
                 writeBatch(requests);
                 recordReplayBatch(requests.size(), System.nanoTime() - startedAt);
-                replaySuccessfulRows.add(requests.size());
             } catch (RuntimeException exception) {
                 replayFailedRows.add(requests.size());
                 log.warn("历史数据批量回放失败，将在下一轮继续重试", exception);
                 return 0;
             }
             try {
-                removeOwnedProcessing(validJsons);
+                if (!removeOwnedProcessing(validJsons)) {
+                    replayFailedRows.add(requests.size());
+                    return 0;
+                }
+                replaySuccessfulRows.add(requests.size());
             } catch (RuntimeException exception) {
+                replayFailedRows.add(requests.size());
                 log.warn("历史批量回放已写库，但 Redis processing 删除失败，下次可能重复写入", exception);
             }
             return claimed.size();
@@ -424,15 +428,18 @@ public class HistoryWriteBuffer {
         return claimed;
     }
 
-    private void removeOwnedProcessing(List<String> validJsons) {
+    private boolean removeOwnedProcessing(List<String> validJsons) {
+        boolean allRemoved = true;
         for (String json : validJsons) {
             Long removed = redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
             log.debug("历史回放 ACK 命令完成，消息指纹={}，LREM返回={}", payloadFingerprint(json), removed);
             if (!Long.valueOf(1L).equals(removed)) {
+                allRemoved = false;
                 log.warn("历史回放 ACK 未确认，消息指纹={}，LREM返回={}，消息可能再次投递",
                         payloadFingerprint(json), removed);
             }
         }
+        return allRemoved;
     }
 
     /**
