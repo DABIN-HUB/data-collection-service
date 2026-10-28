@@ -18,12 +18,16 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * 历史数据写入缓冲器，Redis 队列承担写失败恢复，本地有界队列承担 Redis 故障降级。
@@ -422,7 +426,25 @@ public class HistoryWriteBuffer {
 
     private void removeOwnedProcessing(List<String> validJsons) {
         for (String json : validJsons) {
-            redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+            Long removed = redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+            log.debug("历史回放 ACK 命令完成，消息指纹={}，LREM返回={}", payloadFingerprint(json), removed);
+            if (!Long.valueOf(1L).equals(removed)) {
+                log.warn("历史回放 ACK 未确认，消息指纹={}，LREM返回={}，消息可能再次投递",
+                        payloadFingerprint(json), removed);
+            }
+        }
+    }
+
+    /**
+     * 只记录稳定的消息指纹，禁止在 ACK 异常日志中输出业务 payload。
+     */
+    private String payloadFingerprint(String json) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(json.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JDK 不支持 SHA-256", exception);
         }
     }
 
