@@ -2,6 +2,7 @@ package com.wangbin.collector.monitor.health;
 
 import com.wangbin.collector.storage.buffer.HistoryBufferMetrics;
 import com.wangbin.collector.storage.buffer.HistoryWriteBuffer;
+import com.wangbin.collector.storage.buffer.HistoryBufferProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -18,6 +19,7 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
 
     private static final double LOCAL_QUEUE_WARNING_RATIO = 0.9D;
     private final HistoryWriteBuffer historyWriteBuffer;
+    private final HistoryBufferProperties properties;
 
     /**
      * 输出历史缓冲队列健康状态和补偿计数。
@@ -30,15 +32,23 @@ public class HistoryBufferHealthIndicator implements HealthIndicator {
         Health.Builder builder;
         if (metrics.redisPending() < 0L) {
             builder = localUsage >= LOCAL_QUEUE_WARNING_RATIO ? Health.down() : Health.unknown();
-        } else if (metrics.redisDeadLetter() > 0L || localUsage >= LOCAL_QUEUE_WARNING_RATIO) {
+        } else if (properties.getRedisQueueCapacity() <= 0 || properties.getDeadLetterCapacity() <= 0
+                || metrics.redisDeadLetter() > 0L || localUsage >= LOCAL_QUEUE_WARNING_RATIO
+                || metrics.writeFailureDropped() + metrics.rejectedDropped() > 0L
+                || (properties.getRedisQueueCapacity() > 0
+                    && metrics.redisPending() + metrics.redisProcessing() >= properties.getRedisQueueCapacity())
+                || (properties.getDeadLetterCapacity() > 0
+                    && metrics.redisDeadLetter() >= properties.getDeadLetterCapacity())) {
             builder = Health.down();
         } else {
             builder = Health.up();
         }
         return builder
                 .withDetail("Redis待写数量", metrics.redisPending())
+                .withDetail("Redis待写与处理中容量", properties.getRedisQueueCapacity())
                 .withDetail("Redis处理中数量", metrics.redisProcessing())
                 .withDetail("Redis隔离数量", metrics.redisDeadLetter())
+                .withDetail("Redis隔离容量", properties.getDeadLetterCapacity())
                 .withDetail("本地待写数量", metrics.localPending())
                 .withDetail("本地队列容量", metrics.localCapacity())
                 .withDetail("写失败Redis缓冲累计", metrics.writeFailureRedisBuffered())

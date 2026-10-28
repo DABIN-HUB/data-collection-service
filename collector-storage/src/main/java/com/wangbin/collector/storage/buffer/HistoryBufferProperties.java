@@ -23,4 +23,8 @@ public class HistoryBufferProperties {
     private int replayLiveQueueLimitedThresholdPercent = 30;
     private int replayLiveQueuePauseThresholdPercent = 70;
     private int localQueueCapacity = 10_000;
+    /** Redis 待写与处理中消息的总容量；零仅用于显式兼容旧行为。 */
+    private int redisQueueCapacity = 10_000;
+    /** Redis 隔离队列的最大容量；满时保留原 processing 消息。 */
+    private int deadLetterCapacity = 10_000;
 }

@@ -847,6 +847,8 @@ class CombinedDownstreamFailureTest {
             properties.setDeadLetterKey("combined:history:dead");
             properties.setReplayBatchSize(replayBatchSize);
             properties.setLocalQueueCapacity(localCapacity);
+            properties.setRedisQueueCapacity(0);
+            properties.setDeadLetterCapacity(0);
             return properties;
         }
     }
