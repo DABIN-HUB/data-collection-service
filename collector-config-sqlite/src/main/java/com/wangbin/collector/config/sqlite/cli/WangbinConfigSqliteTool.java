@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.config.sqlite.codec.ConfigurationJsonCodec;
 import com.wangbin.collector.config.sqlite.database.SqlitePaths;
 import com.wangbin.collector.config.sqlite.migration.LegacyJsonMigration;
-import com.wangbin.collector.config.sqlite.store.SqliteConfigurationStore;
+import com.wangbin.collector.config.sqlite.service.impl.SqliteConfigServiceImpl;
 
 import java.io.PrintStream;
 import java.nio.file.Path;
@@ -50,7 +50,7 @@ public final class WangbinConfigSqliteTool {
                 }
                 case "migrate" -> {
                     requireOptions(options, "--database", "--source");
-                    try (var store = SqliteConfigurationStore.openExisting(SqlitePaths.resolve(options.get("--database")), BUSY_TIMEOUT_MS)) {
+                    try (var store = SqliteConfigServiceImpl.openExisting(SqlitePaths.resolve(options.get("--database")), BUSY_TIMEOUT_MS)) {
                         var migration = new LegacyJsonMigration(store, new ConfigurationJsonCodec()).migrate(source);
                         result.put("status", migration.status().name());
                         result.put("devices", migration.record().deviceCount());

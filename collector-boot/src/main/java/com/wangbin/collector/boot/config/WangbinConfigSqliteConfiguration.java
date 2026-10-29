@@ -2,7 +2,7 @@ package com.wangbin.collector.boot.config;
 
 import com.wangbin.collector.config.sqlite.database.SqlitePaths;
 import com.wangbin.collector.config.sqlite.cli.WangbinInstallationBootstrap;
-import com.wangbin.collector.core.config.persistence.ConfigurationStore;
+import com.wangbin.collector.core.config.persistence.SqliteConfigService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(WangbinConfigSqliteProperties.class)
 public class WangbinConfigSqliteConfiguration {
     @Bean(name = "wangbinConfigurationStore", destroyMethod = "close")
-    public ConfigurationStore wangbinConfigurationStore(WangbinConfigSqliteProperties properties) {
+    public SqliteConfigService wangbinConfigurationStore(WangbinConfigSqliteProperties properties) {
         return WangbinInstallationBootstrap.openOrInitializeInstallation(
                 SqlitePaths.resolve(properties.getDatabasePath()), properties.getBusyTimeoutMs());
     }

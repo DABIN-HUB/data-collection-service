@@ -6,6 +6,7 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.persistence.ConfigurationReader;
 import com.wangbin.collector.core.config.persistence.ConfigurationRevision;
 import com.wangbin.collector.core.config.persistence.ConfigurationStore;
+import com.wangbin.collector.core.config.persistence.SqliteConfigService;
 import com.wangbin.collector.core.config.persistence.DeviceConfiguration;
 import com.wangbin.collector.core.config.persistence.MigrationRecord;
 import com.wangbin.collector.core.config.persistence.StoredDeviceConfiguration;
@@ -38,27 +39,27 @@ import java.util.function.Function;
 public final class WangbinSqliteLocalConfigurationPersistence implements WangbinLocalConfigurationPersistence {
     private static final int AUDIT_PAGE_SIZE = 256;
     private static final int MAX_SOURCE_BYTES = 64 * 1024 * 1024;
-    private final ConfigurationStore store;
+    private final SqliteConfigService store;
     private final Path migrationSource;
     private final ConfigurationJsonCodec codec;
 
     /** 新配置从合法空库开始，不读取旧JSON，也不要求迁移记录。 */
-    public WangbinSqliteLocalConfigurationPersistence(ConfigurationStore store) {
+    public WangbinSqliteLocalConfigurationPersistence(SqliteConfigService store) {
         this(store, java.time.ZoneId.of("Asia/Shanghai"));
     }
 
-    public WangbinSqliteLocalConfigurationPersistence(ConfigurationStore store, java.time.ZoneId legacyTimeZone) {
+    public WangbinSqliteLocalConfigurationPersistence(SqliteConfigService store, java.time.ZoneId legacyTimeZone) {
         this.store = Objects.requireNonNull(store, "配置仓储不能为空");
         this.codec = new ConfigurationJsonCodec(legacyTimeZone);
         this.migrationSource = null;
     }
 
-    public WangbinSqliteLocalConfigurationPersistence(ConfigurationStore store, Path migrationSource) {
+    public WangbinSqliteLocalConfigurationPersistence(SqliteConfigService store, Path migrationSource) {
         this(store, migrationSource, java.time.ZoneId.of("Asia/Shanghai"));
     }
 
     /** 保留两参数兼容入口；切换到其他旧JSON来源时可显式传入其写出时区。 */
-    public WangbinSqliteLocalConfigurationPersistence(ConfigurationStore store, Path migrationSource, java.time.ZoneId legacyTimeZone) {
+    public WangbinSqliteLocalConfigurationPersistence(SqliteConfigService store, Path migrationSource, java.time.ZoneId legacyTimeZone) {
         this.codec = new ConfigurationJsonCodec(legacyTimeZone);
         this.store = Objects.requireNonNull(store, "配置仓储不能为空");
         this.migrationSource = Objects.requireNonNull(migrationSource, "显式迁移来源路径不能为空")
