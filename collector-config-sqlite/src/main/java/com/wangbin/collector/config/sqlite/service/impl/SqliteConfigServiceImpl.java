@@ -58,6 +58,15 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         finally { transactionActive.remove(); }
     }
 
+    @Override public <T> T readSnapshot(Function<ConfigurationReader, T> action) {
+        checkOpen();
+        if (action == null) throw new IllegalArgumentException("只读回调不能为空");
+        if (transactionActive.get()) throw new IllegalStateException("不允许嵌套配置事务");
+        transactionActive.set(true);
+        try { return read(action::apply); }
+        finally { transactionActive.remove(); }
+    }
+
     private <T> T read(Function<Session, T> action) { return operate(action, false); }
 
     private <T> T operate(Function<Session, T> action, boolean write) {

@@ -243,14 +243,14 @@ public final class WangbinSqliteLocalConfigurationPersistence implements Wangbin
         return store.findDeviceSummary(deviceId).map(codec::toDeviceInfo);
     }
     @Override public Optional<DeviceContext> findDeviceConnectionContext(String deviceId) {
-        return store.transaction(writer -> writer.findDeviceSummary(deviceId).map(summary ->
+        return store.readSnapshot(reader -> reader.findDeviceSummary(deviceId).map(summary ->
                 codec.toRuntime(new DeviceConfiguration(summary.deviceId(), summary.deviceJson(),
-                        writer.findDeviceConnection(deviceId).orElse(null), List.of()))));
+                        reader.findDeviceConnection(deviceId).orElse(null), List.of()))));
     }
     @Override public Optional<DeviceContext> findDevicePointsContext(String deviceId) {
-        return store.transaction(writer -> writer.findDeviceSummary(deviceId).map(summary ->
+        return store.readSnapshot(reader -> reader.findDeviceSummary(deviceId).map(summary ->
                 codec.toRuntime(new DeviceConfiguration(summary.deviceId(), summary.deviceJson(),
-                        null, writer.listDevicePoints(deviceId)))));
+                        null, reader.listDevicePoints(deviceId)))));
     }
     @Override public DeviceContext toRuntime(DeviceConfiguration configuration) { return codec.toRuntime(configuration); }
     @Override public DeviceConfiguration fromRuntime(DeviceContext context) { return codec.fromRuntime(context); }

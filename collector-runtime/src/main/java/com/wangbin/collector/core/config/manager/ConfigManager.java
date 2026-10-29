@@ -873,7 +873,7 @@ public class ConfigManager {
         try {
             Map<String, DeviceInfo> devices = new LinkedHashMap<>();
             for (DeviceInfo local : localConfigurationPersistence.listDeviceSummaries()) {
-                requireConfigurationReadable(local.getDeviceId());
+                if (localRecoveryRequired.contains(local.getDeviceId())) continue;
                 devices.put(local.getDeviceId(), local);
             }
             for (DeviceInfo cached : deviceCache.values()) {

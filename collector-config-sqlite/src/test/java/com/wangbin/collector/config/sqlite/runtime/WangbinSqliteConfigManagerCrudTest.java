@@ -138,6 +138,14 @@ class WangbinSqliteConfigManagerCrudTest {
             assertEquals(2, manager.getConfigurationDevices().size());
             assertEquals(2503, manager.getConfigurationConnection("a").copyConnectionConfig().getPort());
             assertEquals("40003", manager.getConfigurationPoints("a").copyDataPoints().get(0).getAddress());
+            long revision = store.currentRevision();
+            try (var blocker = sqlConnection(); var sql = blocker.createStatement()) {
+                sql.execute("BEGIN IMMEDIATE");
+                assertEquals(2503, manager.getConfigurationConnection("a").copyConnectionConfig().getPort());
+                assertEquals("40003", manager.getConfigurationPoints("a").copyDataPoints().get(0).getAddress());
+                sql.execute("ROLLBACK");
+            }
+            assertEquals(revision, store.currentRevision());
             assertEquals("40003", manager.getConfigurationDeviceSnapshot("a").context().copyDataPoints().get(0).getAddress());
             assertEquals("40001", manager.getDataPoints("a").get(0).getAddress());
             assertNull(manager.getConfigurationDevice("unknown"));
@@ -166,6 +174,8 @@ class WangbinSqliteConfigManagerCrudTest {
             assertThrows(RuntimeException.class, () -> manager.getConfigurationDevice("b"));
             assertThrows(RuntimeException.class, () -> manager.getConfigurationDeviceSnapshot("b"));
             assertThrows(RuntimeException.class, () -> manager.getConfigurationPoints("b"));
+            executeSql("DROP TABLE dc_device");
+            assertThrows(RuntimeException.class, manager::getConfigurationDevices);
         }
     }
 
@@ -463,6 +473,7 @@ class WangbinSqliteConfigManagerCrudTest {
             var manager = manager(store);
             save(manager, configuration("a", "p-a"));
             save(manager, configuration("b", "p-b"));
+            save(manager, configuration("c", "p-c"));
             var before = manager.getDeviceConfigurationSnapshot("a");
             var field = ConfigManager.class.getDeclaredField("deviceContextCache");
             field.setAccessible(true);
@@ -477,6 +488,12 @@ class WangbinSqliteConfigManagerCrudTest {
             assertFalse(error.isReconciled());
             assertEquals(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.Outcome.COMMITTED_RECOVERY_REQUIRED, error.getOutcome());
             assertEquals("committed-unavailable", codec.toRuntime(store.findDevice("a").orElseThrow().configuration()).getDeviceInfo().getDeviceName());
+            assertEquals(List.of("b", "c"), manager.getConfigurationDevices().stream()
+                    .map(DeviceInfo::getDeviceId).sorted().toList());
+            assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class,
+                    () -> manager.getConfigurationDevice("a"));
+            assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class,
+                    () -> manager.getConfigurationDeviceSnapshot("a"));
             assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class, () -> manager.getDeviceConfigurationSnapshot("a"));
             assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class, () -> manager.getDevice("a"));
             assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class, () -> manager.updateDeviceConfig(device));

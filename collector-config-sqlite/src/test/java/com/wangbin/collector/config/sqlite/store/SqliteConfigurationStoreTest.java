@@ -68,6 +68,42 @@ class SqliteConfigurationStoreTest {
         }
     }
 
+    @Test void readSnapshotKeepsOneVersionAllowsConcurrentWalWriteAndExpiresReader() throws Exception {
+        try (var reader = create(); var writer = SqliteConfigurationStore.openExisting(path(), 1000)) {
+            var before = device("d", "before");
+            reader.transaction(w -> w.saveDevice(before, 0));
+            var changed = device("d", "after");
+            ObjectNode connectionJson = (ObjectNode) codec.readJson(changed.connection().configJson());
+            connectionJson.put("port", 2503);
+            var after = new DeviceConfiguration("d", changed.deviceJson(),
+                    new ConnectionConfiguration("d", connectionJson.toString()), changed.points());
+            var pool = Executors.newSingleThreadExecutor();
+            AtomicReference<ConfigurationReader> escaped = new AtomicReference<>();
+            try {
+                long originalRevision = reader.currentRevision();
+                reader.readSnapshot(snapshot -> {
+                    escaped.set(snapshot);
+                    assertEquals(originalRevision, snapshot.findDeviceSummary("d").orElseThrow().revision());
+                    assertThrows(IllegalStateException.class, () -> reader.readSnapshot(inner -> inner.currentRevision()));
+                    assertThrows(IllegalStateException.class, () -> reader.transaction(w -> w.currentRevision()));
+                    assertThrows(IllegalStateException.class,
+                            () -> ((ConfigurationStore.Writer) snapshot).saveDevice(after, originalRevision));
+                    Future<?> committed = pool.submit(() -> writer.transaction(w -> w.saveDevice(after, originalRevision)));
+                    try { committed.get(5, TimeUnit.SECONDS); }
+                    catch (Exception exception) { throw new AssertionError("WAL 写事务不应被只读快照阻塞", exception); }
+                    assertEquals(originalRevision, snapshot.currentRevision());
+                    assertEquals(before.connection(), snapshot.findDeviceConnection("d").orElseThrow());
+                    assertEquals("before", snapshot.listDevicePoints("d").get(0).pointId());
+                    return null;
+                });
+                assertThrows(IllegalStateException.class, () -> escaped.get().currentRevision());
+                assertEquals(originalRevision + 1, reader.currentRevision());
+                assertEquals(after.connection(), reader.findDeviceConnection("d").orElseThrow());
+                assertEquals("after", reader.listDevicePoints("d").get(0).pointId());
+            } finally { pool.shutdownNow(); }
+        }
+    }
+
     @Test void createsAndReopensRealDatabase() {
         var input = device("d", "p");
         try (var store = create()) {
