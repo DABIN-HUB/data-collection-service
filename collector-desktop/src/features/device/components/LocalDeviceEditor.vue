@@ -327,9 +327,10 @@
         <label class="check-line"><input id="localStartAfterSave" v-model="startAfterSave" type="checkbox"> 保存后立即本地启动</label></div>
         <div class="local-step-actions">
           <button id="localEditorPrevBtn" type="button" :disabled="activeStep === 0" @click="moveStep(-1)">上一步</button>
-          <button id="localEditorNextBtn" type="button" :disabled="saving || (activeStep === localEditorSteps.length - 1 && (!schemaReady || protocolSwitching))" @click="activeStep === localEditorSteps.length - 1 ? save() : moveStep(1)">{{ activeStep === localEditorSteps.length - 1 ? "完成配置" : "下一步" }}</button>
-          <button id="saveLocalDeviceBtn" type="button" class="primary" :disabled="saving || !schemaReady || protocolSwitching" @click="save">{{ saving ? "保存中..." : "保存并测试" }}</button>
+          <button id="localEditorNextBtn" type="button" :disabled="saving || (activeStep === localEditorSteps.length - 1 && (saveBlocked || !schemaReady || protocolSwitching))" @click="activeStep === localEditorSteps.length - 1 ? save() : moveStep(1)">{{ activeStep === localEditorSteps.length - 1 ? "完成配置" : "下一步" }}</button>
+          <button id="saveLocalDeviceBtn" type="button" class="primary" :disabled="saving || saveBlocked || !schemaReady || protocolSwitching" @click="save">{{ saving ? "保存中..." : "保存并测试" }}</button>
         </div>
+        <p v-if="saveBlocked" id="localSaveBlockedHint" class="local-footer-note" role="status">草稿已保留，当前会话不可重复保存；请关闭编辑器并显式刷新权威配置，核对后重新打开编辑。</p>
         <p class="local-footer-note">“保存并测试”保存完整配置；仅勾选“保存后立即本地启动”才请求启动。启动受理不等于采集就绪，也不执行独立连接测试。</p>
       </footer>
     </div>
@@ -340,7 +341,7 @@
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, reactive, ref, watch, type PropType } from "vue";
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
 
-import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
+import { classifyConfigCommitResponse, createLocalDevice, updateLocalDevice } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "./LocalDeviceProtocolForm.vue";
@@ -446,6 +447,7 @@ const localEditorSteps = [
 const activeStep = ref(0);
 const completedSteps = ref(new Set<number>());
 const saving = ref(false);
+const saveBlocked = ref(false);
 let editorSession = 0;
 let schemaGeneration = 0;
 let savedInSession = false;
@@ -610,6 +612,7 @@ function reset(bundle: LocalDeviceBundle | null = null) {
   editorSession += 1;
   schemaGeneration += 1;
   saving.value = false;
+  saveBlocked.value = false;
   savedInSession = false;
   protocolChanged.value = false;
   activeStep.value = 0; completedSteps.value = new Set(); error.value = ""; pointKeyword.value = ""; pointDataTypeFilter.value = ""; pointReadWriteFilter.value = ""; changeDescription.value = "";
@@ -786,6 +789,7 @@ function applyConfigSnapshot(value: unknown) {
 function validateConfigSnapshot(value: ReturnType<typeof buildConfigSnapshot>) { const warnings: string[] = []; const errors = [...validateLocalDeviceDraft({ deviceId: value.device.deviceId, deviceName: value.device.deviceName, protocol: value.device.protocolType, points: value.points, cloudTarget: value.cloudTarget }), ...validateProtocolModel(connectionFields.value, value.connection as ProtocolFormModel)]; if (!value.points.some((point) => point.alarmEnabled)) warnings.push("尚未启用点位告警规则"); if (!totalReportFieldCount.value) warnings.push("尚未配置 reportField 上报属性"); return { errors, warnings }; }
 async function save() {
   if (saving.value) return;
+  if (saveBlocked.value) return;
   if (!schemaReady.value || protocolSwitching.value) { error.value = schemaLoading.value ? "协议字段正在加载，请稍后保存" : "协议字段未就绪，请重新打开编辑器后保存"; return; }
   const session = editorSession;
   const targetId = editingDeviceId.value || deviceId.value;
@@ -804,13 +808,18 @@ async function save() {
   try {
     const response = targetEditingId ? await updateLocalDevice(targetEditingId, payload) : await createLocalDevice(payload);
     if (!canCommit()) return;
-    const responseId = response.deviceId;
-    if (!responseId || responseId !== targetId) throw new Error("保存响应缺少设备身份或与请求不一致，请核对服务器配置后重试");
-    if (response.committed === false) {
-      error.value = `设备 ${responseId} 配置提交未确认，草稿已保留；请刷新配置并检查服务状态后再处理`;
+    let outcome: ReturnType<typeof classifyConfigCommitResponse>;
+    try { outcome = classifyConfigCommitResponse(response, targetId); }
+    catch (invalid) { saveBlocked.value = true; throw invalid; }
+    if (outcome !== "normal") {
+      saveBlocked.value = true;
+      error.value = outcome === "reconciled"
+        ? `设备 ${targetId} 配置已提交，已完成权威对账；草稿已保留，请关闭并显式刷新配置后核对，勿重复提交`
+        : `设备 ${targetId} 配置已提交，运行态待恢复；草稿已保留，请关闭并显式刷新配置、检查恢复状态，勿重复提交`;
       ElMessage.warning(error.value);
       return;
     }
+    const responseId = targetId;
     savedInSession = true;
     if (response.configVersion !== undefined) baseVersion.value = response.configVersion;
     if (response.persistedRevision !== undefined) baseRevision.value = response.persistedRevision;
@@ -846,9 +855,14 @@ async function save() {
     }
     close(false);
   } catch (caught) {
-    if (canCommit()) error.value = caught instanceof ApiRequestError && (caught.httpStatus === 409 || caught.machineCode === "CONFIG_VERSION_CONFLICT")
-      ? "设备持久配置已变化，草稿已保留；请显式重新加载配置，核对修改后再保存"
-      : caught instanceof Error ? caught.message : "本地设备保存失败";
+    if (canCommit()) {
+      const conflict = caught instanceof ApiRequestError && (caught.httpStatus === 409 || caught.machineCode === "CONFIG_VERSION_CONFLICT" || caught.machineCode === "CONFIG_PERSISTENCE_CONFLICT");
+      const uncertain = caught instanceof ApiRequestError && caught.machineCode === "CONFIG_COMMIT_UNCONFIRMED";
+      if (conflict || uncertain) saveBlocked.value = true;
+      error.value = conflict ? "设备持久配置已变化，草稿已保留；请显式重新加载配置，核对修改后再保存"
+        : uncertain ? "数据库提交结果待核对，草稿已保留；请勿重复提交，显式刷新配置后核对"
+          : caught instanceof Error ? caught.message : "本地设备保存失败";
+    }
   } finally {
     if (session === editorSession) saving.value = false;
   }

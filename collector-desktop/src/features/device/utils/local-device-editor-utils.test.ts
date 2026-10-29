@@ -3,13 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { computed, createApp, h, nextTick, ref, type App } from "vue";
 import LocalDeviceEditor from "../components/LocalDeviceEditor.vue";
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
-import { ApiRequestError } from "@/api/http";
+import { unwrapApiResponse } from "@/api/http";
+import { capturedPhase3Receipt } from "./phase3-http-receipts.test-fixtures";
 import { getProtocol } from "@/api/protocol.api";
 import type { LocalDeviceBundle } from "./local-device-utils";
 import type { LocalDeviceConfigResponse } from "@/types/config";
 import type { ProtocolSchema } from "@/types/protocol";
 
-vi.mock("@/api/config.api", () => ({ createLocalDevice: vi.fn(), updateLocalDevice: vi.fn() }));
+vi.mock("@/api/config.api", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/api/config.api")>()), createLocalDevice: vi.fn(), updateLocalDevice: vi.fn() }));
 vi.mock("@/api/protocol.api", () => ({ getProtocol: vi.fn() }));
 vi.mock("element-plus", async (importOriginal) => {
   const actual = await importOriginal<typeof import("element-plus")>();
@@ -66,6 +67,8 @@ interface EditorState {
   startAfterSave: boolean;
   connectionModel: Record<string, unknown>;
   save: () => Promise<void>;
+  setActiveStep: (index: number) => void;
+  saveBlocked: boolean;
   reset: (bundle?: LocalDeviceBundle | null) => void;
   applyConfigSnapshot: (value: unknown) => void;
 }
@@ -102,12 +105,62 @@ const adaptive = {
 };
 
 describe("LocalDeviceEditor 保存会话", () => {
+  for (const [code, reconciled] of [["RECONCILED", true], ["RECOVERY_REQUIRED", false], ["APPLY_FAILED", false]] as const) {
+    it(`HTTP200 CONFIG_COMMITTED_${code} 保留编辑草稿与旧令牌，拒绝再次提交`, async () => {
+      const { state, visible, saved } = mountEditor();
+      state.reset({ configVersion: 3, persistedRevision: 0, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+      state.deviceName = "草稿";
+      const draftPoints = JSON.stringify(state.points);
+      const kind = code === "RECONCILED" ? "reconciled" : code === "RECOVERY_REQUIRED" ? "recoveryRequired" : "applyFailed";
+      vi.mocked(updateLocalDevice).mockResolvedValueOnce(unwrapApiResponse(capturedPhase3Receipt(kind, "historic"), 200));
+      await state.save();
+      expect(state.error).toContain("刷新配置");
+      if (!reconciled) expect(state.error).toContain("配置已提交，运行态待恢复");
+      else expect(state.error).toContain("已完成权威对账");
+      expect(visible.value).toBe(true);
+      expect(state.deviceName).toBe("草稿");
+      expect(JSON.stringify(state.points)).toBe(draftPoints);
+      expect(saved).not.toHaveBeenCalled();
+      state.setActiveStep(4);
+      await nextTick();
+      expect((document.querySelector("#saveLocalDeviceBtn") as HTMLButtonElement).disabled).toBe(true);
+      expect((document.querySelector("#localEditorNextBtn") as HTMLButtonElement).disabled).toBe(true);
+      expect(document.querySelector("#localSaveBlockedHint")?.textContent).toContain("不可重复保存");
+      await state.save();
+      expect(updateLocalDevice).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(updateLocalDevice).mock.calls[0][1]).toMatchObject({ baseVersion: 3, baseRevision: 0 });
+    });
+  }
+
+  it("已提交回执 deviceIds 不匹配必须阻止成功和再次保存", async () => {
+    const { state, saved } = mountEditor();
+    state.reset({ configVersion: 3, persistedRevision: 0, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    vi.mocked(updateLocalDevice).mockResolvedValue({ committed: true, reconciled: true, reloadRequired: true, deviceIds: ["other"] });
+    await state.save(); await state.save();
+    expect(state.error).toContain("身份");
+    expect(saved).not.toHaveBeenCalled();
+    expect(updateLocalDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it("UNKNOWN 503 阻止继续提交并保留草稿", async () => {
+    const { state } = mountEditor();
+    state.reset({ configVersion: 3, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    state.deviceName = "草稿";
+    const body = capturedPhase3Receipt("unconfirmed", "historic");
+    vi.mocked(updateLocalDevice).mockImplementationOnce(async () => unwrapApiResponse(body, 503));
+    await state.save(); await state.save();
+    expect(state.deviceName).toBe("草稿");
+    expect(state.error).toContain("勿重复提交");
+    expect(updateLocalDevice).toHaveBeenCalledTimes(1);
+    await nextTick();
+    expect((document.querySelector("#saveLocalDeviceBtn") as HTMLButtonElement).disabled).toBe(true);
+  });
   it("编辑本地配置使用读取的持久修订；409 保留草稿并要求显式重新加载", async () => {
     const { state, visible, saved } = mountEditor();
     state.reset({ configVersion: 7, persistedRevision: 0, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
     state.deviceName = "未保存的改名";
     const draftPoints = JSON.stringify(state.points);
-    vi.mocked(updateLocalDevice).mockRejectedValueOnce(new ApiRequestError("版本冲突", { httpStatus: 409 }));
+    vi.mocked(updateLocalDevice).mockImplementationOnce(async () => unwrapApiResponse(capturedPhase3Receipt("conflict", "historic"), 409));
     await state.save();
     expect(vi.mocked(updateLocalDevice).mock.calls[0][1]).toMatchObject({ baseVersion: 7, baseRevision: 0 });
     expect(state.error).toContain("重新加载");
@@ -115,6 +168,30 @@ describe("LocalDeviceEditor 保存会话", () => {
     expect(JSON.stringify(state.points)).toBe(draftPoints);
     expect(visible.value).toBe(true);
     expect(saved).not.toHaveBeenCalled();
+    await state.save();
+    expect(updateLocalDevice).toHaveBeenCalledTimes(1);
+    await nextTick();
+    expect((document.querySelector("#saveLocalDeviceBtn") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("普通成功必须同时具备匹配 deviceId 和有效 configVersion，缺失版本不能成功或写入 undefined", async () => {
+    const { state, visible, saved } = mountEditor();
+    state.reset({ configVersion: 3, persistedRevision: 0, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    state.deviceName = "草稿";
+    vi.mocked(updateLocalDevice).mockResolvedValueOnce({ deviceId: "historic", persistedRevision: 7, committed: true });
+    await state.save();
+    expect(state.error).toContain("版本未确认");
+    expect(state.deviceName).toBe("草稿");
+    expect(visible.value).toBe(true);
+    expect(saved).not.toHaveBeenCalled();
+    expect(state.saveBlocked).toBe(true);
+    await state.save();
+    expect(updateLocalDevice).toHaveBeenCalledTimes(1);
+    state.reset({ configVersion: 4, persistedRevision: 1, device: { deviceId: "historic", deviceName: "权威", protocolType: "MODBUS_TCP" }, connection: { host: "authority" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    vi.mocked(updateLocalDevice).mockResolvedValueOnce(unwrapApiResponse(capturedPhase3Receipt("normal", "historic"), 200));
+    await state.save();
+    expect(saved).toHaveBeenCalledWith("historic");
+    expect(vi.mocked(updateLocalDevice).mock.calls[1][1]).toMatchObject({ baseVersion: 4, baseRevision: 1 });
   });
 
   it("本地保存响应分别更新运行版本与持久修订，缺失修订不复用 JVM 版本", async () => {
@@ -131,7 +208,7 @@ describe("LocalDeviceEditor 保存会话", () => {
   it("持久化已提交但运行态需恢复时保持编辑器打开，不提示正常应用成功", async () => {
     const { state, visible, saved } = mountEditor();
     state.reset({ configVersion: 3, persistedRevision: 2, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
-    vi.mocked(updateLocalDevice).mockResolvedValueOnce({ deviceId: "historic", configVersion: 4, persistedRevision: 3, committed: true, reconciled: false, reloadRequired: true });
+    vi.mocked(updateLocalDevice).mockResolvedValueOnce({ committed: true, reconciled: false, reloadRequired: true, deviceIds: ["historic"] });
     await state.save();
     expect(state.error).toContain("恢复");
     expect(visible.value).toBe(true);
@@ -205,7 +282,7 @@ describe("LocalDeviceEditor 保存会话", () => {
     const identity = state.deviceId;
     state.deviceName = "配置重启中的设备";
     state.startAfterSave = true;
-    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: identity, saved: true, started: false, startStatus: "RESTART_PENDING" });
+    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: identity, configVersion: 1, persistedRevision: 1, saved: true, started: false, startStatus: "RESTART_PENDING" });
     await state.save();
     expect(state.error).toBe("");
     expect(visible.value).toBe(false);
@@ -217,7 +294,7 @@ describe("LocalDeviceEditor 保存会话", () => {
     const { state, visible } = mountEditor();
     state.deviceName = "保持停止的设备";
     state.startAfterSave = true;
-    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: state.deviceId, saved: true, started: false, startStatus: "STOP_SUPERSEDED" });
+    vi.mocked(createLocalDevice).mockResolvedValue({ deviceId: state.deviceId, configVersion: 1, persistedRevision: 1, saved: true, started: false, startStatus: "STOP_SUPERSEDED" });
     await state.save();
     expect(state.error).not.toContain("启动失败");
     expect(visible.value).toBe(false);
@@ -231,8 +308,8 @@ describe("LocalDeviceEditor 保存会话", () => {
     state.startAfterSave = true;
     const draft = JSON.stringify(state.points);
     vi.mocked(createLocalDevice)
-      .mockResolvedValueOnce({ deviceId: identity, saved: true, started: false, startStatus: "FAILED", startError: "连接失败" })
-      .mockResolvedValueOnce({ deviceId: identity, saved: true, started: false });
+      .mockResolvedValueOnce({ deviceId: identity, configVersion: 1, persistedRevision: 1, saved: true, started: false, startStatus: "FAILED", startError: "连接失败" })
+      .mockResolvedValueOnce({ deviceId: identity, configVersion: 2, persistedRevision: 2, saved: true, started: false });
     await state.save();
     expect(vi.mocked(createLocalDevice).mock.calls[0][0]).toMatchObject({ overwrite: false, startAfterSave: true, device: { deviceId: identity, deviceName: "新设备" } });
     expect(visible.value).toBe(true);
@@ -265,13 +342,13 @@ describe("LocalDeviceEditor 保存会话", () => {
     const current = deferred<LocalDeviceConfigResponse>();
     vi.mocked(updateLocalDevice).mockReturnValue(current.promise);
     const currentSave = state.save();
-    pending.resolve({ deviceId: oldId, started: false, saved: true });
+    pending.resolve({ deviceId: oldId, configVersion: 1, persistedRevision: 1, started: false, saved: true });
     await oldSave;
     expect(state.deviceId).toBe("B");
     expect(state.saving).toBe(true);
     expect(state.error).toBe("");
     expect(saved).not.toHaveBeenCalled();
-    current.resolve({ deviceId: "B", saved: true, started: false });
+    current.resolve({ deviceId: "B", configVersion: 1, persistedRevision: 1, saved: true, started: false });
     await currentSave;
     expect(saved).toHaveBeenCalledWith("B");
   });

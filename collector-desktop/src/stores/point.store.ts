@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 
-import { getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { classifyConfigCommitResponse, getDeviceConfigBundle, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { applyPointBatchEdit, buildIncrementalPoints, defaultCollectionMode, normalizePointRows, type BuildIncrementalPointsOptions, type PointBatchEditPayload } from "@/features/point/utils/point-editor-utils";
 import type { DataPoint } from "@/types/point";
@@ -43,6 +43,11 @@ export const usePointStore = defineStore("point", {
     errorFor: (state) => (deviceId: string) => state.errorByDevice[deviceId] || ""
   },
   actions: {
+    blockReloadUntilExplicit(deviceId: string) {
+      this.conflictByDevice[deviceId] = true;
+      this.loadGenerationByDevice[deviceId] = (this.loadGenerationByDevice[deviceId] || 0) + 1;
+      this.loadingByDevice[deviceId] = false;
+    },
     async load(deviceId: string, explicit = false) {
       const targetDeviceId = normalizeDeviceId(deviceId);
       if (!targetDeviceId) return;
@@ -125,6 +130,11 @@ export const usePointStore = defineStore("point", {
     async save(deviceId: string) {
       const targetDeviceId = normalizeDeviceId(deviceId);
       if (!targetDeviceId) return;
+      if (this.isSaving(targetDeviceId)) return;
+      if (this.conflictByDevice[targetDeviceId]) {
+        this.errorByDevice[targetDeviceId] = "点位草稿已保留；请显式重新加载权威配置并核对后再保存，勿重复提交";
+        return;
+      }
       const payload = clonePoints(this.getPoints(targetDeviceId));
       const device = this.bundleDeviceByDevice[targetDeviceId];
       const connection = this.bundleConnectionByDevice[targetDeviceId];
@@ -144,29 +154,29 @@ export const usePointStore = defineStore("point", {
           return;
         }
         const result = await commitDeviceConfigBundle(targetDeviceId, bundlePayload);
-        if (result.committed === false) {
-          this.errorByDevice[targetDeviceId] = "设备配置提交未确认，点位草稿已保留；请刷新配置并检查服务状态后再处理";
+        let outcome: ReturnType<typeof classifyConfigCommitResponse>;
+        try { outcome = classifyConfigCommitResponse(result, targetDeviceId); }
+        catch (invalid) { this.blockReloadUntilExplicit(targetDeviceId); throw invalid; }
+        if (outcome !== "normal") {
+          this.blockReloadUntilExplicit(targetDeviceId);
+          this.errorByDevice[targetDeviceId] = outcome === "reconciled"
+            ? "点位配置已提交，已完成权威对账；草稿已保留，请显式刷新配置核对，勿重复提交"
+            : "点位配置已提交，运行态待恢复；草稿已保留，请显式刷新配置并检查服务恢复状态，勿重复提交";
           return;
         }
-        this.configVersionByDevice[targetDeviceId] = result.configVersion;
-        this.persistedRevisionByDevice[targetDeviceId] = result.persistedRevision;
-        if (result.reloadRequired === true || result.reconciled === false) {
-          this.errorByDevice[targetDeviceId] = "点位配置已持久化，但运行态尚未确认应用；草稿已保留，请显式刷新配置并检查服务恢复状态，避免重复提交";
-          return;
-        }
+        this.configVersionByDevice[targetDeviceId] = result.configVersion!;
+        if (result.persistedRevision !== undefined) this.persistedRevisionByDevice[targetDeviceId] = result.persistedRevision;
         await this.load(targetDeviceId);
-        if (result.committed === true && result.reconciled === true && !this.errorByDevice[targetDeviceId]) {
-          this.errorByDevice[targetDeviceId] = "点位配置已持久化并完成恢复对齐，请刷新查看运行状态";
-        }
       } catch (error) {
         const conflict = error instanceof ApiRequestError && (error.machineCode === "CONFIG_VERSION_CONFLICT" || error.httpStatus === 409);
+        const uncertain = error instanceof ApiRequestError && error.machineCode === "CONFIG_COMMIT_UNCONFIRMED";
         if (conflict) {
-          this.conflictByDevice[targetDeviceId] = true;
-          this.loadGenerationByDevice[targetDeviceId] = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
-          this.loadingByDevice[targetDeviceId] = false;
+          this.blockReloadUntilExplicit(targetDeviceId);
         }
+        if (uncertain) this.blockReloadUntilExplicit(targetDeviceId);
         this.errorByDevice[targetDeviceId] = conflict
           ? "设备持久配置已变化，点位草稿已保留；请显式重新加载配置并核对修改后再保存"
+          : uncertain ? "数据库提交结果待核对，点位草稿已保留；请勿重复提交，显式刷新配置后核对"
           : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {
         this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);

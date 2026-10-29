@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import { usePointStore } from "./point.store";
-import { ApiRequestError } from "@/api/http";
+import { ApiRequestError, unwrapApiResponse } from "@/api/http";
+import { capturedPhase3Receipt } from "@/features/device/utils/phase3-http-receipts.test-fixtures";
 import type { DataPoint } from "@/types/point";
 
 const apiMocks = vi.hoisted(() => ({
@@ -11,13 +12,14 @@ const apiMocks = vi.hoisted(() => ({
   commitDeviceConfigBundle: vi.fn()
 }));
 
-vi.mock("@/api/config.api", () => ({
+vi.mock("@/api/config.api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/config.api")>()),
   getDeviceConfigBundle: apiMocks.getDeviceConfigBundle,
   validateDeviceConfigBundle: apiMocks.validateDeviceConfigBundle,
   commitDeviceConfigBundle: apiMocks.commitDeviceConfigBundle
 }));
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   setActivePinia(createPinia());
   apiMocks.getDeviceConfigBundle.mockResolvedValue({
     points: [],
@@ -26,7 +28,7 @@ beforeEach(() => {
     connection: { deviceId: "dev-a", host: "127.0.0.1", port: 502 }
   });
   apiMocks.validateDeviceConfigBundle.mockResolvedValue({ valid: true, errors: [] });
-  apiMocks.commitDeviceConfigBundle.mockResolvedValue({ configVersion: 2 });
+  apiMocks.commitDeviceConfigBundle.mockResolvedValue({ deviceId: "dev-a", configVersion: 2 });
 });
 
 function createDeferred<T>() {
@@ -45,6 +47,83 @@ async function flushPromises() {
 }
 
 describe("point.store", () => {
+  it("同一设备保存尚未返回时再次点击不会并发重放提交", async () => {
+    const store = usePointStore();
+    await store.load("dev-a");
+    const pending = createDeferred<unknown>();
+    apiMocks.commitDeviceConfigBundle.mockImplementationOnce(() => pending.promise);
+    const first = store.save("dev-a");
+    await flushPromises();
+    await store.save("dev-a");
+    expect(apiMocks.commitDeviceConfigBundle).toHaveBeenCalledTimes(1);
+    pending.resolve({ deviceId: "dev-a", configVersion: 2 });
+    await first;
+  });
+  it("503 UNKNOWN 保留草稿/旧版本，禁止重复提交并仅显式读回", async () => {
+    const store = usePointStore();
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 4, persistedRevision: 0, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+    await store.load("dev-a");
+    store.updateCell("dev-a", "p1", "pointName", "draft");
+    apiMocks.commitDeviceConfigBundle.mockImplementationOnce(async () => unwrapApiResponse(capturedPhase3Receipt("unconfirmed", "dev-a"), 503));
+    await store.save("dev-a");
+    expect(store.errorFor("dev-a")).toContain("勿重复提交");
+    expect(store.getPoints("dev-a")[0].pointName).toBe("draft");
+    expect(store.configVersionByDevice["dev-a"]).toBe(4);
+    await store.save("dev-a"); await store.load("dev-a");
+    expect(apiMocks.commitDeviceConfigBundle).toHaveBeenCalledTimes(1);
+    expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 1, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1", pointName: "authority" })] });
+    await store.load("dev-a", true);
+    expect(store.getPoints("dev-a")[0].pointName).toBe("authority");
+  });
+  for (const [code, reconciled] of [["RECONCILED", true], ["RECOVERY_REQUIRED", false], ["APPLY_FAILED", false]] as const) {
+    it(`HTTP200 CONFIG_COMMITTED_${code} 不写入缺失版本、不自动读回并防止再次保存`, async () => {
+      const store = usePointStore();
+      apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 4, persistedRevision: 0, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+      await store.load("dev-a");
+      store.updateCell("dev-a", "p1", "pointName", "草稿");
+      const kind = code === "RECONCILED" ? "reconciled" : code === "RECOVERY_REQUIRED" ? "recoveryRequired" : "applyFailed";
+      apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce(unwrapApiResponse(capturedPhase3Receipt(kind, "dev-a"), 200));
+      await store.save("dev-a");
+      expect(store.getPoints("dev-a")[0].pointName).toBe("草稿");
+      expect(store.configVersionByDevice["dev-a"]).toBe(4);
+      expect(store.persistedRevisionByDevice["dev-a"]).toBe(0);
+      expect(store.errorFor("dev-a")).toContain("显式");
+      if (!reconciled) expect(store.errorFor("dev-a")).toContain("配置已提交，运行态待恢复");
+      else expect(store.errorFor("dev-a")).toContain("已完成权威对账");
+      await store.save("dev-a"); await store.load("dev-a");
+      expect(apiMocks.commitDeviceConfigBundle).toHaveBeenCalledTimes(1);
+      expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+      apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 1, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1", pointName: "权威" })] });
+      await store.load("dev-a", true);
+      expect(store.getPoints("dev-a")[0].pointName).toBe("权威");
+      expect(store.configVersionByDevice["dev-a"]).toBe(5);
+    });
+  }
+
+  it("不匹配 deviceIds 的已提交回执不能写版本或刷新草稿", async () => {
+    const store = usePointStore();
+    await store.load("dev-a");
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ committed: true, reconciled: true, reloadRequired: true, deviceIds: ["other"] });
+    await store.save("dev-a");
+    expect(store.errorFor("dev-a")).toContain("身份");
+    expect(store.configVersionByDevice["dev-a"]).toBe(1);
+    expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+  });
+
+  it("普通成功需要匹配 deviceId；正常回执更新真实版本并读回", async () => {
+    const store = usePointStore();
+    await store.load("dev-a");
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ deviceId: "other", configVersion: 2, persistedRevision: 1 });
+    await store.save("dev-a");
+    expect(store.errorFor("dev-a")).toContain("身份");
+    expect(store.configVersionByDevice["dev-a"]).toBe(1);
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 3, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [] });
+    await store.load("dev-a", true);
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce(unwrapApiResponse(capturedPhase3Receipt("normal", "dev-a"), 200));
+    await store.save("dev-a");
+    expect(apiMocks.commitDeviceConfigBundle).toHaveBeenCalledTimes(2);
+  });
   it("点位保存只使用读取到的持久修订，不以 JVM configVersion 冒充", async () => {
     const store = usePointStore();
     apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 4, persistedRevision: 0, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
@@ -64,7 +143,7 @@ describe("point.store", () => {
     apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
     await store.load("dev-a");
     store.updateCell("dev-a", "p1", "pointName", "未保存的草稿");
-    apiMocks.commitDeviceConfigBundle.mockRejectedValueOnce(new ApiRequestError("持久修订冲突", { httpStatus: 409 }));
+    apiMocks.commitDeviceConfigBundle.mockImplementationOnce(async () => unwrapApiResponse(capturedPhase3Receipt("conflict", "dev-a"), 409));
     await store.save("dev-a");
     expect(store.getPoints("dev-a")[0].pointName).toBe("未保存的草稿");
     expect(store.errorFor("dev-a")).toContain("重新加载");
@@ -94,12 +173,12 @@ describe("point.store", () => {
     apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
     await store.load("dev-a");
     store.updateCell("dev-a", "p1", "pointName", "本地草稿");
-    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 6, persistedRevision: 3, committed: true, reconciled: false, reloadRequired: true });
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ committed: true, reconciled: false, reloadRequired: true, deviceIds: ["dev-a"] });
     await store.save("dev-a");
     expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
     expect(store.getPoints("dev-a")[0].pointName).toBe("本地草稿");
     expect(store.errorFor("dev-a")).toContain("恢复");
-    expect(store.persistedRevisionByDevice["dev-a"]).toBe(3);
+    expect(store.persistedRevisionByDevice["dev-a"]).toBe(2);
   });
 
   it("新增空点位时写入当前设备并补齐默认字段", () => {
@@ -302,7 +381,7 @@ describe("point.store", () => {
 
     expect(store.isSaving("dev-a")).toBe(true);
 
-    saveRequest.resolve({});
+    saveRequest.resolve({ deviceId: "dev-a", configVersion: 2 });
     await flushPromises();
     reloadRequest.resolve({ points: [point({ pointId: "reloaded", pointCode: "reloaded" })] });
     await savePromise;
@@ -330,7 +409,7 @@ describe("point.store", () => {
     const manualLoadPromise = store.load("dev-a");
     await flushPromises();
 
-    saveRequest.resolve({});
+    saveRequest.resolve({ deviceId: "dev-a", configVersion: 2 });
     await flushPromises();
     manualLoad.resolve({ points: [point({ pointId: "manual-older" })] });
     await manualLoadPromise;
@@ -346,7 +425,7 @@ describe("point.store", () => {
   it("save 成功后的 post-save reload 先开始，但随后用户 manual load 开始时，manual load 成为 latest", async () => {
     const postSaveLoad = createDeferred<{ points: DataPoint[] }>();
     const manualLoad = createDeferred<{ points: DataPoint[] }>();
-    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({});
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ deviceId: "dev-a", configVersion: 2 });
     apiMocks.getDeviceConfigBundle
       .mockImplementationOnce(() => postSaveLoad.promise)
       .mockImplementationOnce(() => manualLoad.promise);

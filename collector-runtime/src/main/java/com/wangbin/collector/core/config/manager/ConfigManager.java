@@ -294,10 +294,17 @@ public class ConfigManager {
                 throw new WangbinConfigurationPersistenceException(Outcome.COMMITTED_RECONCILED, ids);
             }
             for (String id : ids) {
+                if (!changes.containsKey(id)) {
+                    DeviceConfigCommitResult unchanged = results.get(id);
+                    results.put(id, new DeviceConfigCommitResult(id, unchanged.previousVersion(),
+                            unchanged.configVersion(), unchanged.pointCount(), expectedRevisions.get(id)));
+                    continue;
+                }
                 DeviceContext candidate = changes.get(id);
-                results.put(id, new DeviceConfigCommitResult(id, versions.get(id), deviceConfigVersions.get(id),
+                results.put(id, new DeviceConfigCommitResult(id, versions.get(id),
+                        deviceConfigVersions.getOrDefault(id, versions.get(id)),
                         candidate == null ? 0 : candidate.getDataPoints().size(),
-                        committedRevisions.getOrDefault(id, 0L)));
+                        candidate == null ? 0L : committedRevisions.get(id)));
             }
             return results;
         } catch (RuntimeException failure) {

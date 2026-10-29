@@ -126,6 +126,14 @@ public class LocalDeviceConfigApplicationService {
             if (!configManager.isLocalTemporaryDevice(deviceId)) {
                 return error("只能删除本地临时设备配置: " + deviceId);
             }
+            if (baseRevision != null && configManager.isSqlitePersistenceEnabled()) {
+                if (baseRevision < 0) throw new IllegalArgumentException("持久化修订不能为负数");
+                // 预检仅拦截停止前已过期的请求；外部写入仍由删除事务内的 CAS 最终裁决。
+                long currentRevision = configManager.getConfigurationDeviceSnapshot(deviceId).persistedRevision();
+                if (currentRevision != baseRevision) {
+                    throw new ConfigVersionConflictException(deviceId, baseRevision, currentRevision, true);
+                }
+            }
             if (collectionService.isDeviceRunning(deviceId) && !collectionService.stopDevice(deviceId)) {
                 return error("设备正在运行且停止失败，未删除: " + deviceId);
             }

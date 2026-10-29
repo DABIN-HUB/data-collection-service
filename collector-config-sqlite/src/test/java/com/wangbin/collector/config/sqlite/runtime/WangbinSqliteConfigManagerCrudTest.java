@@ -13,6 +13,7 @@ import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
 import com.wangbin.collector.core.config.manager.ConfigSyncService;
 import com.wangbin.collector.core.config.model.ConfigUpdateEvent;
+import com.wangbin.collector.core.config.model.ConfigUpdateType;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.persistence.WangbinLocalConfigurationPersistence;
 import com.wangbin.collector.core.config.store.LocalDeviceConfigStore;
@@ -513,6 +514,97 @@ class WangbinSqliteConfigManagerCrudTest {
             assertEquals("external-b", codec.toRuntime(store.findDevice("b").orElseThrow().configuration()).getDeviceInfo().getDeviceName());
             assertEquals("a", manager.getConfigurationDevice("a").getDeviceName());
             assertEquals("external-b", manager.getConfigurationDevice("b").getDeviceName());
+        }
+    }
+
+    @Test
+    void mixedBatchRetainsUnchangedDeviceVersionPointsAndRevision() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            save(manager, configuration("b", "p-b"));
+            var beforeA = manager.getConfigurationDeviceSnapshot("a");
+            var beforeB = manager.getConfigurationDeviceSnapshot("b");
+            var changedA = beforeA.context();
+            changedA.getDeviceInfo().setDeviceName("changed-a");
+            assertTrue(manager.replaceDeviceContextsAtomically(List.of(changedA, beforeB.context()),
+                    Map.of("a", beforeA.persistedRevision(), "b", beforeB.persistedRevision())));
+            var afterA = manager.getConfigurationDeviceSnapshot("a");
+            var afterB = manager.getConfigurationDeviceSnapshot("b");
+            assertTrue(afterA.persistedRevision() > beforeA.persistedRevision());
+            assertEquals(beforeB.persistedRevision(), afterB.persistedRevision());
+            assertEquals(beforeB.configVersion(), afterB.configVersion());
+            assertEquals(1, afterB.context().copyDataPoints().size());
+
+            var changedB = afterB.context();
+            changedB.getDeviceInfo().setDeviceName("changed-b");
+            assertTrue(manager.replaceDeviceContextsAtomically(List.of(afterA.context(), changedB),
+                    Map.of("a", afterA.persistedRevision(), "b", afterB.persistedRevision())));
+            var unchangedA = manager.getConfigurationDeviceSnapshot("a");
+            var updatedB = manager.getConfigurationDeviceSnapshot("b");
+            assertEquals(afterA.persistedRevision(), unchangedA.persistedRevision());
+            assertEquals(afterA.configVersion(), unchangedA.configVersion());
+            assertTrue(updatedB.persistedRevision() > afterB.persistedRevision());
+            long audit = store.currentRevision();
+            assertTrue(manager.replaceDeviceContextsAtomically(List.of(unchangedA.context(), updatedB.context()),
+                    Map.of("a", unchangedA.persistedRevision(), "b", updatedB.persistedRevision())));
+            assertEquals(audit, store.currentRevision());
+            assertEquals(1, manager.getConfigurationDeviceSnapshot("a").context().copyDataPoints().size());
+            var stale = assertThrows(ConfigVersionConflictException.class,
+                    () -> manager.replaceDeviceContextsAtomically(List.of(unchangedA.context(), updatedB.context()),
+                            Map.of("a", beforeA.persistedRevision(), "b", updatedB.persistedRevision())));
+            assertEquals("a", stale.getDeviceId());
+            assertEquals(audit, store.currentRevision());
+        }
+    }
+
+    @Test
+    void mixedBatchWithEvictedRuntimeVersionKeepsPersistentUnchangedDevice() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            save(manager, configuration("b", "p-b"));
+            var beforeA = manager.getConfigurationDeviceSnapshot("a");
+            var beforeB = manager.getConfigurationDeviceSnapshot("b");
+            manager.clearAllCache();
+            assertEquals(0L, manager.getDeviceConfigVersion("b"));
+            var changedA = beforeA.context();
+            changedA.getDeviceInfo().setDeviceName("changed-a");
+            assertTrue(manager.replaceDeviceContextsAtomically(List.of(changedA, beforeB.context()),
+                    Map.of("a", beforeA.persistedRevision(), "b", beforeB.persistedRevision())));
+            assertEquals(beforeB.persistedRevision(), store.findDevice("b").orElseThrow().revision());
+            assertEquals(1, manager.getConfigurationDeviceSnapshot("b").context().copyDataPoints().size());
+        }
+    }
+
+    @Test
+    void mixedDeleteAndUnchangedAggregateRetainsOnlyUnchangedRevision() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            save(manager, configuration("b", "p-b"));
+            var beforeA = manager.getConfigurationDeviceSnapshot("a");
+            var beforeB = manager.getConfigurationDeviceSnapshot("b");
+            var requested = new java.util.LinkedHashMap<String, DeviceContext>();
+            requested.put("a", null);
+            requested.put("b", beforeB.context());
+            // 公共删除入口只接收单设备；直接验证现有批量提交器的删除与未变更分支。
+            var commit = ConfigManager.class.getDeclaredMethod("commitLocalAggregates",
+                    java.util.function.Supplier.class, ConfigUpdateType.class, String.class, Map.class);
+            commit.setAccessible(true);
+            Map<?, ?> results = (Map<?, ?>) commit.invoke(manager,
+                    (java.util.function.Supplier<Map<String, DeviceContext>>) () -> requested,
+                    ConfigUpdateType.LOCAL_DELETE, "mixed-delete",
+                    Map.of("a", beforeA.persistedRevision(), "b", beforeB.persistedRevision()));
+            var deleted = (ConfigManager.DeviceConfigCommitResult) results.get("a");
+            var unchanged = (ConfigManager.DeviceConfigCommitResult) results.get("b");
+            assertEquals(0, deleted.pointCount());
+            assertEquals(0L, deleted.persistedRevision());
+            assertEquals(1, unchanged.pointCount());
+            assertEquals(beforeB.configVersion(), unchanged.configVersion());
+            assertEquals(beforeB.persistedRevision(), unchanged.persistedRevision());
+            assertTrue(store.findDevice("a").isEmpty());
+            assertEquals(beforeB.persistedRevision(), store.findDevice("b").orElseThrow().revision());
         }
     }
 

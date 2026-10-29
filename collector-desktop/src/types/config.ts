@@ -107,14 +107,16 @@ export interface DeviceConfigValidationResponse {
 
 export interface DeviceConfigCommitResponse {
   deviceId?: string;
-  previousVersion: number;
-  configVersion: number;
+  /** 已提交异常回执仅返回 committed/reconciled/reloadRequired/deviceIds，不携带版本。 */
+  previousVersion?: number;
+  configVersion?: number;
   persistedRevision?: number;
   /** 提交成功不等于运行态应用成功；状态成功响应仍可能要求恢复。 */
-  committed?: boolean;
+  committed?: boolean | "UNKNOWN";
   reconciled?: boolean;
   reloadRequired?: boolean;
-  pointCount: number;
+  deviceIds?: string[];
+  pointCount?: number;
 }
 export interface ConfigBundle {
   device?: DeviceInfo;
@@ -146,9 +148,10 @@ export interface LocalDeviceConfigResponse {
   changed?: boolean;
   configVersion?: number;
   persistedRevision?: number;
-  committed?: boolean;
+  committed?: boolean | "UNKNOWN";
   reconciled?: boolean;
   reloadRequired?: boolean;
+  deviceIds?: string[];
   startRequested?: boolean;
   startStatus?: "NOT_REQUESTED" | "ALREADY_RUNNING" | "ACCEPTED" | "RESTART_PENDING" | "STOP_SUPERSEDED" | "FAILED";
   startError?: string;

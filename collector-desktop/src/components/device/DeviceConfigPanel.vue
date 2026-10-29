@@ -176,7 +176,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
-import { getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { classifyConfigCommitResponse, getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { getDeviceRealtimeData } from "@/api/data.api";
 
@@ -442,43 +442,50 @@ async function saveProtocolConfig() {
           revisionConflict = true;
           throw new Error("设备持久配置已变化，草稿已保留；请显式重新加载连接配置并核对修改后再保存", { cause: error });
         }
+        if (error instanceof ApiRequestError && error.machineCode === "CONFIG_COMMIT_UNCONFIRMED") {
+          revisionConflict = true;
+          throw new Error("数据库提交结果待核对，草稿已保留；请勿重复提交，显式重新加载连接配置后核对", { cause: error });
+        }
         throw error;
       }
     }, targetContext.deviceId);
     if (!operation.ok || !operation.result) throw new Error(operation.error || "协议连接配置保存失败");
     const result = operation.result;
-    if (result.committed === false) throw new Error("设备配置提交未确认；请刷新连接配置并检查服务状态后再处理");
-    const requiresRecovery = result.reloadRequired === true || result.reconciled === false;
-    const recoveryMessage = requiresRecovery
-      ? "配置已持久化，但运行态尚未确认应用；草稿已保留，请显式重新加载连接配置并检查服务恢复状态，避免重复提交"
-      : "配置已持久化并完成恢复对齐，请刷新查看运行状态";
+    let outcome: ReturnType<typeof classifyConfigCommitResponse>;
+    try { outcome = classifyConfigCommitResponse(result, targetContext.deviceId); }
+    catch (invalid) { revisionConflict = true; throw invalid; }
+    const requiresRecovery = outcome !== "normal";
+    const recoveryMessage = outcome === "reconciled"
+      ? "配置已提交，已完成权威对账；草稿已保留，请显式重新加载连接配置核对，勿重复提交"
+      : "配置已提交，运行态待恢复；草稿已保留，请显式重新加载连接配置并检查服务恢复状态，勿重复提交";
     if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
-      connectionConfig.value = payload;
-      configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion, persistedRevision: result.persistedRevision };
       if (requiresRecovery) {
         protocolConflict.value = true;
         protocolError.value = recoveryMessage;
+        protocolConfigOwner.invalidate();
+        protocolLoading.value = false;
         ElMessage.warning(recoveryMessage);
         return;
       }
-      if (result.committed === true && result.reconciled === true) {
-        connectionMessage.value = recoveryMessage;
-        ElMessage.info(recoveryMessage);
-        return;
-      }
+      connectionConfig.value = payload;
+      configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion!,
+        ...(result.persistedRevision !== undefined ? { persistedRevision: result.persistedRevision } : {}) };
       connectionMessage.value = `完整设备配置已保存，配置版本 v${result.configVersion}`;
       ElMessage.success("协议连接配置已保存");
       return;
     }
     if (requiresRecovery) ElMessage.warning(`设备 ${targetDeviceName} ${recoveryMessage}`);
-    else if (result.committed === true && result.reconciled === true) ElMessage.info(`设备 ${targetDeviceName} ${recoveryMessage}`);
     else ElMessage.success(`设备 ${targetDeviceName} 协议连接配置已保存`);
   } catch (error) {
     const message = error instanceof ApiRequestError && (error.httpStatus === 409 || error.machineCode === "CONFIG_VERSION_CONFLICT")
       ? "设备持久配置已变化，草稿已保留；请显式重新加载连接配置并核对修改后再保存"
       : error instanceof Error ? error.message : "协议连接配置保存失败";
     if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
-      if (revisionConflict) protocolConflict.value = true;
+      if (revisionConflict) {
+        protocolConflict.value = true;
+        protocolConfigOwner.invalidate();
+        protocolLoading.value = false;
+      }
       protocolError.value = message;
       return;
     }

@@ -61,6 +61,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 /** 真实 SQLite 与配置 MVC 路由在隔离目录中联动，不启动现役采集服务。 */
@@ -94,6 +97,7 @@ class WangbinPhase3ConfigHttpSqliteTest {
                 var body = json.writeValueAsString(new LocalDeviceConfigRequest(initial.getDeviceInfo(),
                         initial.copyConnectionConfig(), initial.copyDataPoints(), false, false, null, 0L));
                 JsonNode created = http(client, base.resolve("local/devices"), "POST", body, 200);
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_NORMAL=" + created);
                 long revision = created.path("data").path("persistedRevision").asLong();
                 assertEquals(revision, http(client, base.resolve("local/device/a"), "GET", null, 200)
                         .path("data").path("persistedRevision").asLong());
@@ -103,6 +107,7 @@ class WangbinPhase3ConfigHttpSqliteTest {
                         edited.copyConnectionConfig(), edited.copyDataPoints(), true, false, null, revision));
                 failEvent.set(true);
                 JsonNode committed = http(client, base.resolve("local/device/a"), "PUT", body, 200);
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_APPLY_FAILED=" + committed);
                 assertEquals("CONFIG_COMMITTED_APPLY_FAILED", committed.path("machineCode").asText());
                 assertTrue(committed.path("data").path("committed").asBoolean());
                 assertEquals("network-committed", codec.toRuntime(store.findDevice("a").orElseThrow()
@@ -110,22 +115,111 @@ class WangbinPhase3ConfigHttpSqliteTest {
                 failEvent.set(false);
                 assertTrue(manager.refreshDeviceConfig("a"));
                 JsonNode conflict = http(client, base.resolve("local/device/a"), "PUT", body, 409);
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_CONFLICT=" + conflict);
                 assertEquals("CONFIG_PERSISTENCE_CONFLICT", conflict.path("machineCode").asText());
                 assertFalse(conflict.path("data").path("committed").asBoolean());
                 assertEquals(store.findDevice("a").orElseThrow().revision(),
                         http(client, base.resolve("local/device/a"), "GET", null, 200)
                                 .path("data").path("persistedRevision").asLong());
+                long reconciledBase = store.findDevice("a").orElseThrow().revision();
+                installFailingCache(manager, 1);
+                edited = manager.getConfigurationDeviceSnapshot("a").context();
+                edited.getDeviceInfo().setDeviceName("network-reconciled");
+                body = json.writeValueAsString(new LocalDeviceConfigRequest(edited.getDeviceInfo(),
+                        edited.copyConnectionConfig(), edited.copyDataPoints(), true, false, null, reconciledBase));
+                JsonNode reconciled = http(client, base.resolve("local/device/a"), "PUT", body, 200);
+                assertEquals("CONFIG_COMMITTED_RECONCILED", reconciled.path("machineCode").asText());
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_RECONCILED=" + reconciled);
+                long recoveryBase = store.findDevice("a").orElseThrow().revision();
+                installFailingCache(manager, 2);
+                edited = manager.getConfigurationDeviceSnapshot("a").context();
+                edited.getDeviceInfo().setDeviceName("network-recovery");
+                body = json.writeValueAsString(new LocalDeviceConfigRequest(edited.getDeviceInfo(),
+                        edited.copyConnectionConfig(), edited.copyDataPoints(), true, false, null, recoveryBase));
+                JsonNode recovery = http(client, base.resolve("local/device/a"), "PUT", body, 200);
+                assertEquals("CONFIG_COMMITTED_RECOVERY_REQUIRED", recovery.path("machineCode").asText());
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_RECOVERY_REQUIRED=" + recovery);
             }
         }
     }
 
     private JsonNode http(HttpClient client, URI uri, String method, String body, int status) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(uri);
-        if (body == null) request.GET();
+        if ("DELETE".equals(method)) request.DELETE();
+        else if (body == null) request.GET();
         else request.header("Content-Type", "application/json").method(method, HttpRequest.BodyPublishers.ofString(body));
         var response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(status, response.statusCode(), response.body());
         return json.readTree(response.body());
+    }
+
+    @Test
+    void staleDeleteRejectsBeforeStopAndConcurrentDeleteRetainsTransactionalCas() throws Exception {
+        Path path = directory.resolve("private/collector.db");
+        try (var store = SqliteConfigurationStore.createNew(path, 1000)) {
+            ConfigManager manager = manager(store);
+            var collection = mock(CollectionService.class);
+            var application = service(manager, collection);
+            for (String id : List.of("a", "b", "c", "d")) {
+                var device = configuration(id, "p-" + id);
+                manager.saveLocalDeviceConfigWithResult(device.getDeviceInfo(), device.copyConnectionConfig(),
+                        device.copyDataPoints(), false);
+            }
+            long oldA = store.findDevice("a").orElseThrow().revision();
+            long oldB = store.findDevice("b").orElseThrow().revision();
+            var changedA = manager.getConfigurationDeviceSnapshot("a").context().getDeviceInfo();
+            changedA.setDeviceName("new-a");
+            manager.updateDeviceConfig(changedA, oldA);
+            long revisionA = store.findDevice("a").orElseThrow().revision();
+            var changedB = manager.getConfigurationDeviceSnapshot("b").context().getDeviceInfo();
+            changedB.setDeviceName("new-b");
+            manager.updateDeviceConfig(changedB, oldB);
+            long revisionB = store.findDevice("b").orElseThrow().revision();
+            when(collection.isDeviceRunning("a")).thenReturn(true);
+            when(collection.stopDevice("a")).thenReturn(true);
+            when(collection.isDeviceRunning("c")).thenReturn(true);
+            when(collection.stopDevice("c")).thenAnswer(invocation -> {
+                var winner = manager.getConfigurationDeviceSnapshot("c").context();
+                winner.getDeviceInfo().setDeviceName("external-c");
+                try (var external = SqliteConfigurationStore.openExisting(path, 1000)) {
+                    external.transaction(writer -> writer.saveDevice(codec.fromRuntime(winner),
+                            store.findDevice("c").orElseThrow().revision()));
+                }
+                return true;
+            });
+            when(collection.isDeviceRunning("d")).thenReturn(true);
+            when(collection.stopDevice("d")).thenReturn(false);
+            try (var server = new SpringApplicationBuilder(IsolatedHttpApp.class)
+                    .web(WebApplicationType.SERVLET)
+                    .properties("server.address=127.0.0.1", "server.port=0", "spring.jmx.enabled=false",
+                            "spring.main.banner-mode=off", "spring.config.location=optional:classpath:/stage3-isolated-no-config.yml")
+                    .initializers(context -> context.getBeanFactory().registerSingleton("configConsoleApplicationService", application))
+                    .run()) {
+                int port = ((ServletWebServerApplicationContext) server).getWebServer().getPort();
+                URI base = URI.create("http://127.0.0.1:" + port + "/api/config/local/device/");
+                HttpClient client = HttpClient.newHttpClient();
+                JsonNode stale = http(client, URI.create(base + "a?baseRevision=" + oldA), "DELETE", null, 409);
+                assertEquals("CONFIG_PERSISTENCE_CONFLICT", stale.path("machineCode").asText());
+                assertEquals(revisionA, stale.path("data").path("currentRevision").asLong());
+                verify(collection, never()).stopDevice("a");
+                assertEquals(revisionA, store.findDevice("a").orElseThrow().revision());
+                http(client, URI.create(base + "b?baseRevision=" + oldB), "DELETE", null, 409);
+                verify(collection, never()).stopDevice("b");
+                assertEquals(revisionB, store.findDevice("b").orElseThrow().revision());
+                long revisionD = store.findDevice("d").orElseThrow().revision();
+                http(client, URI.create(base + "d?baseRevision=" + revisionD), "DELETE", null, 400);
+                assertEquals(revisionD, store.findDevice("d").orElseThrow().revision());
+                long revisionC = store.findDevice("c").orElseThrow().revision();
+                http(client, URI.create(base + "c?baseRevision=" + revisionC), "DELETE", null, 409);
+                assertEquals("external-c", codec.toRuntime(store.findDevice("c").orElseThrow().configuration())
+                        .getDeviceInfo().getDeviceName());
+                http(client, URI.create(base + "a?baseRevision=" + revisionA), "DELETE", null, 200);
+                assertTrue(store.findDevice("a").isEmpty());
+                verify(collection, times(1)).stopDevice("a");
+                verify(collection, never()).stopDevice("b");
+                assertTrue(store.findDevice("b").isPresent());
+            }
+        }
     }
 
     @Test
@@ -168,6 +262,7 @@ class WangbinPhase3ConfigHttpSqliteTest {
                 JsonNode unknownRollback = call(mvc, put("/api/config/device/a")
                         .param("baseRevision", String.valueOf(initialRevision)).contentType(MediaType.APPLICATION_JSON)
                         .content(json.writeValueAsBytes(edited)), 503);
+                if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_UNCONFIRMED=" + unknownRollback);
                 assertEquals("CONFIG_COMMIT_UNCONFIRMED", unknownRollback.path("machineCode").asText());
                 assertEquals("UNKNOWN", unknownRollback.path("data").path("committed").asText());
                 assertEquals(initialRevision, actual.findDevice("a").orElseThrow().revision());
@@ -413,8 +508,11 @@ class WangbinPhase3ConfigHttpSqliteTest {
     }
 
     private ConfigConsoleApplicationService service(ConfigManager manager) {
+        return service(manager, mock(CollectionService.class));
+    }
+
+    private ConfigConsoleApplicationService service(ConfigManager manager, CollectionService collection) {
         var sanitizer = new SensitiveConfigSanitizer();
-        var collection = mock(CollectionService.class);
         var local = new LocalDeviceConfigApplicationService(manager, collection, mock(DeviceLifecycleCoordinator.class));
         var exchange = new ConfigImportExportApplicationService(manager, collection, sanitizer);
         return new ConfigConsoleApplicationService(manager, mock(ConfigSyncService.class), sanitizer,

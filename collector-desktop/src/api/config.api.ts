@@ -60,6 +60,29 @@ export function validateDeviceConfigBundle(deviceId: string, payload: DeviceConf
 export function commitDeviceConfigBundle(deviceId: string, payload: DeviceConfigBundleRequest): Promise<DeviceConfigCommitResponse> {
   return requestApiData<DeviceConfigCommitResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}/bundle`, method: "PUT", data: payload });
 }
+
+/** requestApiData 已解开 ApiResult.data；已提交异常回执没有 deviceId 或版本，必须核对 deviceIds。 */
+export function classifyConfigCommitResponse(
+  result: DeviceConfigCommitResponse | LocalDeviceConfigResponse,
+  targetDeviceId: string
+): "normal" | "reconciled" | "recovery" {
+  if (result?.committed === true && result.reloadRequired === true) {
+    if (result.deviceId !== undefined || !Array.isArray(result.deviceIds)
+      || result.deviceIds.length !== 1 || result.deviceIds[0] !== targetDeviceId
+      || typeof result.reconciled !== "boolean") {
+      throw new Error("已提交回执的设备身份与请求不一致，草稿已保留；请显式重新加载权威配置核对，勿重复提交");
+    }
+    return result.reconciled ? "reconciled" : "recovery";
+  }
+  if (result?.deviceId !== targetDeviceId) {
+    throw new Error("保存响应缺少设备身份或与请求不一致，草稿已保留；请显式重新加载权威配置核对，勿重复提交");
+  }
+  if (result.committed === false || result.committed === "UNKNOWN" || result.reloadRequired === true
+    || !Number.isFinite(result.configVersion)) {
+    throw new Error("配置提交状态或版本未确认，草稿已保留；请显式重新加载权威配置核对，勿重复提交");
+  }
+  return "normal";
+}
 export function updateDeviceConfig(deviceId: string, payload: DeviceInfo): Promise<DeviceIdResponse> {
   return requestApiData<DeviceIdResponse>({ url: `/api/config/device/${encodeURIComponent(deviceId)}`, method: "PUT", data: payload });
 }
