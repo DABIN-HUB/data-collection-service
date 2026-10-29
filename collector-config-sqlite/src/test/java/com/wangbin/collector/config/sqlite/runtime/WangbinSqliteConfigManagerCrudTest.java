@@ -114,6 +114,84 @@ class WangbinSqliteConfigManagerCrudTest {
         manager.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
     }
 
+    @Test
+    void configurationReadsUseFreshSqliteWithoutReplacingRuntimeCache() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            assertTrue(manager.getConfigurationDevices().isEmpty());
+            save(manager, configuration("a", "p-a"));
+            assertEquals(1, manager.getConfigurationDevices().size());
+            save(manager, configuration("b", "p-b"));
+            var persisted = store.findDevice("a").orElseThrow();
+            var changed = configuration("a", "p-a");
+            changed.getDeviceInfo().setDeviceName("database-name");
+            var connection = changed.copyConnectionConfig();
+            connection.setPort(2503);
+            var points = changed.copyDataPoints();
+            points.get(0).setAddress("40003");
+            store.transaction(w -> w.saveDevice(codec.fromRuntime(DeviceContext.of(changed.getDeviceInfo(), connection, points)), persisted.revision()));
+
+            assertEquals("a", manager.getDevice("a").getDeviceName());
+            assertEquals("database-name", manager.getConfigurationDevice("a").getDeviceName());
+            assertEquals("database-name", manager.getConfigurationDevices().stream()
+                    .filter(device -> device.getDeviceId().equals("a")).findFirst().orElseThrow().getDeviceName());
+            assertEquals(2, manager.getConfigurationDevices().size());
+            assertEquals(2503, manager.getConfigurationConnection("a").copyConnectionConfig().getPort());
+            assertEquals("40003", manager.getConfigurationPoints("a").copyDataPoints().get(0).getAddress());
+            assertEquals("40003", manager.getConfigurationDeviceSnapshot("a").context().copyDataPoints().get(0).getAddress());
+            assertEquals("40001", manager.getDataPoints("a").get(0).getAddress());
+            assertNull(manager.getConfigurationDevice("unknown"));
+            assertNull(manager.getConfigurationDeviceSnapshot("unknown").context());
+            assertNull(manager.getConfigurationPoints("unknown"));
+            assertNull(manager.getConfigurationConnection("unknown"));
+            assertTrue(events.size() >= 2);
+        }
+    }
+
+    @Test
+    void listingAndSavingSingleDeviceNeverDeserializeOtherDevicesPoints() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            save(manager, configuration("b", "p-b"));
+            corruptJson("UPDATE dc_device_point SET point_json = '{broken' WHERE device_id = 'b'");
+            corruptJson("UPDATE dc_device_connection SET connection_json = '{broken' WHERE device_id = 'b'");
+            assertEquals(2, manager.getConfigurationDevices().size());
+            save(manager, configuration("c", "p-c"));
+            assertEquals(3, manager.getConfigurationDevices().size());
+            assertEquals("c", store.findDevice("c").orElseThrow().configuration().deviceId());
+            assertThrows(RuntimeException.class, store::listDevices);
+            corruptJson("UPDATE dc_device SET device_json = '{broken' WHERE device_id = 'b'");
+            assertThrows(RuntimeException.class, manager::getConfigurationDevices);
+            assertThrows(RuntimeException.class, () -> manager.getConfigurationDevice("b"));
+            assertThrows(RuntimeException.class, () -> manager.getConfigurationDeviceSnapshot("b"));
+            assertThrows(RuntimeException.class, () -> manager.getConfigurationPoints("b"));
+        }
+    }
+
+    @Test
+    void sqliteListKeepsRemoteDevicesAndLocalIdWinsCollision() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("local", "p-local"));
+            Files.writeString(directory.resolve("remote.json"),
+                    "[{\"deviceId\":\"remote\",\"deviceName\":\"remote-name\","
+                            + "\"configSource\":\"remote\",\"protocolType\":\"MODBUS_TCP\"},"
+                            + "{\"deviceId\":\"local\",\"deviceName\":\"wrong-owner\","
+                            + "\"configSource\":\"remote\",\"protocolType\":\"MODBUS_TCP\"}]");
+            var reload = ConfigManager.class.getDeclaredMethod("loadAllConfig");
+            reload.setAccessible(true);
+            reload.invoke(manager);
+            assertEquals(List.of("local", "remote"), manager.getConfigurationDevices().stream()
+                    .map(DeviceInfo::getDeviceId).sorted().toList());
+            assertEquals("local", manager.getConfigurationDevice("local").getDeviceName());
+            assertEquals("remote-name", manager.getConfigurationDevice("remote").getDeviceName());
+            assertEquals("remote", manager.getConfigurationDeviceSnapshot("remote").context()
+                    .getDeviceInfo().getDeviceId());
+            assertEquals("remote", manager.getConfigurationDevice("remote").getConfigSource());
+        }
+    }
+
     void assertState(SqliteConfigurationStore store, ConfigManager manager, String id) {
         var stored = store.findDevice(id).orElseThrow();
         assertTrue(codec.equivalent(codec.toRuntime(stored.configuration()), manager.getDeviceConfigurationSnapshot(id).context()));
@@ -582,6 +660,13 @@ class WangbinSqliteConfigManagerCrudTest {
 
     void executeSql(String sql) throws Exception {
         try (var connection = sqlConnection(); var statement = connection.createStatement()) { statement.execute(sql); }
+    }
+
+    void corruptJson(String sql) throws Exception {
+        try (var connection = sqlConnection(); var statement = connection.createStatement()) {
+            statement.execute("PRAGMA ignore_check_constraints=ON");
+            statement.execute(sql);
+        }
     }
 
     void assertUnchanged(SqliteConfigurationStore store, ConfigManager manager,

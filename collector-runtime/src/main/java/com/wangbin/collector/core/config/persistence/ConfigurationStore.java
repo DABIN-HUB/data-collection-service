@@ -1,5 +1,7 @@
 package com.wangbin.collector.core.config.persistence;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -27,6 +29,8 @@ public interface ConfigurationStore extends ConfigurationReader, AutoCloseable {
      * 协议模板、网关设置及快照 JSON 必须语法合法且保留精确数值，禁止包含运行态实体。
      */
     interface Writer extends ConfigurationReader {
+        /** 在当前写事务内按候选 pointId 查询既有归属；不得加载全量点位。 */
+        Map<String, String> findPointOwners(Collection<String> pointIds);
         StoredDeviceConfiguration saveDevice(DeviceConfiguration configuration, long expectedRevision);
         void deleteDevice(String deviceId, long expectedRevision);
         ProtocolProfile saveProtocolProfile(String profileId, String protocolType, String configJson, long expectedRevision);

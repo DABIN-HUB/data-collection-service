@@ -1,5 +1,6 @@
 package com.wangbin.collector.core.config.persistence;
 
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.config.model.DeviceContext;
 
 import java.util.List;
@@ -13,6 +14,14 @@ public interface WangbinLocalConfigurationPersistence {
 
     /** 仅读取当前数据库中的单设备，不回退旧JSON。 */
     Optional<StoredDeviceConfiguration> findDevice(String deviceId);
+
+    /** 设备管理列表只还原基础信息，不读取任何连接或点位负载。 */
+    List<DeviceInfo> listDeviceSummaries();
+
+    /** 设备管理按 ID 定位的数据库配置；运行态仍通过 ConfigManager 缓存。 */
+    Optional<DeviceInfo> findDeviceSummary(String deviceId);
+    Optional<DeviceContext> findDeviceConnectionContext(String deviceId);
+    Optional<DeviceContext> findDevicePointsContext(String deviceId);
 
     /** 按显式白名单还原独立配置快照，不恢复在线状态、采集值或统计。 */
     DeviceContext toRuntime(DeviceConfiguration configuration);

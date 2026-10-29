@@ -90,7 +90,7 @@ public class ConfigConsoleApplicationService {
      * @return 设备配置列表响应
      */
     public ApiResult<ConfigDeviceListResponse> getAllDevices() {
-        List<DeviceInfo> devices = configManager.getAllDevices().stream().map(sensitiveConfigSanitizer::sanitize).toList();
+        List<DeviceInfo> devices = configManager.getConfigurationDevices().stream().map(sensitiveConfigSanitizer::sanitize).toList();
         ConfigDeviceListResponse response = ConfigDeviceListResponse.builder()
                 .devices(devices)
                 .count(devices.size())
@@ -147,7 +147,7 @@ public class ConfigConsoleApplicationService {
      * @return 设备配置详情响应
      */
     public ApiResult<DeviceConfigDetailResponse> getDevice(String deviceId) {
-        DeviceInfo local = configManager.getDevice(deviceId);
+        DeviceInfo local = configManager.getConfigurationDevice(deviceId);
         DeviceInfo remote = configSyncService.getDeviceConfigs().get(deviceId);
         if (local == null && remote == null) {
             return notFound("设备不存在: " + deviceId);
@@ -162,7 +162,7 @@ public class ConfigConsoleApplicationService {
     }
 
     public ApiResult<DeviceConfigBundleResponse> getDeviceBundle(String deviceId) {
-        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getDeviceConfigurationSnapshot(deviceId);
+        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getConfigurationDeviceSnapshot(deviceId);
         if (snapshot.context() == null) return notFound("设备不存在: " + deviceId);
         DeviceInfo device = snapshot.context().getDeviceInfo();
         DeviceConnection connection = sensitiveConfigSanitizer.sanitize(snapshot.context().copyConnectionConfig());
@@ -259,10 +259,11 @@ public class ConfigConsoleApplicationService {
     }
     /** 查询设备点位配置。 */
     public ApiResult<DevicePointConfigResponse> getDevicePoints(String deviceId, boolean includeAdaptive) {
-        if (!configManager.containsDevice(deviceId)) {
+        DeviceContext context = configManager.getConfigurationPoints(deviceId);
+        if (context == null) {
             return notFound("设备不存在: " + deviceId);
         }
-        List<DataPoint> points = configManager.getDataPoints(deviceId);
+        List<DataPoint> points = context.copyDataPoints();
         List<DataPoint> responsePoints = includeAdaptive
                 ? points.stream().map(point -> withRuntimeState(deviceId, point)).toList()
                 : points;
@@ -281,10 +282,11 @@ public class ConfigConsoleApplicationService {
      * @return 已脱敏的连接配置响应
      */
     public ApiResult<DeviceConnectionConfigResponse> getDeviceConnection(String deviceId) {
-        if (!configManager.containsDevice(deviceId)) {
+        DeviceContext context = configManager.getConfigurationConnection(deviceId);
+        if (context == null) {
             return notFound("设备不存在: " + deviceId);
         }
-        DeviceConnection connection = configManager.getConnectionConfig(deviceId);
+        DeviceConnection connection = context.copyConnectionConfig();
         DeviceConnectionConfigResponse response = DeviceConnectionConfigResponse.builder()
                 .deviceId(deviceId)
                 .connection(sensitiveConfigSanitizer.sanitize(connection))

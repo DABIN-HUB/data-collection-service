@@ -81,13 +81,82 @@ class ConfigConsoleApplicationServiceTest {
     }
 
     @Test
+    void deviceListAndDetailUseConfigurationReadsAndPreserveRemoteSource() {
+        DeviceInfo local = device("local", "本地设备");
+        local.setConfigSource(ConfigManager.CONFIG_SOURCE_LOCAL);
+        local.setTemporaryConfig(true);
+        DeviceInfo remote = device("remote", "远端设备");
+        remote.setConfigSource("remote");
+        when(configManager.getConfigurationDevices()).thenReturn(List.of(local, remote));
+        when(configManager.getConfigurationDevice("remote")).thenReturn(remote);
+        when(configSyncService.getDeviceConfigs()).thenReturn(Map.of("remote", remote));
+
+        var list = service.getAllDevices().getData();
+        assertEquals(2, list.getCount());
+        assertEquals(List.of("local", "remote"), list.getDevices().stream().map(DeviceInfo::getDeviceId).toList());
+        assertEquals("remote", service.getDevice("remote").getData().getLocal().getConfigSource());
+        verify(configManager, never()).getAllDevices();
+        verify(configManager, never()).getDevice("remote");
+        verify(collectionService, never()).startDevice("remote");
+    }
+
+    @Test
+    void configurationEndpointsUseTargetedReadAndNeverFallbackOnFailure() {
+        DeviceInfo device = device("target", "设备");
+        device.setConfigSource(ConfigManager.CONFIG_SOURCE_LOCAL);
+        device.setTemporaryConfig(true);
+        DeviceConnection connection = connection("target", "127.0.0.1");
+        connection.setPassword("placeholder-secret");
+        DataPoint point = point("target", "temp", "40001");
+        var context = DeviceContext.of(device, connection, List.of(point));
+        when(configManager.getConfigurationDeviceSnapshot("target"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(context, 42L));
+        when(configManager.getConfigurationConnection("target")).thenReturn(context);
+        when(configManager.getConfigurationPoints("target")).thenReturn(context);
+
+        assertEquals(42L, service.getDeviceBundle("target").getData().getConfigVersion());
+        assertEquals(SensitiveConfigSanitizer.MASKED_VALUE,
+                service.getDeviceBundle("target").getData().getConnection().getPassword());
+        assertEquals(SensitiveConfigSanitizer.MASKED_VALUE,
+                service.getDeviceConnection("target").getData().getConnection().getPassword());
+        assertEquals("40001", service.getDevicePoints("target", false).getData().getPoints().get(0).getAddress());
+        assertEquals(42L, service.getLocalDevice("target").getData().getConfigVersion());
+        verify(configManager, never()).getConnectionConfig("target");
+        verify(configManager, never()).getDataPoints("target");
+        verify(collectionService, never()).startDevice("target");
+
+        when(configManager.getConfigurationDeviceSnapshot("target"))
+                .thenThrow(new IllegalStateException("database unavailable"));
+        assertThrows(IllegalStateException.class, () -> service.getDeviceBundle("target"));
+        assertThrows(IllegalStateException.class, () -> service.getLocalDevice("target"));
+        when(configManager.getConfigurationPoints("target"))
+                .thenThrow(new IllegalStateException("database unavailable"));
+        assertThrows(IllegalStateException.class, () -> service.getDevicePoints("target", false));
+    }
+
+    @Test
+    void missingConfigurationUsesExistingNotFoundResponse() {
+        when(configSyncService.getDeviceConfigs()).thenReturn(Map.of());
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ConfigApiException.class,
+                () -> service.getDevice("missing")).getHttpStatus());
+        when(configManager.getConfigurationDeviceSnapshot("missing"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(null, 0L));
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ConfigApiException.class,
+                () -> service.getDeviceBundle("missing")).getHttpStatus());
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ConfigApiException.class,
+                () -> service.getDevicePoints("missing", false)).getHttpStatus());
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ConfigApiException.class,
+                () -> service.getDeviceConnection("missing")).getHttpStatus());
+    }
+
+    @Test
     void bundleReadsMustUseOneSnapshotRatherThanIndependentGetters() {
         DeviceInfo device = device("coherent", "本地设备");
         device.setConfigSource(ConfigManager.CONFIG_SOURCE_LOCAL);
         device.setTemporaryConfig(true);
         DeviceContext context = DeviceContext.of(device, connection("coherent", "127.0.0.1"),
                 List.of(point("coherent", "temp", "40001")));
-        when(configManager.getDeviceConfigurationSnapshot("coherent"))
+        when(configManager.getConfigurationDeviceSnapshot("coherent"))
                 .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(context, 42L));
 
         assertEquals(42L, service.getDeviceBundle("coherent").getData().getConfigVersion());
@@ -272,7 +341,7 @@ class ConfigConsoleApplicationServiceTest {
 
     @Test
     void getLocalDeviceShouldRejectNonLocalDevice() {
-        when(configManager.getDeviceConfigurationSnapshot("remote-1"))
+        when(configManager.getConfigurationDeviceSnapshot("remote-1"))
                 .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(
                         DeviceContext.of(device("remote-1", "远端设备"), null, List.of()), 9L));
 
@@ -558,8 +627,8 @@ class ConfigConsoleApplicationServiceTest {
     @Test
     void getDevicePointsWithAdaptiveShouldNotMutateOriginalPoint() {
         DataPoint original = point("adaptive-1", "temperature", "40001");
-        when(configManager.containsDevice("adaptive-1")).thenReturn(true);
-        when(configManager.getDataPoints("adaptive-1")).thenReturn(List.of(original));
+        when(configManager.getConfigurationPoints("adaptive-1"))
+                .thenReturn(DeviceContext.of(device("adaptive-1", "设备"), null, List.of(original)));
         when(pointRuntimeStateService.snapshot("adaptive-1", original))
                 .thenReturn(new PointRuntimeStateSnapshot(5000L, 3, "42", 0.25D, 12345L));
 
@@ -584,8 +653,8 @@ class ConfigConsoleApplicationServiceTest {
         DataPoint original = point("adaptive-alarm", "temperature", "40001");
         original.setAlarmEnabled(1);
         original.setAlarmRule("[{\"ruleId\":\"r1\",\"operator\":\">\",\"threshold\":10,\"level\":\"WARNING\",\"enabled\":true}]");
-        when(configManager.containsDevice("adaptive-alarm")).thenReturn(true);
-        when(configManager.getDataPoints("adaptive-alarm")).thenReturn(List.of(original));
+        when(configManager.getConfigurationPoints("adaptive-alarm"))
+                .thenReturn(DeviceContext.of(device("adaptive-alarm", "设备"), null, List.of(original)));
         when(pointRuntimeStateService.snapshot("adaptive-alarm", original))
                 .thenReturn(new PointRuntimeStateSnapshot(5000L, 3, "42", 0.25D, 12345L));
 

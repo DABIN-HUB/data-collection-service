@@ -29,6 +29,45 @@ class SqliteConfigurationStoreTest {
     }
     private MigrationRecord record() { return new MigrationRecord("m", "placeholder.json", "a".repeat(64), 1, 1, 1, Instant.parse("2026-10-22T00:00:00Z")); }
 
+    @Test void summariesReadOnlyDeviceColumnsAndDetailsRemainTargeted() throws Exception {
+        try (var store = create()) {
+            assertTrue(store.listDeviceSummaries().isEmpty());
+            assertTrue(store.findDeviceSummary("missing").isEmpty());
+            store.transaction(w -> { w.saveDevice(device("a", "p-a"), 0); w.saveDevice(device("b", "p-b"), 0); return null; });
+            try (var sql = DriverManager.getConnection("jdbc:sqlite:" + path()); var statement = sql.createStatement()) {
+                statement.execute("PRAGMA ignore_check_constraints=ON");
+                statement.executeUpdate("UPDATE dc_device_connection SET connection_json = '{broken' WHERE device_id = 'b'");
+                statement.executeUpdate("UPDATE dc_device_point SET point_json = '{broken' WHERE device_id = 'b'");
+            }
+            assertEquals(List.of("a", "b"), store.listDeviceSummaries().stream().map(StoredDeviceSummary::deviceId).toList());
+            assertEquals("a", store.findDeviceSummary("a").orElseThrow().deviceId());
+            assertEquals(1, store.listDevicePoints("a").size());
+            assertEquals("p-a", store.listDevicePoints("a").get(0).pointId());
+            assertTrue(store.findDeviceConnection("a").isPresent());
+            assertTrue(store.findDeviceConnection("missing").isEmpty());
+            assertTrue(store.listDevicePoints("missing").isEmpty());
+            assertThrows(RuntimeException.class, store::listDevices);
+        }
+    }
+
+    @Test void pointOwnerLookupIsScopedBatchedAndSharesWriterTransaction() {
+        try (var store = create()) {
+            store.transaction(w -> w.saveDevice(device("a", "p-a"), 0));
+            List<String> candidates = new ArrayList<>();
+            for (int i = 0; i < 600; i++) candidates.add("new-" + i);
+            candidates.add("p-a");
+            assertEquals(Map.of("p-a", "a"), store.transaction(w -> w.findPointOwners(candidates)));
+            assertEquals(Map.of(), store.transaction(w -> w.findPointOwners(List.of())));
+            assertThrows(IllegalArgumentException.class, () -> store.transaction(w -> {
+                w.saveDevice(device("b", "p-b"), 0);
+                assertEquals("b", w.findPointOwners(List.of("p-b")).get("p-b"));
+                throw new IllegalArgumentException("rollback");
+            }));
+            assertTrue(store.findDevice("b").isEmpty());
+            assertEquals(1, store.currentRevision());
+        }
+    }
+
     @Test void createsAndReopensRealDatabase() {
         var input = device("d", "p");
         try (var store = create()) {

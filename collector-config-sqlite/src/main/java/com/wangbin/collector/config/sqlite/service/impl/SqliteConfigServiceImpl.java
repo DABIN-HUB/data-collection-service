@@ -11,7 +11,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -114,6 +116,10 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
 
     @Override public Optional<StoredDeviceConfiguration> findDevice(String id) { return read(s -> s.findDevice(id)); }
     @Override public List<StoredDeviceConfiguration> listDevices() { return read(Session::listDevices); }
+    @Override public Optional<StoredDeviceSummary> findDeviceSummary(String id) { return read(s -> s.findDeviceSummary(id)); }
+    @Override public List<StoredDeviceSummary> listDeviceSummaries() { return read(Session::listDeviceSummaries); }
+    @Override public Optional<ConnectionConfiguration> findDeviceConnection(String id) { return read(s -> s.findDeviceConnection(id)); }
+    @Override public List<PointConfiguration> listDevicePoints(String id) { return read(s -> s.listDevicePoints(id)); }
     @Override public Optional<ProtocolProfile> findProtocolProfile(String id) { return read(s -> s.findProtocolProfile(id)); }
     @Override public List<ProtocolProfile> listProtocolProfiles() { return read(Session::listProtocolProfiles); }
     @Override public Optional<GatewaySetting> findGatewaySetting(String key) { return read(s -> s.findGatewaySetting(key)); }
@@ -187,6 +193,30 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
             List<StoredDeviceConfiguration> result = mapper.listDevices();
             result.forEach(this::validateStoredDevice);
             return result;
+        }
+
+        @Override public Optional<StoredDeviceSummary> findDeviceSummary(String id) {
+            check(); identity(id);
+            return mapper.findDeviceSummary(id);
+        }
+
+        @Override public List<StoredDeviceSummary> listDeviceSummaries() { return mapper.listDeviceSummaries(); }
+
+        @Override public Optional<ConnectionConfiguration> findDeviceConnection(String id) {
+            check(); identity(id);
+            return mapper.findDeviceConnection(id);
+        }
+
+        @Override public List<PointConfiguration> listDevicePoints(String id) {
+            check(); identity(id);
+            return mapper.listDevicePoints(id);
+        }
+
+        @Override public Map<String, String> findPointOwners(Collection<String> pointIds) {
+            check();
+            if (pointIds == null) throw new IllegalArgumentException("点位身份列表不能为空");
+            pointIds.forEach(SqliteConfigServiceImpl::identity);
+            return mapper.findPointOwners(pointIds);
         }
 
         @Override public Optional<ProtocolProfile> findProtocolProfile(String id) {

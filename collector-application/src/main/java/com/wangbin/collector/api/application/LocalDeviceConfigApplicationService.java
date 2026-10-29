@@ -86,7 +86,7 @@ public class LocalDeviceConfigApplicationService {
      * @return 本地临时设备配置响应
      */
     public ApiResult<LocalDeviceConfigResponse> getLocalDevice(String deviceId) {
-        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getDeviceConfigurationSnapshot(deviceId);
+        ConfigManager.DeviceConfigurationSnapshot snapshot = configManager.getConfigurationDeviceSnapshot(deviceId);
         DeviceInfo device = snapshot.context() == null ? null : snapshot.context().getDeviceInfo();
         if (device == null || !ConfigManager.CONFIG_SOURCE_LOCAL.equalsIgnoreCase(device.getConfigSource())
                 || !Boolean.TRUE.equals(device.getTemporaryConfig())) {

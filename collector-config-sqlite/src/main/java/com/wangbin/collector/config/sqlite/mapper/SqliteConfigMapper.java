@@ -9,7 +9,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** 仅在调用方持有的 SQLite 事务连接内执行配置 SQL、绑定参数并映射结果。 */
@@ -83,13 +87,50 @@ public final class SqliteConfigMapper {
         return query("SELECT device_id, device_json, revision FROM dc_device ORDER BY device_id", this::device);
     }
 
+    public Optional<StoredDeviceSummary> findDeviceSummary(String id) {
+        return query("SELECT device_id, device_json, revision FROM dc_device WHERE device_id=?",
+                this::summary, id).stream().findFirst();
+    }
+
+    public List<StoredDeviceSummary> listDeviceSummaries() {
+        return query("SELECT device_id, device_json, revision FROM dc_device ORDER BY device_id", this::summary);
+    }
+
+    private StoredDeviceSummary summary(ResultSet rows) throws SQLException {
+        return new StoredDeviceSummary(rows.getString(1), rows.getString(2), rows.getLong(3));
+    }
+
+    public Optional<ConnectionConfiguration> findDeviceConnection(String id) {
+        return query("SELECT connection_json FROM dc_device_connection WHERE device_id=?",
+                rows -> new ConnectionConfiguration(id, rows.getString(1)), id).stream().findFirst();
+    }
+
+    public List<PointConfiguration> listDevicePoints(String id) {
+        return query("SELECT point_id, sort_order, status, point_json FROM dc_device_point WHERE device_id=? ORDER BY sort_order",
+                rows -> new PointConfiguration(id, rows.getString(1), rows.getInt(2),
+                        (Integer) rows.getObject(3), rows.getString(4)), id);
+    }
+
+    /** 按本次候选点位分批查询主键归属，参数列表由可信占位符数量构成。 */
+    public Map<String, String> findPointOwners(Collection<String> pointIds) {
+        List<String> ids = pointIds.stream().distinct().toList();
+        Map<String, String> owners = new LinkedHashMap<>();
+        for (int start = 0; start < ids.size(); start += 500) {
+            List<String> batch = ids.subList(start, Math.min(start + 500, ids.size()));
+            String placeholders = String.join(",", Collections.nCopies(batch.size(), "?"));
+            for (Map.Entry<String, String> entry : query(
+                    "SELECT point_id, device_id FROM dc_device_point WHERE point_id IN (" + placeholders + ")",
+                    rows -> Map.entry(rows.getString(1), rows.getString(2)), batch.toArray())) {
+                owners.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Map.copyOf(owners);
+    }
+
     private StoredDeviceConfiguration device(ResultSet rows) throws SQLException {
         String id = rows.getString(1);
-        List<ConnectionConfiguration> connections = query("SELECT connection_json FROM dc_device_connection WHERE device_id=?",
-                result -> new ConnectionConfiguration(id, result.getString(1)), id);
-        List<PointConfiguration> points = query("SELECT point_id, sort_order, status, point_json FROM dc_device_point WHERE device_id=? ORDER BY sort_order",
-                result -> new PointConfiguration(id, result.getString(1), result.getInt(2),
-                        (Integer) result.getObject(3), result.getString(4)), id);
+        List<ConnectionConfiguration> connections = findDeviceConnection(id).stream().toList();
+        List<PointConfiguration> points = listDevicePoints(id);
         return new StoredDeviceConfiguration(new DeviceConfiguration(id, rows.getString(2),
                 connections.isEmpty() ? null : connections.get(0), points), rows.getLong(3));
     }

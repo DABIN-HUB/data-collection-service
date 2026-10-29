@@ -7,6 +7,11 @@ import java.util.Optional;
 public interface ConfigurationReader {
     Optional<StoredDeviceConfiguration> findDevice(String deviceId);
     List<StoredDeviceConfiguration> listDevices();
+    /** 只读设备基础 JSON 和持久修订，不读取连接或点位。 */
+    Optional<StoredDeviceSummary> findDeviceSummary(String deviceId);
+    List<StoredDeviceSummary> listDeviceSummaries();
+    Optional<ConnectionConfiguration> findDeviceConnection(String deviceId);
+    List<PointConfiguration> listDevicePoints(String deviceId);
     Optional<ProtocolProfile> findProtocolProfile(String profileId);
     List<ProtocolProfile> listProtocolProfiles();
     Optional<GatewaySetting> findGatewaySetting(String settingKey);

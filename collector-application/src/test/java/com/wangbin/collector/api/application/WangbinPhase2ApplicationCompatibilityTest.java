@@ -34,7 +34,7 @@ class WangbinPhase2ApplicationCompatibilityTest {
 
     @Test void localGetThenPutRestoresMaskedPassword() {
         DeviceInfo d = device("masked"); DeviceConnection c = connection("masked");
-        when(manager.getDeviceConfigurationSnapshot("masked")).thenReturn(new ConfigManager.DeviceConfigurationSnapshot(DeviceContext.of(d,c,List.of()),3));
+        when(manager.getConfigurationDeviceSnapshot("masked")).thenReturn(new ConfigManager.DeviceConfigurationSnapshot(DeviceContext.of(d,c,List.of()),3));
         when(manager.getConnectionConfig("masked")).thenReturn(c);
         when(manager.saveLocalDeviceConfigWithResult(any(),any(),anyList(),eq(true),eq(3L)))
                 .thenReturn(new ConfigManager.DeviceConfigCommitResult("masked",3,4,0));

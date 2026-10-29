@@ -199,15 +199,18 @@ public class ConfigManager {
             Map<String, Long> committedRevisions;
             try {
                 committedRevisions = localConfigurationPersistence.transaction(writer -> {
-                    // 全库身份包含已清缓存设备，禁止同批普通编辑暗中转移既有pointId。
-                    Map<String, String> owners = new HashMap<>();
-                    for (StoredDeviceConfiguration stored : writer.listDevices()) {
-                        for (var point : stored.configuration().points()) owners.put(point.pointId(), stored.configuration().deviceId());
+                    // 在同一写事务内只查询候选点位的持久归属；删除后也不能暗中转移身份。
+                    Set<String> candidatePointIds = new LinkedHashSet<>();
+                    for (DeviceConfiguration config : encoded.values()) {
+                        for (var point : config.points()) candidatePointIds.add(point.pointId());
                     }
+                    Map<String, String> owners = new HashMap<>(writer.findPointOwners(candidatePointIds));
                     for (DeviceContext context : deviceContextCache.values()) {
                         if (!isLocalTemporaryDeviceInfo(context.getDeviceInfo())) {
                             for (DataPoint point : context.getDataPoints()) {
-                                if (StringUtils.hasText(point.getPointId())) owners.putIfAbsent(point.getPointId(), context.getDeviceId());
+                                if (candidatePointIds.contains(point.getPointId())) {
+                                    owners.putIfAbsent(point.getPointId(), context.getDeviceId());
+                                }
                             }
                         }
                     }
@@ -863,6 +866,44 @@ public class ConfigManager {
         }
     }
 
+    /** 仅供配置管理页面使用；本地设备以 SQLite 基础记录为准，远端沿用运行缓存。 */
+    public List<DeviceInfo> getConfigurationDevices() {
+        if (!isSqlitePersistenceEnabled()) return getAllDevices();
+        lock.readLock().lock();
+        try {
+            Map<String, DeviceInfo> devices = new LinkedHashMap<>();
+            for (DeviceInfo local : localConfigurationPersistence.listDeviceSummaries()) {
+                requireConfigurationReadable(local.getDeviceId());
+                devices.put(local.getDeviceId(), local);
+            }
+            for (DeviceInfo cached : deviceCache.values()) {
+                if (!isLocalTemporaryDeviceInfo(cached)
+                        && !localRecoveryRequired.contains(cached.getDeviceId())) {
+                    devices.putIfAbsent(cached.getDeviceId(), cached);
+                }
+            }
+            return List.copyOf(devices.values());
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** 配置查询优先取持久本地基础信息，不把远端配置误判为本地。 */
+    public DeviceInfo getConfigurationDevice(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return getDevice(deviceId);
+        lock.readLock().lock();
+        try {
+            requireConfigurationReadable(deviceId);
+            DeviceInfo local = localConfigurationPersistence.findDeviceSummary(deviceId).orElse(null);
+            if (local != null) return local;
+            DeviceInfo cached = deviceCache.get(deviceId);
+            return isLocalTemporaryDeviceInfo(cached) ? null : cached;
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
     /**
      * 获取设备上下文
      *
@@ -906,6 +947,56 @@ public class ConfigManager {
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    /** 设备编辑按 ID 读取权威本地聚合；版本仍取 JVM 时钟，不混用 SQLite revision。 */
+    public DeviceConfigurationSnapshot getConfigurationDeviceSnapshot(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId);
+        lock.readLock().lock();
+        try {
+            requireConfigurationReadable(deviceId);
+            DeviceContext local = localConfigurationPersistence.findDevice(deviceId)
+                    .map(item -> localConfigurationPersistence.toRuntime(item.configuration())).orElse(null);
+            DeviceContext context = local != null ? local : cachedRemoteConfiguration(deviceId);
+            return new DeviceConfigurationSnapshot(context, deviceConfigVersions.getOrDefault(deviceId, 0L));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** 只为配置页面定向读取点位；运行采集仍调用 getDataPoints。 */
+    public DeviceContext getConfigurationPoints(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId).context();
+        lock.readLock().lock();
+        try {
+            requireConfigurationReadable(deviceId);
+            return localConfigurationPersistence.findDevicePointsContext(deviceId)
+                    .orElseGet(() -> cachedRemoteConfiguration(deviceId));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /** 只为配置页面定向读取连接；运行采集仍调用 getConnectionConfig。 */
+    public DeviceContext getConfigurationConnection(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId).context();
+        lock.readLock().lock();
+        try {
+            requireConfigurationReadable(deviceId);
+            return localConfigurationPersistence.findDeviceConnectionContext(deviceId)
+                    .orElseGet(() -> cachedRemoteConfiguration(deviceId));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private DeviceContext cachedRemoteConfiguration(String deviceId) {
+        DeviceContext cached = deviceContextCache.get(deviceId);
+        return cached == null || isLocalTemporaryDeviceInfo(cached.getDeviceInfo()) ? null
+                : DeviceContext.of(cached.getDeviceInfo(), cached.getConnectionConfig(), cached.getDataPoints());
     }
 
     public record DeviceConfigurationSnapshot(DeviceContext context, long configVersion) { }

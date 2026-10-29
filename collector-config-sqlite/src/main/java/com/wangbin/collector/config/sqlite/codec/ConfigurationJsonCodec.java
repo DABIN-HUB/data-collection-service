@@ -18,6 +18,7 @@ import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.config.persistence.ConnectionConfiguration;
 import com.wangbin.collector.core.config.persistence.DeviceConfiguration;
 import com.wangbin.collector.core.config.persistence.PointConfiguration;
+import com.wangbin.collector.core.config.persistence.StoredDeviceSummary;
 
 import java.lang.reflect.Field;
 import java.nio.charset.Charset;
@@ -209,6 +210,24 @@ public final class ConfigurationJsonCodec {
             pointNodes.add(entityFields(point, DataPoint.class, POINT_FIELDS));
         }
         return decodeLocalDevice(root);
+    }
+
+    /** 设备列表仅还原基础配置 JSON，不构造连接、点位或完整聚合。 */
+    public DeviceInfo toDeviceInfo(StoredDeviceSummary summary) {
+        try {
+            ObjectNode node = object(readJson(summary.deviceJson()));
+            if (!summary.deviceId().equals(resolveDeviceId(node))
+                    || !"local".equals(node.path("configSource").textValue())
+                    || !node.path("temporaryConfig").isBoolean()
+                    || !node.path("temporaryConfig").booleanValue()) {
+                throw invalid("数据库设备基础配置身份或来源不合法");
+            }
+            DeviceInfo device = new DeviceInfo();
+            restoreFields(device, DeviceInfo.class, node, DEVICE_FIELDS, summary.deviceId(), "device");
+            return device;
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new IllegalStateException("数据库设备基础配置记录不合法");
+        }
     }
 
     /** 白名单还原独立快照；逐字段赋值，绕过 common 中不精确的 Map 反序列化器。 */

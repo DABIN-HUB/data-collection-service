@@ -1,5 +1,6 @@
 package com.wangbin.collector.config.sqlite.runtime;
 
+import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.config.sqlite.codec.ConfigurationJsonCodec;
 import com.wangbin.collector.config.sqlite.migration.LegacyJsonMigration;
 import com.wangbin.collector.core.config.model.DeviceContext;
@@ -235,6 +236,22 @@ public final class WangbinSqliteLocalConfigurationPersistence implements Wangbin
     private IllegalStateException rejected(String message) { return new IllegalStateException(message); }
 
     @Override public Optional<StoredDeviceConfiguration> findDevice(String deviceId) { return store.findDevice(deviceId); }
+    @Override public List<DeviceInfo> listDeviceSummaries() {
+        return store.listDeviceSummaries().stream().map(codec::toDeviceInfo).toList();
+    }
+    @Override public Optional<DeviceInfo> findDeviceSummary(String deviceId) {
+        return store.findDeviceSummary(deviceId).map(codec::toDeviceInfo);
+    }
+    @Override public Optional<DeviceContext> findDeviceConnectionContext(String deviceId) {
+        return store.transaction(writer -> writer.findDeviceSummary(deviceId).map(summary ->
+                codec.toRuntime(new DeviceConfiguration(summary.deviceId(), summary.deviceJson(),
+                        writer.findDeviceConnection(deviceId).orElse(null), List.of()))));
+    }
+    @Override public Optional<DeviceContext> findDevicePointsContext(String deviceId) {
+        return store.transaction(writer -> writer.findDeviceSummary(deviceId).map(summary ->
+                codec.toRuntime(new DeviceConfiguration(summary.deviceId(), summary.deviceJson(),
+                        null, writer.listDevicePoints(deviceId)))));
+    }
     @Override public DeviceContext toRuntime(DeviceConfiguration configuration) { return codec.toRuntime(configuration); }
     @Override public DeviceConfiguration fromRuntime(DeviceContext context) { return codec.fromRuntime(context); }
     @Override public boolean equivalent(DeviceContext left, DeviceContext right) { return codec.equivalent(left, right); }
