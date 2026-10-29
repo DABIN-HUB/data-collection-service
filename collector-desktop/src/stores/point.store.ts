@@ -14,7 +14,9 @@ interface PointState {
   loadingByDevice: Record<string, boolean>;
   savingCountByDevice: Record<string, number>;
   errorByDevice: Record<string, string>;
+  conflictByDevice: Record<string, boolean>;
   configVersionByDevice: Record<string, number>;
+  persistedRevisionByDevice: Record<string, number | undefined>;
   bundleDeviceByDevice: Record<string, DeviceInfo | undefined>;
   bundleConnectionByDevice: Record<string, DeviceConnection | undefined>;
 }
@@ -27,7 +29,9 @@ export const usePointStore = defineStore("point", {
     loadingByDevice: {},
     savingCountByDevice: {},
     errorByDevice: {},
+    conflictByDevice: {},
     configVersionByDevice: {},
+    persistedRevisionByDevice: {},
     bundleDeviceByDevice: {},
     bundleConnectionByDevice: {}
   }),
@@ -39,9 +43,10 @@ export const usePointStore = defineStore("point", {
     errorFor: (state) => (deviceId: string) => state.errorByDevice[deviceId] || ""
   },
   actions: {
-    async load(deviceId: string) {
+    async load(deviceId: string, explicit = false) {
       const targetDeviceId = normalizeDeviceId(deviceId);
       if (!targetDeviceId) return;
+      if (this.conflictByDevice[targetDeviceId] && !explicit) return;
       const requestGeneration = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
       this.loadGenerationByDevice[targetDeviceId] = requestGeneration;
       this.loadingByDevice[targetDeviceId] = true;
@@ -49,11 +54,14 @@ export const usePointStore = defineStore("point", {
       try {
         const response = await getDeviceConfigBundle(targetDeviceId);
         if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
+        if (this.conflictByDevice[targetDeviceId] && !explicit) return;
         const mode = defaultCollectionMode(response.device?.protocolType);
         this.pointsByDevice[targetDeviceId] = normalizePointRows(response.points || [], mode);
         this.configVersionByDevice[targetDeviceId] = response.configVersion;
+        this.persistedRevisionByDevice[targetDeviceId] = response.persistedRevision;
         this.bundleDeviceByDevice[targetDeviceId] = response.device;
         this.bundleConnectionByDevice[targetDeviceId] = response.connection;
+        this.conflictByDevice[targetDeviceId] = false;
       } catch (error) {
         if (requestGeneration !== this.loadGenerationByDevice[targetDeviceId]) return;
         this.errorByDevice[targetDeviceId] = error instanceof Error ? error.message : "点位配置加载失败";
@@ -121,6 +129,7 @@ export const usePointStore = defineStore("point", {
       const device = this.bundleDeviceByDevice[targetDeviceId];
       const connection = this.bundleConnectionByDevice[targetDeviceId];
       const baseVersion = this.configVersionByDevice[targetDeviceId] || 0;
+      const baseRevision = this.persistedRevisionByDevice[targetDeviceId];
       if (!device || !connection) {
         this.errorByDevice[targetDeviceId] = "设备完整配置尚未加载";
         return;
@@ -128,18 +137,36 @@ export const usePointStore = defineStore("point", {
       this.savingCountByDevice[targetDeviceId] = (this.savingCountByDevice[targetDeviceId] || 0) + 1;
       this.errorByDevice[targetDeviceId] = "";
       try {
-        const bundlePayload = { baseVersion, device: clone(device), connection: clone(connection), points: payload };
+        const bundlePayload = { baseVersion, ...(baseRevision !== undefined ? { baseRevision } : {}), device: clone(device), connection: clone(connection), points: payload };
         const validation = await validateDeviceConfigBundle(targetDeviceId, bundlePayload);
         if (!validation.valid) {
           this.errorByDevice[targetDeviceId] = validation.errors?.join("；") || "设备配置校验失败";
           return;
         }
         const result = await commitDeviceConfigBundle(targetDeviceId, bundlePayload);
+        if (result.committed === false) {
+          this.errorByDevice[targetDeviceId] = "设备配置提交未确认，点位草稿已保留；请刷新配置并检查服务状态后再处理";
+          return;
+        }
         this.configVersionByDevice[targetDeviceId] = result.configVersion;
+        this.persistedRevisionByDevice[targetDeviceId] = result.persistedRevision;
+        if (result.reloadRequired === true || result.reconciled === false) {
+          this.errorByDevice[targetDeviceId] = "点位配置已持久化，但运行态尚未确认应用；草稿已保留，请显式刷新配置并检查服务恢复状态，避免重复提交";
+          return;
+        }
         await this.load(targetDeviceId);
+        if (result.committed === true && result.reconciled === true && !this.errorByDevice[targetDeviceId]) {
+          this.errorByDevice[targetDeviceId] = "点位配置已持久化并完成恢复对齐，请刷新查看运行状态";
+        }
       } catch (error) {
-        this.errorByDevice[targetDeviceId] = error instanceof ApiRequestError && (error.machineCode === "CONFIG_VERSION_CONFLICT" || error.httpStatus === 409)
-          ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
+        const conflict = error instanceof ApiRequestError && (error.machineCode === "CONFIG_VERSION_CONFLICT" || error.httpStatus === 409);
+        if (conflict) {
+          this.conflictByDevice[targetDeviceId] = true;
+          this.loadGenerationByDevice[targetDeviceId] = (this.loadGenerationByDevice[targetDeviceId] || 0) + 1;
+          this.loadingByDevice[targetDeviceId] = false;
+        }
+        this.errorByDevice[targetDeviceId] = conflict
+          ? "设备持久配置已变化，点位草稿已保留；请显式重新加载配置并核对修改后再保存"
           : error instanceof Error ? error.message : "点位配置保存失败";
       } finally {
         this.savingCountByDevice[targetDeviceId] = Math.max(0, (this.savingCountByDevice[targetDeviceId] || 0) - 1);

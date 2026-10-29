@@ -7,7 +7,7 @@ import java.util.Objects;
 public final class WangbinConfigurationPersistenceException extends IllegalStateException {
     public enum Outcome {
         CONFLICT, WRITE_FAILED, COMMITTED_RECONCILED, COMMITTED_RECOVERY_REQUIRED,
-        COMMITTED_APPLY_FAILED, CONFIGURATION_UNAVAILABLE
+        COMMITTED_APPLY_FAILED, CONFIGURATION_UNAVAILABLE, COMMIT_UNCONFIRMED
     }
 
     private final Outcome outcome;
@@ -27,6 +27,7 @@ public final class WangbinConfigurationPersistenceException extends IllegalState
             case COMMITTED_RECOVERY_REQUIRED -> "配置已提交，目标配置暂不可用，请显式刷新恢复";
             case COMMITTED_APPLY_FAILED -> "配置已提交，但变更应用失败，请刷新核对，不要重复提交";
             case CONFIGURATION_UNAVAILABLE -> "当前配置不可用，请显式刷新恢复";
+            case COMMIT_UNCONFIRMED -> "提交结果待核对，请勿重复提交";
         };
     }
 

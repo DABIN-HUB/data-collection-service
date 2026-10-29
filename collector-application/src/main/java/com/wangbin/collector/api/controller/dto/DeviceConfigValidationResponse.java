@@ -16,6 +16,8 @@ import java.util.List;
 public class DeviceConfigValidationResponse {
     private boolean valid;
     private long currentVersion;
+    /** 校验时观察到的本地持久修订，不代替提交时的事务 CAS。 */
+    private long currentRevision;
     @Builder.Default
     private List<String> errors = new ArrayList<>();
     @Builder.Default

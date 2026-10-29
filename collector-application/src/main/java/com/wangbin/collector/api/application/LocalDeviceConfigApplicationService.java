@@ -76,6 +76,9 @@ public class LocalDeviceConfigApplicationService {
      */
     public ApiResult<LocalDeviceConfigResponse> updateLocalDevice(String deviceId,
                                                                     LocalDeviceConfigRequest request) {
+        if (configManager.getConfigurationDevice(deviceId) == null) {
+            throw new ConfigApiException(HttpStatus.BAD_REQUEST, "本地设备不存在，不能以更新请求重新创建", null);
+        }
         return saveLocalDevice(request, deviceId, true);
     }
 
@@ -103,6 +106,7 @@ public class LocalDeviceConfigApplicationService {
                 .temporaryConfig(true)
                 .bundle(bundle)
                 .configVersion(snapshot.configVersion())
+                .persistedRevision(snapshot.persistedRevision())
                 .build();
         return success(response);
     }
@@ -114,6 +118,10 @@ public class LocalDeviceConfigApplicationService {
      * @return 删除结果
      */
     public ApiResult<DeviceIdResponse> deleteLocalDevice(String deviceId) {
+        return deleteLocalDevice(deviceId, null);
+    }
+
+    public ApiResult<DeviceIdResponse> deleteLocalDevice(String deviceId, Long baseRevision) {
         try {
             if (!configManager.isLocalTemporaryDevice(deviceId)) {
                 return error("只能删除本地临时设备配置: " + deviceId);
@@ -121,7 +129,7 @@ public class LocalDeviceConfigApplicationService {
             if (collectionService.isDeviceRunning(deviceId) && !collectionService.stopDevice(deviceId)) {
                 return error("设备正在运行且停止失败，未删除: " + deviceId);
             }
-            boolean deleted = configManager.deleteLocalDeviceConfig(deviceId);
+            boolean deleted = configManager.deleteLocalDeviceConfig(deviceId, baseRevision);
             DeviceIdResponse response = DeviceIdResponse.builder()
                     .deviceId(deviceId)
                     .configSource(ConfigManager.CONFIG_SOURCE_LOCAL)
@@ -167,7 +175,7 @@ public class LocalDeviceConfigApplicationService {
                     device,
                     request.getConnection(),
                     request.getPoints(),
-                    overwrite || request.isOverwrite(), request.getBaseVersion());
+                    overwrite || request.isOverwrite(), request.getBaseVersion(), request.getBaseRevision());
             if (commit == null) {
                 return error("保存本地临时设备失败: " + device.getDeviceId());
             }
@@ -205,6 +213,7 @@ public class LocalDeviceConfigApplicationService {
                     .saved(true)
                     .changed(changed)
                     .configVersion(configVersion)
+                    .persistedRevision(commit.persistedRevision())
                     .startRequested(request.isStartAfterSave())
                     .startStatus(startStatus)
                     .startError(startError)

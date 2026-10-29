@@ -341,6 +341,7 @@ import { computed, defineComponent, h, nextTick, onBeforeUnmount, reactive, ref,
 import { ElInput, ElInputNumber, ElSelect, ElSwitch, ElOption, ElMessage, ElMessageBox } from "element-plus";
 
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
+import { ApiRequestError } from "@/api/http";
 import { getProtocol } from "@/api/protocol.api";
 import ProtocolDynamicForm from "./LocalDeviceProtocolForm.vue";
 import CloudTargetForm from "./LocalDeviceCloudTargetForm.vue";
@@ -455,6 +456,7 @@ const acceptedProtocol = ref("");
 const deviceBase = ref<Record<string, unknown>>({});
 const connectionBase = ref<ConnectionPayload>({});
 const baseVersion = ref<number | undefined>();
+const baseRevision = ref<number | undefined>();
 const error = ref("");
 const editingDeviceId = ref("");
 const deviceId = ref("");
@@ -615,6 +617,7 @@ function reset(bundle: LocalDeviceBundle | null = null) {
   deviceBase.value = cloneData(device);
   connectionBase.value = cloneData(connection);
   baseVersion.value = bundle?.configVersion;
+  baseRevision.value = bundle?.persistedRevision;
   editingDeviceId.value = bundle ? resolveEditorDeviceId(bundle, "") : "";
   deviceId.value = editingDeviceId.value || createLocalDeviceId();
   deviceName.value = String(device.deviceName || ""); protocol.value = String(device.protocolType || connection.connectionType || visibleProtocols.value[0]?.protocol || "MODBUS_TCP"); overwrite.value = Boolean(editingDeviceId.value); startAfterSave.value = false;
@@ -796,17 +799,32 @@ async function save() {
   if (deviceId.value !== targetId) errors.push("禁止修改编辑中的设备身份");
   if (errors.length > 0) { error.value = errors.join("；"); return; }
   const connection = buildConnectionPayload(connectionFields.value, mergedConnectionModel, { ...connectionBase.value, deviceId: targetId, connectionType: protocol.value });
-  const payload = buildLocalDevicePayload({ deviceBase: deviceBase.value, baseVersion: baseVersion.value, deviceId: targetId, deviceName: deviceName.value, protocol: protocol.value, adaptive: { ...adaptive }, connection, points: normalizedPoints, cloudTarget: { ...cloudTarget }, overwrite: overwrite.value || Boolean(targetEditingId) || savedInSession, startAfterSave: requestedStart });
+  const payload = buildLocalDevicePayload({ deviceBase: deviceBase.value, baseVersion: baseVersion.value, baseRevision: baseRevision.value, deviceId: targetId, deviceName: deviceName.value, protocol: protocol.value, adaptive: { ...adaptive }, connection, points: normalizedPoints, cloudTarget: { ...cloudTarget }, overwrite: overwrite.value || Boolean(targetEditingId) || savedInSession, startAfterSave: requestedStart });
   saving.value = true;
   try {
     const response = targetEditingId ? await updateLocalDevice(targetEditingId, payload) : await createLocalDevice(payload);
     if (!canCommit()) return;
     const responseId = response.deviceId;
     if (!responseId || responseId !== targetId) throw new Error("保存响应缺少设备身份或与请求不一致，请核对服务器配置后重试");
+    if (response.committed === false) {
+      error.value = `设备 ${responseId} 配置提交未确认，草稿已保留；请刷新配置并检查服务状态后再处理`;
+      ElMessage.warning(error.value);
+      return;
+    }
     savedInSession = true;
     if (response.configVersion !== undefined) baseVersion.value = response.configVersion;
+    if (response.persistedRevision !== undefined) baseRevision.value = response.persistedRevision;
     startAfterSave.value = false;
-    ElMessage.success(`设备 ${responseId} 配置已保存${response.changed === false ? "（配置未变化）" : ""}`);
+    if (response.reloadRequired === true || response.reconciled === false) {
+      error.value = `设备 ${responseId} 配置已持久化，但运行态尚未确认应用；草稿已保留，请刷新配置并检查服务恢复状态，避免重复提交`;
+      ElMessage.warning(error.value);
+      return;
+    }
+    if (response.committed === true && response.reconciled === true) {
+      ElMessage.info(`设备 ${responseId} 配置已持久化并完成恢复对齐，请刷新查看运行状态`);
+    } else {
+      ElMessage.success(`设备 ${responseId} 配置已保存${response.changed === false ? "（配置未变化）" : ""}`);
+    }
     emit("saved", responseId);
     if (requestedStart && response.startStatus === "RESTART_PENDING") {
       ElMessage.success("配置重启待完成，沿用已有启动意图，等待新一代有效数据");
@@ -828,7 +846,9 @@ async function save() {
     }
     close(false);
   } catch (caught) {
-    if (canCommit()) error.value = caught instanceof Error ? caught.message : "本地设备保存失败";
+    if (canCommit()) error.value = caught instanceof ApiRequestError && (caught.httpStatus === 409 || caught.machineCode === "CONFIG_VERSION_CONFLICT")
+      ? "设备持久配置已变化，草稿已保留；请显式重新加载配置，核对修改后再保存"
+      : caught instanceof Error ? caught.message : "本地设备保存失败";
   } finally {
     if (session === editorSession) saving.value = false;
   }

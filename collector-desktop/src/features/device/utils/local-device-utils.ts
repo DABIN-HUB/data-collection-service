@@ -22,6 +22,7 @@ export interface LocalDeviceDraft {
   adaptive?: AdaptiveConfig;
   deviceBase?: Record<string, unknown>;
   baseVersion?: number;
+  baseRevision?: number;
   connection?: Record<string, unknown>;
   points: DataPoint[];
   cloudTarget?: CloudTargetConfig;
@@ -31,6 +32,7 @@ export interface LocalDeviceDraft {
 
 export interface LocalDevicePayload {
   baseVersion?: number;
+  baseRevision?: number;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
   points: DataPoint[];
@@ -40,6 +42,7 @@ export interface LocalDevicePayload {
 
 export interface LocalDeviceBundle {
   configVersion?: number;
+  persistedRevision?: number;
   device?: Record<string, unknown>;
   connection?: Record<string, unknown>;
   points?: DataPoint[];
@@ -62,10 +65,11 @@ export const DEFAULT_ADAPTIVE_CONFIG: AdaptiveConfig = {
 export function extractLocalDeviceBundle(response: unknown): LocalDeviceBundle | null {
   const root = cloneRecord(response);
   const data = cloneRecord(root.data);
-  const candidates = [[root.bundle, root.configVersion], [data.bundle, data.configVersion], [root, root.configVersion], [data, data.configVersion]];
-  for (const [candidate, version] of candidates) {
+  const candidates = [[root.bundle, root.configVersion, root.persistedRevision], [data.bundle, data.configVersion, data.persistedRevision], [root, root.configVersion, root.persistedRevision], [data, data.configVersion, data.persistedRevision]];
+  for (const [candidate, version, revision] of candidates) {
     const record = cloneRecord(candidate);
     if (version !== undefined) record.configVersion = version;
+    if (revision !== undefined) record.persistedRevision = revision;
     if (record.device || record.connection || Array.isArray(record.points)) {
       return record as LocalDeviceBundle;
     }
@@ -90,6 +94,7 @@ export function buildLocalDevicePayload(draft: LocalDeviceDraft): LocalDevicePay
 
   return {
     ...(draft.baseVersion !== undefined ? { baseVersion: draft.baseVersion } : {}),
+    ...(draft.baseRevision !== undefined ? { baseRevision: draft.baseRevision } : {}),
     device: {
       ...deviceBase,
       id: deviceId,

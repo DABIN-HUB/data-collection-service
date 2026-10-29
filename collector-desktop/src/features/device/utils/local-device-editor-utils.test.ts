@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { computed, createApp, h, nextTick, ref, type App } from "vue";
 import LocalDeviceEditor from "../components/LocalDeviceEditor.vue";
 import { createLocalDevice, updateLocalDevice } from "@/api/config.api";
+import { ApiRequestError } from "@/api/http";
 import { getProtocol } from "@/api/protocol.api";
 import type { LocalDeviceBundle } from "./local-device-utils";
 import type { LocalDeviceConfigResponse } from "@/types/config";
@@ -101,6 +102,42 @@ const adaptive = {
 };
 
 describe("LocalDeviceEditor 保存会话", () => {
+  it("编辑本地配置使用读取的持久修订；409 保留草稿并要求显式重新加载", async () => {
+    const { state, visible, saved } = mountEditor();
+    state.reset({ configVersion: 7, persistedRevision: 0, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    state.deviceName = "未保存的改名";
+    const draftPoints = JSON.stringify(state.points);
+    vi.mocked(updateLocalDevice).mockRejectedValueOnce(new ApiRequestError("版本冲突", { httpStatus: 409 }));
+    await state.save();
+    expect(vi.mocked(updateLocalDevice).mock.calls[0][1]).toMatchObject({ baseVersion: 7, baseRevision: 0 });
+    expect(state.error).toContain("重新加载");
+    expect(state.deviceName).toBe("未保存的改名");
+    expect(JSON.stringify(state.points)).toBe(draftPoints);
+    expect(visible.value).toBe(true);
+    expect(saved).not.toHaveBeenCalled();
+  });
+
+  it("本地保存响应分别更新运行版本与持久修订，缺失修订不复用 JVM 版本", async () => {
+    const { state } = mountEditor();
+    state.reset({ configVersion: 3, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    vi.mocked(updateLocalDevice).mockResolvedValueOnce({ deviceId: "historic", configVersion: 8, persistedRevision: 9, saved: true, started: false, startError: "启动失败" });
+    state.startAfterSave = true;
+    await state.save();
+    expect(vi.mocked(updateLocalDevice).mock.calls[0][1]).not.toHaveProperty("baseRevision");
+    await state.save();
+    expect(vi.mocked(updateLocalDevice).mock.calls[1][1]).toMatchObject({ baseVersion: 8, baseRevision: 9 });
+  });
+
+  it("持久化已提交但运行态需恢复时保持编辑器打开，不提示正常应用成功", async () => {
+    const { state, visible, saved } = mountEditor();
+    state.reset({ configVersion: 3, persistedRevision: 2, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP" }, connection: { host: "saved" }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002" }] });
+    vi.mocked(updateLocalDevice).mockResolvedValueOnce({ deviceId: "historic", configVersion: 4, persistedRevision: 3, committed: true, reconciled: false, reloadRequired: true });
+    await state.save();
+    expect(state.error).toContain("恢复");
+    expect(visible.value).toBe(true);
+    expect(saved).not.toHaveBeenCalled();
+  });
+
   it("改名保存及高级 JSON 在完整设备和连接 base 上往返，并使用读取版本", async () => {
     const { state } = mountEditor();
     const bundle = { configVersion: 7, device: { deviceId: "historic", deviceName: "旧名", protocolType: "MODBUS_TCP", remark: "保留", authConfig: { custom: [null, 1] } }, connection: { deviceId: "historic", connectionType: "MODBUS_TCP", host: "saved", authParams: { secret: "masked" }, extJson: { custom: { empty: "", nil: null } } }, points: [{ pointId: "p1", pointCode: "p1", pointName: "点位", address: "40002", pointChangeThreshold: 0 }] };

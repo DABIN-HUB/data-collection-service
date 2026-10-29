@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import { usePointStore } from "./point.store";
+import { ApiRequestError } from "@/api/http";
 import type { DataPoint } from "@/types/point";
 
 const apiMocks = vi.hoisted(() => ({
@@ -44,6 +45,63 @@ async function flushPromises() {
 }
 
 describe("point.store", () => {
+  it("点位保存只使用读取到的持久修订，不以 JVM configVersion 冒充", async () => {
+    const store = usePointStore();
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 4, persistedRevision: 0, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+    await store.load("dev-a");
+    await store.save("dev-a");
+    expect(apiMocks.validateDeviceConfigBundle).toHaveBeenCalledWith("dev-a", expect.objectContaining({ baseVersion: 4, baseRevision: 0 }));
+    expect(apiMocks.commitDeviceConfigBundle).toHaveBeenCalledWith("dev-a", expect.objectContaining({ baseVersion: 4, baseRevision: 0 }));
+
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 8, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+    await store.load("dev-a");
+    await store.save("dev-a");
+    expect(apiMocks.commitDeviceConfigBundle.mock.calls[1][1]).not.toHaveProperty("baseRevision");
+  });
+
+  it("持久修订冲突时点位草稿保持原样，并提示显式重新加载", async () => {
+    const store = usePointStore();
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+    await store.load("dev-a");
+    store.updateCell("dev-a", "p1", "pointName", "未保存的草稿");
+    apiMocks.commitDeviceConfigBundle.mockRejectedValueOnce(new ApiRequestError("持久修订冲突", { httpStatus: 409 }));
+    await store.save("dev-a");
+    expect(store.getPoints("dev-a")[0].pointName).toBe("未保存的草稿");
+    expect(store.errorFor("dev-a")).toContain("重新加载");
+    expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+  });
+
+  it("持久修订冲突后自动挂载读取不能覆盖草稿，显式刷新才接受新配置", async () => {
+    const store = usePointStore();
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1", pointName: "旧值" })] });
+    await store.load("dev-a");
+    store.updateCell("dev-a", "p1", "pointName", "草稿");
+    apiMocks.commitDeviceConfigBundle.mockRejectedValueOnce(new ApiRequestError("冲突", { httpStatus: 409 }));
+    await store.save("dev-a");
+    await store.load("dev-a");
+    expect(store.getPoints("dev-a")[0].pointName).toBe("草稿");
+    expect(store.errorFor("dev-a")).toContain("重新加载");
+    expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 6, persistedRevision: 3, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1", pointName: "新配置" })] });
+    await store.load("dev-a", true);
+    expect(store.getPoints("dev-a")[0].pointName).toBe("新配置");
+    expect(store.persistedRevisionByDevice["dev-a"]).toBe(3);
+  });
+
+  it("提交已持久化但需要恢复时不自动刷新点位、不显示正常应用", async () => {
+    const store = usePointStore();
+    apiMocks.getDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 5, persistedRevision: 2, device: { deviceId: "dev-a" }, connection: { deviceId: "dev-a" }, points: [point({ pointId: "p1" })] });
+    await store.load("dev-a");
+    store.updateCell("dev-a", "p1", "pointName", "本地草稿");
+    apiMocks.commitDeviceConfigBundle.mockResolvedValueOnce({ configVersion: 6, persistedRevision: 3, committed: true, reconciled: false, reloadRequired: true });
+    await store.save("dev-a");
+    expect(apiMocks.getDeviceConfigBundle).toHaveBeenCalledTimes(1);
+    expect(store.getPoints("dev-a")[0].pointName).toBe("本地草稿");
+    expect(store.errorFor("dev-a")).toContain("恢复");
+    expect(store.persistedRevisionByDevice["dev-a"]).toBe(3);
+  });
+
   it("新增空点位时写入当前设备并补齐默认字段", () => {
     const store = usePointStore();
 

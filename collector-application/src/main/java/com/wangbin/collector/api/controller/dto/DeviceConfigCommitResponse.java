@@ -14,5 +14,7 @@ public class DeviceConfigCommitResponse {
     private String deviceId;
     private long previousVersion;
     private long configVersion;
+    /** 本次提交后的 SQLite 设备持久修订。 */
+    private long persistedRevision;
     private int pointCount;
 }

@@ -13,7 +13,7 @@
         <el-button @click="fileInputRef?.click()">导入 CSV</el-button>
         <el-button @click="exportCsv">导出 CSV</el-button>
         <el-button :loading="realtimeLoading" @click="loadRealtime">刷新实时值</el-button>
-        <el-button :loading="pointLoading" @click="pointStore.load(deviceId)">刷新配置</el-button>
+        <el-button :loading="pointLoading" @click="pointStore.load(deviceId, true)">刷新配置</el-button>
         <el-button type="primary" :loading="pointSaving" @click="savePoints">保存</el-button>
       </div>
     </div>

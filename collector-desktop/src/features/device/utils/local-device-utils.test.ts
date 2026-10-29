@@ -59,6 +59,20 @@ describe("local-device-utils", () => {
     expect(extractLocalDeviceBundle({ data: { configVersion: 13, bundle: { device: deviceBase } } })?.configVersion).toBe(13);
   });
 
+  it("本地详情只从真实持久修订提取 baseRevision，不把 JVM 配置版本当作 SQLite 修订", () => {
+    const device = { deviceId: "dev" };
+    const fromRoot = extractLocalDeviceBundle({ configVersion: 10, persistedRevision: 0, bundle: { device } });
+    expect(fromRoot).toMatchObject({ device, configVersion: 10, persistedRevision: 0 });
+    const fromData = extractLocalDeviceBundle({ data: { configVersion: 11, persistedRevision: 5, bundle: { device } } });
+    expect(fromData).toMatchObject({ device, configVersion: 11, persistedRevision: 5 });
+    const withoutRevision = extractLocalDeviceBundle({ configVersion: 12, bundle: { device } });
+    expect(withoutRevision?.persistedRevision).toBeUndefined();
+
+    const draft = { deviceId: "dev", deviceName: "设备", protocol: "MODBUS_TCP", points: [{ pointCode: "p1" }], baseVersion: fromRoot?.configVersion, baseRevision: fromRoot?.persistedRevision };
+    expect(buildLocalDevicePayload(draft)).toMatchObject({ baseVersion: 10, baseRevision: 0 });
+    expect(buildLocalDevicePayload({ ...draft, baseVersion: withoutRevision?.configVersion, baseRevision: withoutRevision?.persistedRevision })).not.toHaveProperty("baseRevision");
+  });
+
   it("普通保存保留每点显式 adaptive 和零阈值，仅缺失补默认，不提交当前运行周期", () => {
     const payload = buildLocalDevicePayload({ deviceId: "dev", deviceName: "设备", protocol: "MODBUS_TCP", adaptive: { baseCollectionInterval: 1000, minCollectionInterval: 500, maxCollectionInterval: 5000, pointChangeThreshold: 0 }, points: [
       { pointId: "p1", baseCollectionInterval: 2500, minCollectionInterval: 1250, maxCollectionInterval: 9000, pointChangeThreshold: 0, currentCollectionInterval: 7777 },

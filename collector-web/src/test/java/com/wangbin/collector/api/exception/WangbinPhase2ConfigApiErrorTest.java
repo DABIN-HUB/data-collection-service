@@ -2,6 +2,7 @@ package com.wangbin.collector.api.exception;
 
 import com.wangbin.collector.api.application.ConfigConsoleApplicationService;
 import com.wangbin.collector.api.controller.ConfigController;
+import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
 import com.wangbin.collector.core.config.persistence.ConfigurationConflictException;
 import com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class WangbinPhase2ConfigApiErrorTest {
             .setControllerAdvice(new ConfigApiExceptionHandler()).build();
 
     @Test void sqliteConflictIsActual409WithSeparateDimension() throws Exception {
-        doThrow(new WangbinConfigurationPersistenceException(CONFLICT,List.of("d"))).when(service).deleteLocalDevice("d");
+        doThrow(new WangbinConfigurationPersistenceException(CONFLICT,List.of("d"))).when(service).deleteLocalDevice("d", null);
         mvc.perform(delete("/api/config/local/device/d")).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.data.dimension").value("PERSISTENCE_REVISION"))
                 .andExpect(jsonPath("$.data.committed").value(false))
@@ -28,21 +29,51 @@ class WangbinPhase2ConfigApiErrorTest {
                 .andExpect(jsonPath("$.data.currentVersion").doesNotExist());
     }
 
-    @Test void committedOutcomesAre503AndNeverPretendRollback() throws Exception {
-        for (var outcome : List.of(COMMITTED_RECONCILED,COMMITTED_RECOVERY_REQUIRED)) {
-            doThrow(new WangbinConfigurationPersistenceException(outcome,List.of("d"))).when(service).deleteLocalDevice("d");
-            mvc.perform(delete("/api/config/local/device/d")).andExpect(status().isServiceUnavailable())
+    @Test void committedOutcomesReturnCommittedSuccessWithoutPretendingRollback() throws Exception {
+        for (var outcome : List.of(COMMITTED_RECONCILED, COMMITTED_RECOVERY_REQUIRED, COMMITTED_APPLY_FAILED)) {
+            doThrow(new WangbinConfigurationPersistenceException(outcome, List.of("d")))
+                    .when(service).deleteLocalDevice("d", null);
+            mvc.perform(delete("/api/config/local/device/d")).andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("success"))
                     .andExpect(jsonPath("$.data.committed").value(true))
-                    .andExpect(jsonPath("$.data.reconciled").value(outcome==COMMITTED_RECONCILED))
+                    .andExpect(jsonPath("$.data.reconciled").value(outcome == COMMITTED_RECONCILED))
+                    .andExpect(jsonPath("$.data.reloadRequired").value(true))
+                    .andExpect(jsonPath("$.machineCode").value("CONFIG_" + outcome.name()))
                     .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("回滚"))));
         }
     }
 
+    @Test void stalePersistedRevisionReturns409WithRealRevisionDimension() throws Exception {
+        doThrow(new ConfigVersionConflictException("d", 4, 5, true))
+                .when(service).deleteLocalDevice("d", 4L);
+        mvc.perform(delete("/api/config/local/device/d").param("baseRevision", "4"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.machineCode").value("CONFIG_PERSISTENCE_CONFLICT"))
+                .andExpect(jsonPath("$.data.expectedRevision").value(4))
+                .andExpect(jsonPath("$.data.currentRevision").value(5))
+                .andExpect(jsonPath("$.data.dimension").value("PERSISTENCE_REVISION"))
+                .andExpect(jsonPath("$.data.committed").value(false))
+                .andExpect(jsonPath("$.data.reloadRequired").value(true))
+                .andExpect(jsonPath("$.data.currentVersion").doesNotExist());
+    }
+
+    @Test void commitUnconfirmedIs503WithoutClaimingCommitOrRollback() throws Exception {
+        doThrow(new WangbinConfigurationPersistenceException(COMMIT_UNCONFIRMED, List.of("d")))
+                .when(service).deleteLocalDevice("d", null);
+        mvc.perform(delete("/api/config/local/device/d"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.machineCode").value("CONFIG_COMMIT_UNCONFIRMED"))
+                .andExpect(jsonPath("$.data.committed").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.reloadRequired").value(true))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("回滚"))));
+    }
+
     @Test void writeFailureIs503AndPhaseOneConflictStill409() throws Exception {
-        doThrow(new WangbinConfigurationPersistenceException(WRITE_FAILED,List.of("d"))).when(service).deleteLocalDevice("d");
+        doThrow(new WangbinConfigurationPersistenceException(WRITE_FAILED,List.of("d"))).when(service).deleteLocalDevice("d", null);
         mvc.perform(delete("/api/config/local/device/d")).andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.data.committed").value(false));
-        doThrow(new ConfigurationConflictException()).when(service).deleteLocalDevice("d");
+        doThrow(new ConfigurationConflictException()).when(service).deleteLocalDevice("d", null);
         mvc.perform(delete("/api/config/local/device/d")).andExpect(status().isConflict());
     }
 

@@ -373,11 +373,11 @@ class WangbinSqliteConfigManagerCrudTest {
             }
             long sql = store.currentRevision();
             stale.context().getDeviceInfo().setDeviceName("stale-loser");
-            var error = assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class,
+            var error = assertThrows(ConfigVersionConflictException.class,
                     () -> manager.updateDeviceConfig(stale.context().getDeviceInfo()));
-            assertEquals(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.Outcome.CONFLICT, error.getOutcome());
-            assertFalse(error.isCommitted());
-            assertFalse(error.isReconciled());
+            assertTrue(error.isPersistedRevision());
+            assertEquals(original.revision(), error.getExpectedVersion());
+            assertEquals(sql, error.getCurrentVersion());
             assertEquals(sql, store.currentRevision());
             assertEquals("external-winner", manager.getDevice("a").getDeviceName());
             assertTrue(manager.getDeviceConfigVersion("a") > stale.configVersion());
@@ -388,6 +388,173 @@ class WangbinSqliteConfigManagerCrudTest {
             next.setDeviceName("explicit-next");
             assertTrue(manager.updateDeviceConfig(next));
             assertState(store, manager, "a");
+        }
+    }
+
+    @Test
+    void twoManagersWithSamePersistedRevisionAllowOnlyOneCommit() throws Exception {
+        try (var firstStore = database();
+             var secondStore = SqliteConfigurationStore.openExisting(directory.resolve("private/collector.db"), 1000)) {
+            var first = manager(firstStore);
+            save(first, configuration("a", "p-a"));
+            var second = manager(secondStore);
+            var firstSnapshot = first.getConfigurationDeviceSnapshot("a");
+            var secondSnapshot = second.getConfigurationDeviceSnapshot("a");
+            assertEquals(firstSnapshot.persistedRevision(), secondSnapshot.persistedRevision());
+
+            var winner = firstSnapshot.context();
+            winner.getDeviceInfo().setDeviceName("first-winner");
+            var committed = first.replaceDeviceContextAtomically("a", winner.getDeviceInfo(),
+                    winner.copyConnectionConfig(), winner.copyDataPoints(), firstSnapshot.configVersion(),
+                    firstSnapshot.persistedRevision());
+            assertEquals(firstSnapshot.persistedRevision() + 1, committed.persistedRevision());
+
+            var loser = secondSnapshot.context();
+            loser.getDeviceInfo().setDeviceName("second-loser");
+            var conflict = assertThrows(ConfigVersionConflictException.class,
+                    () -> second.replaceDeviceContextAtomically("a", loser.getDeviceInfo(),
+                            loser.copyConnectionConfig(), loser.copyDataPoints(), secondSnapshot.configVersion(),
+                            secondSnapshot.persistedRevision()));
+            assertTrue(conflict.isPersistedRevision());
+            assertEquals(firstSnapshot.persistedRevision(), conflict.getExpectedVersion());
+            assertEquals(committed.persistedRevision(), conflict.getCurrentVersion());
+            assertEquals("first-winner", second.getConfigurationDevice("a").getDeviceName());
+            assertEquals(committed.persistedRevision(), second.getConfigurationDeviceSnapshot("a").persistedRevision());
+            assertEquals(committed.persistedRevision(), secondStore.currentRevision());
+        }
+    }
+
+    @Test
+    void rawExternalSqliteUpdateInvalidatesStaleManagerEdit() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            var old = manager.getConfigurationDeviceSnapshot("a");
+            long newRevision;
+            try (var external = sqlConnection()) {
+                external.setAutoCommit(false);
+                try (var audit = external.prepareStatement("INSERT INTO dc_config_revision(entity_type,entity_id,operation,created_at) VALUES ('DEVICE','a','UPDATE',?)")) {
+                    audit.setString(1, "2026-10-29T00:00:00Z");
+                    audit.executeUpdate();
+                }
+                try (var statement = external.createStatement(); var row = statement.executeQuery("SELECT last_insert_rowid()")) {
+                    assertTrue(row.next());
+                    newRevision = row.getLong(1);
+                }
+                try (var update = external.prepareStatement("UPDATE dc_device SET device_json=json_set(device_json,'$.deviceName',?),revision=? WHERE device_id='a'")) {
+                    update.setString(1, "external-sql-winner");
+                    update.setLong(2, newRevision);
+                    assertEquals(1, update.executeUpdate());
+                }
+                external.commit();
+            }
+            var stale = old.context().getDeviceInfo();
+            stale.setDeviceName("stale-client");
+            var conflict = assertThrows(ConfigVersionConflictException.class,
+                    () -> manager.updateDeviceConfig(stale, old.persistedRevision()));
+            assertTrue(conflict.isPersistedRevision());
+            assertEquals(old.persistedRevision(), conflict.getExpectedVersion());
+            assertEquals(newRevision, conflict.getCurrentVersion());
+            assertEquals(newRevision, store.currentRevision());
+            assertEquals("external-sql-winner", manager.getConfigurationDevice("a").getDeviceName());
+            assertEquals(newRevision, manager.getConfigurationDeviceSnapshot("a").persistedRevision());
+        }
+    }
+
+    @Test
+    void unchangedRequestWithStaleRevisionConflictsWithoutNewAudit() throws Exception {
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            var old = manager.getConfigurationDeviceSnapshot("a");
+            var current = old.context();
+            current.getDeviceInfo().setDeviceName("changed");
+            var committed = manager.replaceDeviceContextAtomically("a", current.getDeviceInfo(),
+                    current.copyConnectionConfig(), current.copyDataPoints(), old.configVersion(), old.persistedRevision());
+            var unchanged = manager.getConfigurationDeviceSnapshot("a");
+            int auditCount = store.listRevisions(0, 100).size();
+            var conflict = assertThrows(ConfigVersionConflictException.class,
+                    () -> manager.replaceDeviceContextAtomically("a", unchanged.context().getDeviceInfo(),
+                            unchanged.context().copyConnectionConfig(), unchanged.context().copyDataPoints(),
+                            unchanged.configVersion(), old.persistedRevision()));
+            assertTrue(conflict.isPersistedRevision());
+            assertEquals(committed.persistedRevision(), conflict.getCurrentVersion());
+            assertEquals(auditCount, store.listRevisions(0, 100).size());
+            assertEquals(unchanged.configVersion(), manager.getDeviceConfigVersion("a"));
+            assertEquals(committed.persistedRevision(), manager.getConfigurationDeviceSnapshot("a").persistedRevision());
+        }
+    }
+
+    @Test
+    void batchRevisionConflictRollsBackEarlierDeviceAndPreservesOutsideWinner() throws Exception {
+        try (var store = database();
+             var external = SqliteConfigurationStore.openExisting(directory.resolve("private/collector.db"), 1000)) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            save(manager, configuration("b", "p-b"));
+            var oldA = manager.getConfigurationDeviceSnapshot("a");
+            var oldB = manager.getConfigurationDeviceSnapshot("b");
+            var winner = oldB.context();
+            winner.getDeviceInfo().setDeviceName("external-b");
+            long winningRevision = external.transaction(writer -> writer.saveDevice(codec.fromRuntime(winner), oldB.persistedRevision())).revision();
+            var changedA = oldA.context();
+            changedA.getDeviceInfo().setDeviceName("rolled-back-a");
+            var changedB = oldB.context();
+            changedB.getDeviceInfo().setDeviceName("stale-b");
+            long auditBefore = store.currentRevision();
+            var conflict = assertThrows(ConfigVersionConflictException.class,
+                    () -> manager.replaceDeviceContextsAtomically(List.of(changedA, changedB),
+                            Map.of("a", oldA.persistedRevision(), "b", oldB.persistedRevision())));
+            assertTrue(conflict.isPersistedRevision());
+            assertEquals("b", conflict.getDeviceId());
+            assertEquals(winningRevision, conflict.getCurrentVersion());
+            assertEquals(auditBefore, store.currentRevision());
+            assertEquals("a", codec.toRuntime(store.findDevice("a").orElseThrow().configuration()).getDeviceInfo().getDeviceName());
+            assertEquals("external-b", codec.toRuntime(store.findDevice("b").orElseThrow().configuration()).getDeviceInfo().getDeviceName());
+            assertEquals("a", manager.getConfigurationDevice("a").getDeviceName());
+            assertEquals("external-b", manager.getConfigurationDevice("b").getDeviceName());
+        }
+    }
+
+    @Test
+    void partialCrudUsesFreshRevisionAndReopenedManagerKeepsLastRevision() throws Exception {
+        long lastRevision;
+        try (var store = database()) {
+            var manager = manager(store);
+            save(manager, configuration("a", "p-a"));
+            var initial = manager.getConfigurationDeviceSnapshot("a");
+            var renamed = initial.context().getDeviceInfo();
+            renamed.setDeviceName("renamed");
+            assertTrue(manager.updateDeviceConfig(renamed, initial.persistedRevision()));
+            var afterDevice = manager.getConfigurationDeviceSnapshot("a");
+            assertEquals(initial.persistedRevision() + 1, afterDevice.persistedRevision());
+            var connection = afterDevice.context().copyConnectionConfig();
+            connection.setPort(2502);
+            assertTrue(manager.updateConnectionConfig("a", connection, afterDevice.persistedRevision()));
+            var afterConnection = manager.getConfigurationDeviceSnapshot("a");
+            assertEquals(afterDevice.persistedRevision() + 1, afterConnection.persistedRevision());
+            var points = afterConnection.context().copyDataPoints();
+            points.get(0).setAddress("40002");
+            assertTrue(manager.updateDataPoints("a", points, afterConnection.persistedRevision()));
+            var afterPoints = manager.getConfigurationDeviceSnapshot("a");
+            assertEquals(afterConnection.persistedRevision() + 1, afterPoints.persistedRevision());
+            assertEquals("renamed", afterPoints.context().getDeviceInfo().getDeviceName());
+            assertEquals(2502, afterPoints.context().copyConnectionConfig().getPort());
+            assertEquals("40002", afterPoints.context().copyDataPoints().get(0).getAddress());
+            var stale = assertThrows(ConfigVersionConflictException.class,
+                    () -> manager.updateDataPoints("a", points, afterConnection.persistedRevision()));
+            assertTrue(stale.isPersistedRevision());
+            assertEquals(afterPoints.persistedRevision(), stale.getCurrentVersion());
+            lastRevision = afterPoints.persistedRevision();
+            assertEquals(lastRevision, store.currentRevision());
+        }
+        try (var reopened = SqliteConfigurationStore.openExisting(directory.resolve("private/collector.db"), 1000)) {
+            var restarted = manager(reopened);
+            var restored = restarted.getConfigurationDeviceSnapshot("a");
+            assertEquals(lastRevision, restored.persistedRevision());
+            assertEquals("renamed", restored.context().getDeviceInfo().getDeviceName());
+            assertEquals(2502, restored.context().copyConnectionConfig().getPort());
+            assertEquals("40002", restored.context().copyDataPoints().get(0).getAddress());
         }
     }
 

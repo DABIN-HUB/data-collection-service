@@ -35,10 +35,17 @@ public class LocalDeviceConfigRequest {
     private boolean startAfterSave;
     /** 编辑时的 JVM 配置版本；省略时保留旧调用方覆盖语义。 */
     private Long baseVersion;
+    /** 本地 SQLite 编辑的持久修订基线。 */
+    private Long baseRevision;
+
+    public LocalDeviceConfigRequest(DeviceInfo device, DeviceConnection connection, List<DataPoint> points,
+                                    boolean overwrite, boolean startAfterSave, Long baseVersion) {
+        this(device, connection, points, overwrite, startAfterSave, baseVersion, null);
+    }
 
     /** 兼容历史五参数构造方式。 */
     public LocalDeviceConfigRequest(DeviceInfo device, DeviceConnection connection, List<DataPoint> points,
                                     boolean overwrite, boolean startAfterSave) {
-        this(device, connection, points, overwrite, startAfterSave, null);
+        this(device, connection, points, overwrite, startAfterSave, null, null);
     }
 }

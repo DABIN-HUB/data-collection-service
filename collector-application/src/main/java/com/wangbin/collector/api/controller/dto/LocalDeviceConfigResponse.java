@@ -45,6 +45,8 @@ public class LocalDeviceConfigResponse {
 
     /** 已提交的设备配置版本。 */
     private Long configVersion;
+    /** 最新 SQLite 持久修订，与 JVM configVersion 独立。 */
+    private Long persistedRevision;
 
     /** 是否请求保存后启动。 */
     private Boolean startRequested;

@@ -19,6 +19,8 @@ import java.util.List;
 public class DeviceConfigBundleResponse {
     private String deviceId;
     private long configVersion;
+    /** 本地 SQLite 持久修订；远端配置为零。 */
+    private long persistedRevision;
     private DeviceInfo device;
     private DeviceConnection connection;
     @Builder.Default

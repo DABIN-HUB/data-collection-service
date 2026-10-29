@@ -35,8 +35,8 @@ class WangbinPhase2ApplicationCompatibilityTest {
     @Test void localGetThenPutRestoresMaskedPassword() {
         DeviceInfo d = device("masked"); DeviceConnection c = connection("masked");
         when(manager.getConfigurationDeviceSnapshot("masked")).thenReturn(new ConfigManager.DeviceConfigurationSnapshot(DeviceContext.of(d,c,List.of()),3));
-        when(manager.getConnectionConfig("masked")).thenReturn(c);
-        when(manager.saveLocalDeviceConfigWithResult(any(),any(),anyList(),eq(true),eq(3L)))
+        when(manager.getConfigurationDevice("masked")).thenReturn(d);
+        when(manager.saveLocalDeviceConfigWithResult(any(),any(),anyList(),eq(true),eq(3L),isNull()))
                 .thenReturn(new ConfigManager.DeviceConfigCommitResult("masked",3,4,0));
         var read = local.getLocalDevice("masked").getData();
         ConfigBundle b = read.getBundle();
@@ -44,7 +44,7 @@ class WangbinPhase2ApplicationCompatibilityTest {
         var saved = local.updateLocalDevice("masked",LocalDeviceConfigRequest.builder().device(b.getDevice())
                 .connection(b.getConnection()).points(List.of()).baseVersion(read.getConfigVersion()).build()).getData();
         ArgumentCaptor<DeviceConnection> captured = ArgumentCaptor.forClass(DeviceConnection.class);
-        verify(manager).saveLocalDeviceConfigWithResult(any(),captured.capture(),anyList(),eq(true),eq(3L));
+        verify(manager).saveLocalDeviceConfigWithResult(any(),captured.capture(),anyList(),eq(true),eq(3L),isNull());
         // 掩码交给 Manager 在版本校验后的写锁内恢复，不允许应用层锁外提前取出秘密。
         assertEquals(SensitiveConfigSanitizer.MASKED_VALUE,captured.getValue().getPassword());
         assertEquals("test-only-secret",c.getPassword());
@@ -54,7 +54,7 @@ class WangbinPhase2ApplicationCompatibilityTest {
     }
 
     @Test void emptyPointListDeletesLastPointButNullIsRejected() {
-        when(manager.updateDataPoints("empty",List.of())).thenReturn(true);
+        when(manager.updateDataPoints("empty",List.of(),null)).thenReturn(true);
         assertEquals(0,console.updatePoints("empty",List.of()).getData().getCount());
         assertThrows(com.wangbin.collector.api.exception.ConfigApiException.class,()->console.updatePoints("empty",null));
     }
@@ -62,13 +62,14 @@ class WangbinPhase2ApplicationCompatibilityTest {
     @Test void importEmptyPointsClearsInsteadOfFallingBackAndDoesNotMutateCachedConnection() {
         DeviceInfo d = device("import"); DeviceConnection c = connection("import");
         DataPoint p = new DataPoint(); p.setPointId("p"); p.setDeviceId("import");
-        when(manager.getDevice("import")).thenReturn(d); when(manager.getConnectionConfig("import")).thenReturn(c);
-        when(manager.getDataPoints("import")).thenReturn(List.of(p)); when(manager.replaceDeviceContextsAtomically(anyList())).thenReturn(true);
+        when(manager.getConfigurationDeviceSnapshot("import"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(DeviceContext.of(d,c,List.of(p)),3));
+        when(manager.replaceDeviceContextsAtomically(anyList(),anyMap())).thenReturn(true);
         ConfigImportRequest request = new ConfigImportRequest();
         request.setBundles(List.of(ConfigBundle.builder().device(d).points(List.of()).build()));
         exchange.importConfigs(request);
         ArgumentCaptor<List<DeviceContext>> captured = ArgumentCaptor.forClass(List.class);
-        verify(manager).replaceDeviceContextsAtomically(captured.capture());
+        verify(manager).replaceDeviceContextsAtomically(captured.capture(),anyMap());
         assertTrue(captured.getValue().get(0).getDataPoints().isEmpty());
         assertEquals("import",c.getDeviceId());
         assertNotSame(c,captured.getValue().get(0).getConnectionConfig());
@@ -77,12 +78,13 @@ class WangbinPhase2ApplicationCompatibilityTest {
     @Test void importNullPointsKeepsExisting() {
         DeviceInfo d = device("keep"); DeviceConnection c = connection("keep");
         DataPoint p = new DataPoint(); p.setPointId("p"); p.setDeviceId("keep");
-        when(manager.getDevice("keep")).thenReturn(d); when(manager.getConnectionConfig("keep")).thenReturn(c);
-        when(manager.getDataPoints("keep")).thenReturn(List.of(p)); when(manager.replaceDeviceContextsAtomically(anyList())).thenReturn(true);
+        when(manager.getConfigurationDeviceSnapshot("keep"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(DeviceContext.of(d,c,List.of(p)),3));
+        when(manager.replaceDeviceContextsAtomically(anyList(),anyMap())).thenReturn(true);
         ConfigImportRequest request = new ConfigImportRequest();
         request.setBundles(List.of(ConfigBundle.builder().device(d).points(null).build()));
         exchange.importConfigs(request);
         ArgumentCaptor<List<DeviceContext>> captured = ArgumentCaptor.forClass(List.class);
-        verify(manager).replaceDeviceContextsAtomically(captured.capture()); assertEquals("p",captured.getValue().get(0).getDataPoints().get(0).getPointId());
+        verify(manager).replaceDeviceContextsAtomically(captured.capture(),anyMap()); assertEquals("p",captured.getValue().get(0).getDataPoints().get(0).getPointId());
     }
 }

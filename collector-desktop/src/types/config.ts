@@ -82,6 +82,7 @@ export interface DeviceConnection {
 export interface DeviceConfigBundleResponse {
   deviceId?: string;
   configVersion: number;
+  persistedRevision?: number;
   device?: DeviceInfo;
   connection?: DeviceConnection;
   points?: DataPoint[];
@@ -91,6 +92,7 @@ export interface DeviceConfigBundleResponse {
 
 export interface DeviceConfigBundleRequest {
   baseVersion: number;
+  baseRevision?: number;
   device: DeviceInfo;
   connection: DeviceConnection;
   points: DataPoint[];
@@ -107,19 +109,27 @@ export interface DeviceConfigCommitResponse {
   deviceId?: string;
   previousVersion: number;
   configVersion: number;
+  persistedRevision?: number;
+  /** 提交成功不等于运行态应用成功；状态成功响应仍可能要求恢复。 */
+  committed?: boolean;
+  reconciled?: boolean;
+  reloadRequired?: boolean;
   pointCount: number;
 }
 export interface ConfigBundle {
   device?: DeviceInfo;
   connection?: DeviceConnection;
   points?: DataPoint[];
+  persistedRevision?: number;
   cloudTarget?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
 export interface LocalDeviceConfigRequest {
-  /** 编辑时携带 JVM configVersion；新建设备可省略，不使用 SQLite revision。 */
+  /** JVM 运行配置版本，独立于持久修订。 */
   baseVersion?: number;
+  /** 仅从读取到的 persistedRevision 取得；缺失时不得用 baseVersion 回填。 */
+  baseRevision?: number;
   device: Partial<DeviceInfo> & Record<string, unknown>;
   connection: Partial<DeviceConnection> & Record<string, unknown>;
   points: DataPoint[];
@@ -135,6 +145,10 @@ export interface LocalDeviceConfigResponse {
   saved?: boolean;
   changed?: boolean;
   configVersion?: number;
+  persistedRevision?: number;
+  committed?: boolean;
+  reconciled?: boolean;
+  reloadRequired?: boolean;
   startRequested?: boolean;
   startStatus?: "NOT_REQUESTED" | "ALREADY_RUNNING" | "ACCEPTED" | "RESTART_PENDING" | "STOP_SUPERSEDED" | "FAILED";
   startError?: string;

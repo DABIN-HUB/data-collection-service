@@ -27,10 +27,18 @@ import jakarta.servlet.http.HttpServletRequest;
 @RestControllerAdvice(assignableTypes = ConfigController.class)
 public class ConfigApiExceptionHandler {
 
-    /** 本地编辑与 Bundle 使用同一个 JVM 版本冲突契约。 */
+    /** 持久修订与运行版本分别报告，不混用两种时钟的值。 */
     @ExceptionHandler(ConfigVersionConflictException.class)
     public ResponseEntity<ApiResult<Object>> handleVersionConflict(
             ConfigVersionConflictException exception, HttpServletRequest request) {
+        if (exception.isPersistedRevision()) {
+            return ApiErrorResponseFactory.response(request, HttpStatus.CONFLICT,
+                    "CONFIG_PERSISTENCE_CONFLICT", "设备持久修订已变化，请重新加载后核对修改",
+                    Map.of("deviceId", exception.getDeviceId(), "dimension", "PERSISTENCE_REVISION",
+                            "expectedRevision", exception.getExpectedVersion(),
+                            "currentRevision", exception.getCurrentVersion(), "committed", false,
+                            "reconciled", false, "reloadRequired", true));
+        }
         return ApiErrorResponseFactory.response(request, HttpStatus.CONFLICT,
                 "CONFIG_VERSION_CONFLICT", "设备配置已被其他操作更新，请刷新后重新确认修改",
                 Map.of("deviceId", exception.getDeviceId(), "expectedVersion", exception.getExpectedVersion(),
@@ -52,7 +60,8 @@ public class ConfigApiExceptionHandler {
     public ResponseEntity<ApiResult<Object>> handleInvalidConfiguration(
             IllegalArgumentException exception, HttpServletRequest request) {
         return ApiErrorResponseFactory.response(request, HttpStatus.BAD_REQUEST,
-                "CONFIG_OPERATION_FAILED", "配置字段不合法，请检查设备、连接及点位配置", null);
+                "CONFIG_OPERATION_FAILED", "配置字段不合法，请检查设备、连接及点位配置",
+                Map.of("committed", false, "reconciled", false, "reloadRequired", false));
     }
 
     /** 区分持久修订与 JVM 版本；已提交异常不能被包装成事务回滚。 */
@@ -60,6 +69,7 @@ public class ConfigApiExceptionHandler {
     public ResponseEntity<ApiResult<Object>> handlePersistenceException(
             WangbinConfigurationPersistenceException exception, HttpServletRequest request) {
         boolean conflict = exception.getOutcome() == WangbinConfigurationPersistenceException.Outcome.CONFLICT;
+        boolean uncertain = exception.getOutcome() == WangbinConfigurationPersistenceException.Outcome.COMMIT_UNCONFIRMED;
         HttpStatus status = conflict ? HttpStatus.CONFLICT : HttpStatus.SERVICE_UNAVAILABLE;
         String message = switch (exception.getOutcome()) {
             case CONFLICT -> "配置持久化修订冲突，请重新加载后核对修改";
@@ -68,7 +78,23 @@ public class ConfigApiExceptionHandler {
             case COMMITTED_RECOVERY_REQUIRED -> "配置已提交，但运行配置需要恢复，请刷新核对，不要重复提交";
             case COMMITTED_APPLY_FAILED -> "配置已提交，但变更应用失败，请刷新核对，不要重复提交";
             case CONFIGURATION_UNAVAILABLE -> "当前配置不可用，请刷新后重试";
+            case COMMIT_UNCONFIRMED -> "数据库提交结果待核对，请勿重复提交";
         };
+        if (exception.isCommitted()) {
+            ApiResult<Object> result = ApiResult.statusSuccess(message,
+                    persistenceMetadata(true, exception.isReconciled(), true, exception.getDeviceIds()));
+            boolean eventFailed = java.util.Arrays.stream(exception.getSuppressed())
+                    .anyMatch(failure -> failure instanceof WangbinConfigurationPersistenceException);
+            result.setMachineCode(eventFailed ? "CONFIG_COMMITTED_APPLY_FAILED"
+                    : "CONFIG_" + exception.getOutcome().name());
+            return ResponseEntity.ok(result);
+        }
+        if (uncertain) {
+            return ApiErrorResponseFactory.response(request, HttpStatus.SERVICE_UNAVAILABLE,
+                    "CONFIG_COMMIT_UNCONFIRMED", message,
+                    Map.of("committed", "UNKNOWN", "reconciled", false,
+                            "reloadRequired", true, "deviceIds", exception.getDeviceIds()));
+        }
         return ApiErrorResponseFactory.response(request, status,
                 conflict ? "CONFIG_PERSISTENCE_CONFLICT" : "CONFIG_PERSISTENCE_UNAVAILABLE", message,
                 persistenceMetadata(exception.isCommitted(), exception.isReconciled(),
@@ -86,7 +112,7 @@ public class ConfigApiExceptionHandler {
 
     private Map<String, Object> persistenceMetadata(boolean committed, boolean reconciled,
                                                      boolean reloadRequired, List<String> deviceIds) {
-        return Map.of("dimension", "PERSISTENCE_REVISION", "committed", committed,
+        return Map.of("dimension", committed ? "RUNTIME_APPLICATION" : "PERSISTENCE_REVISION", "committed", committed,
                 "reconciled", reconciled, "reloadRequired", reloadRequired, "deviceIds", deviceIds);
     }
 

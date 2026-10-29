@@ -82,15 +82,21 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
                 session.check();
                 if (session.rollbackOnly) throw new IllegalStateException("事务已因前序操作失败而失效");
                 database.secureFiles();
-                commit(connection);
+                try {
+                    commit(connection);
+                } catch (SQLException exception) {
+                    // COMMIT 返回异常时不能推断 SQLite 已回滚；调用方必须按目标设备核对。
+                    throw new ConfigurationCommitUncertainException();
+                }
                 committed = true;
                 return result;
             } catch (RuntimeException | Error exception) {
-                try { statement(connection, "ROLLBACK"); } catch (SQLException ignored) { /* 不传播驱动原始异常。 */ }
+                try {
+                    statement(connection, "ROLLBACK");
+                } catch (SQLException rollbackFailure) {
+                    if (write) throw new ConfigurationCommitUncertainException();
+                }
                 throw exception;
-            } catch (SQLException exception) {
-                try { statement(connection, "ROLLBACK"); } catch (SQLException ignored) { /* 不覆盖受控提交错误。 */ }
-                throw SqliteDatabase.failure(exception);
             } finally { session.active = false; }
         } catch (SQLException exception) {
             if (committed) {
@@ -100,6 +106,7 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
             }
             throw SqliteDatabase.failure(exception);
         } catch (RuntimeException exception) {
+            if (exception instanceof ConfigurationCommitUncertainException) throw exception;
             if (Arrays.stream(exception.getSuppressed()).anyMatch(SQLException.class::isInstance)) {
                 throw new IllegalStateException("数据库资源释放失败");
             }

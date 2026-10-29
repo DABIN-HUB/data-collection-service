@@ -111,8 +111,9 @@ public class ConfigController {
      * @return 删除结果
      */
     @DeleteMapping("/local/device/{deviceId}")
-    public ApiResult<DeviceIdResponse> deleteLocalDevice(@PathVariable String deviceId) {
-        return configConsoleApplicationService.deleteLocalDevice(deviceId);
+    public ApiResult<DeviceIdResponse> deleteLocalDevice(@PathVariable String deviceId,
+            @RequestParam(value = "baseRevision", required = false) Long baseRevision) {
+        return configConsoleApplicationService.deleteLocalDevice(deviceId, baseRevision);
     }
 
     /**
@@ -180,8 +181,9 @@ public class ConfigController {
      */
     @PutMapping("/device/{deviceId}")
     public ApiResult<DeviceIdResponse> updateDevice(@PathVariable String deviceId,
-                                                      @RequestBody DeviceInfo device) {
-        return configConsoleApplicationService.updateDevice(deviceId, device);
+                                                      @RequestBody DeviceInfo device,
+                                                      @RequestParam(value = "baseRevision", required = false) Long baseRevision) {
+        return configConsoleApplicationService.updateDevice(deviceId, device, baseRevision);
     }
 
     /**
@@ -193,8 +195,9 @@ public class ConfigController {
      */
     @PutMapping("/device/{deviceId}/points")
     public ApiResult<DeviceIdResponse> updatePoints(@PathVariable String deviceId,
-                                                      @RequestBody List<DataPoint> points) {
-        return configConsoleApplicationService.updatePoints(deviceId, points);
+                                                      @RequestBody List<DataPoint> points,
+                                                      @RequestParam(value = "baseRevision", required = false) Long baseRevision) {
+        return configConsoleApplicationService.updatePoints(deviceId, points, baseRevision);
     }
 
     /**
@@ -206,8 +209,9 @@ public class ConfigController {
      */
     @PutMapping("/device/{deviceId}/connection")
     public ApiResult<DeviceIdResponse> updateConnection(@PathVariable String deviceId,
-                                                          @RequestBody DeviceConnection connection) {
-        return configConsoleApplicationService.updateConnection(deviceId, connection);
+                                                          @RequestBody DeviceConnection connection,
+                                                          @RequestParam(value = "baseRevision", required = false) Long baseRevision) {
+        return configConsoleApplicationService.updateConnection(deviceId, connection, baseRevision);
     }
 
     /**
