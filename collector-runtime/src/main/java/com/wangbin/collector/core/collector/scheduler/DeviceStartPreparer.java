@@ -67,7 +67,8 @@ public class DeviceStartPreparer {
                 cleanupReservedStart(deviceId, generation, false);
                 return null;
             }
-            return new DeviceLifecycleCoordinator.StartReservation(deviceId, generation);
+            return new DeviceLifecycleCoordinator.StartReservation(deviceId, generation,
+                    runtimeState.getIntentRevision(deviceId));
         } catch (Exception e) {
             if (generationActivated) {
                 collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
@@ -129,6 +130,23 @@ public class DeviceStartPreparer {
             cleanupReservedStart(deviceId, generation, adaptiveInitialized);
             throw e;
         }
+    }
+
+    ConfigManager.LocalStartConfiguration loadLocalStartConfiguration(String deviceId) {
+        return configManager.loadLocalStartConfiguration(deviceId);
+    }
+
+    boolean installLocalStartConfiguration(String deviceId, long generation,
+                                           ConfigManager.LocalStartConfiguration configuration) {
+        return configuration == null || configManager.installLocalStartConfiguration(deviceId, generation, configuration);
+    }
+
+    void releaseLocalRuntimeConfiguration(String deviceId, long generation) {
+        configManager.releaseLocalRuntimeConfiguration(deviceId, generation);
+    }
+
+    void releaseStoppedLocalRuntimeConfiguration(String deviceId) {
+        configManager.releaseStoppedLocalRuntimeConfiguration(deviceId);
     }
 
     private boolean isReservationCurrent(String deviceId, long generation) {

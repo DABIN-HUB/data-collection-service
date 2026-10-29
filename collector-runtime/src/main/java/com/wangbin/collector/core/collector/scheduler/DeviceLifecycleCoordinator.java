@@ -213,6 +213,7 @@ public class DeviceLifecycleCoordinator {
         try {
             preparation = prepareReservedStart(reservation);
             if (preparation == null) {
+                cleanupFailedStart(deviceId, reservation.generation());
                 return false;
             }
         } catch (Exception e) {
@@ -224,12 +225,27 @@ public class DeviceLifecycleCoordinator {
     }
 
     private StartPreparation prepareReservedStart(StartReservation reservation) throws Exception {
+        String deviceId = reservation.deviceId();
+        // SQLite I/O and validation must not hold the device lock: STOP can invalidate this reservation meanwhile.
+        if (!isReservedIntentCurrent(reservation)) return null;
+        ConfigManager.LocalStartConfiguration localConfiguration =
+                deviceStartPreparer.loadLocalStartConfiguration(deviceId);
         DeviceLifecycleLock lifecycleLock = acquireLifecycleLock(reservation.deviceId());
         try {
+            if (!isReservedIntentCurrent(reservation)) return null;
+            if (!deviceStartPreparer.installLocalStartConfiguration(deviceId, reservation.generation(), localConfiguration)) {
+                return null;
+            }
             return deviceStartPreparer.prepareReserved(reservation);
         } finally {
             releaseLifecycleLock(reservation.deviceId(), lifecycleLock);
         }
+    }
+
+    private boolean isReservedIntentCurrent(StartReservation reservation) {
+        return isStartGenerationCurrent(reservation.deviceId(), reservation.generation())
+                && (reservation.intentRevision() < 0
+                    || runtimeState.isRunningIntent(reservation.deviceId(), reservation.intentRevision()));
     }
 
     private boolean continuePreparedStart(String deviceId, StartPreparation preparation) {
@@ -488,7 +504,10 @@ public class DeviceLifecycleCoordinator {
             if (acquisitionRuntimeTracker != null) {
                 acquisitionRuntimeTracker.clear(deviceId);
             }
-            return criticalCleanupSucceeded && cleanupResult.criticalCleanupSucceeded();
+            if (!criticalCleanupSucceeded || !cleanupResult.criticalCleanupSucceeded()) return false;
+            // This is only runtime cache eviction. Persistent SQLite configuration and CAS revision remain intact.
+            deviceStartPreparer.releaseStoppedLocalRuntimeConfiguration(deviceId);
+            return true;
         } catch (Exception e) {
             log.error("停止设备失败, 设备={}", deviceId, e);
             return false;
@@ -525,12 +544,18 @@ public class DeviceLifecycleCoordinator {
         try {
             cancelStartingFutureIfGeneration(deviceId, generation);
             deviceLifecycleCleanup.cleanupFailedStart(deviceId, generation);
+            deviceStartPreparer.releaseLocalRuntimeConfiguration(deviceId, generation);
             if (acquisitionRuntimeTracker != null) {
                 acquisitionRuntimeTracker.clearIfGeneration(deviceId, generation);
             }
         } finally {
             releaseLifecycleLock(deviceId, lifecycleLock);
         }
+    }
+
+    /** A cancelled restart can abandon a reservation before continueReservedStart is entered. */
+    void discardReservedStart(StartReservation reservation) {
+        if (reservation != null) cleanupFailedStart(reservation.deviceId(), reservation.generation());
     }
 
     void initializeBatchSizing(String deviceId, DeviceInfo deviceInfo) {
@@ -625,6 +650,7 @@ public class DeviceLifecycleCoordinator {
 
             if (!runtimeState.commitRunning(deviceId, generation, batchTasks)) {
                 batchTasks.forEach(DeviceBatchTask::cancel);
+                discardStaleStart(deviceId, generation);
                 return false;
             }
             if (acquisitionRuntimeTracker != null) {
@@ -666,6 +692,7 @@ public class DeviceLifecycleCoordinator {
         cancelStartingFutureIfGeneration(deviceId, generation);
         collectionTaskGuard.clearDeviceIfCurrent(deviceId, generation);
         deviceLifecycleCleanup.discardStaleStart(deviceId, generation);
+        deviceStartPreparer.releaseLocalRuntimeConfiguration(deviceId, generation);
         if (acquisitionRuntimeTracker != null) {
             acquisitionRuntimeTracker.clearIfGeneration(deviceId, generation);
         }
@@ -749,7 +776,10 @@ public class DeviceLifecycleCoordinator {
     /**
      * 启动预留只表示设备已经进入 stopAllDevices 可见的 starting 状态，尚未执行网络连接。
      */
-    record StartReservation(String deviceId, long generation) {
+    record StartReservation(String deviceId, long generation, long intentRevision) {
+        StartReservation(String deviceId, long generation) {
+            this(deviceId, generation, -1L);
+        }
     }
 
     private static final class DeviceLifecycleLock {

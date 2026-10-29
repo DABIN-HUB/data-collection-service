@@ -41,7 +41,7 @@ public class CollectionService {
     }
 
     /**
-     * 从内存配置缓存启动本地临时设备。
+     * 启动本地临时设备；完整运行配置由统一启动准备阶段按 deviceId 从 SQLite 加载。
      * 该流程会避开远端刷新，避免删除仅存在于本地的配置。
      */
     public boolean startLocalDevice(String deviceId) {

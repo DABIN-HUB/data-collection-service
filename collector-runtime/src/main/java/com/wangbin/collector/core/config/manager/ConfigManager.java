@@ -96,6 +96,8 @@ public class ConfigManager {
 
     /** 对账失败时只封闭目标设备，缓存清理不能解除该保护。 */
     private final Set<String> localRecoveryRequired = new HashSet<>();
+    /** 仅记录本地运行缓存的生命周期代次，不承载第二份配置数据。 */
+    private final Map<String, LocalRuntimeGeneration> localRuntimeGenerations = new HashMap<>();
     private final SensitiveConfigSanitizer sensitiveConfigSanitizer = new SensitiveConfigSanitizer();
 
     public boolean isSqlitePersistenceEnabled() {
@@ -141,6 +143,35 @@ public class ConfigManager {
         DeviceContext candidate = DeviceContext.of(input.getDeviceInfo(), connection, points.get(id));
         validateLocalRecoverability(candidate);
         return candidate;
+    }
+
+    /**
+     * 在 ConfigManager 锁外读取单设备 SQLite 配置时使用的本地状态快照。
+     * 该快照只用于区分本地缺失与远端设备，不保存配置内容。
+     */
+    private LocalRuntimeState snapshotLocalRuntimeState(String deviceId) {
+        lock.readLock().lock();
+        try {
+            DeviceInfo cached = deviceCache.get(deviceId);
+            return new LocalRuntimeState(
+                    isLocalTemporaryDeviceInfo(cached)
+                            || localConfigurationRevisions.containsKey(deviceId)
+                            || localRecoveryRequired.contains(deviceId),
+                    cached != null && !isLocalTemporaryDeviceInfo(cached),
+                    localRecoveryRequired.contains(deviceId));
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    private WangbinConfigurationPersistenceException localConfigurationUnavailable(String deviceId) {
+        return new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
+    }
+
+    private record LocalRuntimeState(boolean local, boolean cachedRemote, boolean recoveryRequired) {
+    }
+
+    private record LocalRuntimeGeneration(long generation, boolean active) {
     }
 
     /** 所有写入口在锁内恢复掩码，禁止旧页面锁外读取秘密后覆盖并发赢家。 */
@@ -483,6 +514,156 @@ public class ConfigManager {
         if (!isSqlitePersistenceEnabled()) loadAllConfig();
         startConfigSync();
         log.info("配置管理器初始化完成");
+    }
+
+    /**
+     * 在 ConfigManager 锁外按设备 ID读取 SQLite 启动配置；远端设备返回 null。
+     * 已确认属于本地设备但数据库缺失、读取失败或校验失败时必须封闭启动。
+     */
+    public LocalStartConfiguration loadLocalStartConfiguration(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return null;
+
+        LocalRuntimeState state = snapshotLocalRuntimeState(deviceId);
+        if (state.recoveryRequired()) throw localConfigurationUnavailable(deviceId);
+
+        Optional<StoredDeviceConfiguration> stored;
+        try {
+            // SQLite 读取和配置转换故意不持有 ConfigManager 锁，停止操作可以同时使启动代次失效。
+            stored = localConfigurationPersistence.findDevice(deviceId);
+            if (stored == null) throw new IllegalStateException("SQLite设备读取结果为空");
+        } catch (RuntimeException readFailure) {
+            if (state.cachedRemote() && !state.local()) return null;
+            throw localConfigurationUnavailable(deviceId);
+        }
+        if (stored.isEmpty()) {
+            if (state.local()) throw localConfigurationUnavailable(deviceId);
+            return null;
+        }
+
+        try {
+            StoredDeviceConfiguration item = stored.get();
+            DeviceConfiguration configuration = item.configuration();
+            if (!deviceId.equals(configuration.deviceId())) {
+                throw new IllegalArgumentException("SQLite设备身份不一致");
+            }
+            DeviceContext candidate = localConfigurationPersistence.toRuntime(configuration);
+            if (candidate == null || !deviceId.equals(candidate.getDeviceId())
+                    || !isLocalTemporaryDeviceInfo(candidate.getDeviceInfo())) {
+                throw new IllegalArgumentException("SQLite本地设备来源不合法");
+            }
+            validateRestoredDeviceContext(deviceId, candidate);
+            return new LocalStartConfiguration(candidate, item.revision());
+        } catch (RuntimeException invalidConfiguration) {
+            // 不传播协议校验器或 codec 的原始消息，避免把敏感配置带出启动失败路径。
+            throw localConfigurationUnavailable(deviceId);
+        }
+    }
+
+    /**
+     * 在设备生命周期锁内调用；ConfigManager 写锁下原子安装四个运行缓存、持久修订和 JVM 版本。
+     * 仅接受不早于当前持久修订的候选，避免 SQLite 读取期间的旧候选覆盖同进程并发保存。
+     */
+    public boolean installLocalStartConfiguration(String deviceId, long generation,
+                                                  LocalStartConfiguration candidate) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (candidate == null || !isSqlitePersistenceEnabled()) return true;
+
+        lock.writeLock().lock();
+        try {
+            requireConfigurationReadable(deviceId);
+            LocalRuntimeGeneration owner = localRuntimeGenerations.get(deviceId);
+            if (owner != null && (generation < owner.generation()
+                    || generation == owner.generation() && !owner.active())) {
+                return false;
+            }
+            if (candidate.persistedRevision() < 1) {
+                throw localConfigurationUnavailable(deviceId);
+            }
+            Long currentRevision = localConfigurationRevisions.get(deviceId);
+            if (currentRevision != null && candidate.persistedRevision() < currentRevision) {
+                return false;
+            }
+            DeviceContext loaded = candidate.context();
+            if (loaded == null) throw localConfigurationUnavailable(deviceId);
+            DeviceContext installed = DeviceContext.of(loaded.getDeviceInfo(), loaded.getConnectionConfig(),
+                    loaded.getDataPoints());
+            if (!deviceId.equals(installed.getDeviceId())
+                    || !isLocalTemporaryDeviceInfo(installed.getDeviceInfo())) {
+                throw localConfigurationUnavailable(deviceId);
+            }
+            validateRestoredDeviceContext(deviceId, installed);
+
+            DeviceContext previous = deviceContextCache.get(deviceId);
+            boolean sameLocalConfiguration = previous != null
+                    && isLocalTemporaryDeviceInfo(previous.getDeviceInfo())
+                    && sameDeviceConfiguration(previous, installed);
+            Long previousVersion = deviceConfigVersions.get(deviceId);
+            boolean revisionChanged = !Objects.equals(currentRevision, candidate.persistedRevision());
+
+            // 写锁覆盖四个缓存及两个版本字段，读线程不会观察到半安装状态。
+            restoreDeviceContext(deviceId, installed);
+            localConfigurationRevisions.put(deviceId, candidate.persistedRevision());
+            if (previousVersion == null || !sameLocalConfiguration || revisionChanged) {
+                deviceConfigVersions.put(deviceId, nextConfigVersion());
+            }
+            localRuntimeGenerations.put(deviceId, new LocalRuntimeGeneration(generation, true));
+            if (previousVersion == null || !sameLocalConfiguration || revisionChanged) markConfigMutation();
+            return true;
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** 只在当前运行代次仍归属本地配置时释放运行缓存；不删除 SQLite、不发布配置事件。 */
+    public void releaseLocalRuntimeConfiguration(String deviceId, long generation) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return;
+
+        lock.writeLock().lock();
+        try {
+            LocalRuntimeGeneration owner = localRuntimeGenerations.get(deviceId);
+            if (owner == null || !owner.active() || owner.generation() != generation) return;
+            clearLocalRuntimeCaches(deviceId);
+            localRuntimeGenerations.put(deviceId, new LocalRuntimeGeneration(generation, false));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** 完整 STOP 成功后释放本地运行缓存；兼容 init 预加载但尚无代次归属的情况。 */
+    public void releaseStoppedLocalRuntimeConfiguration(String deviceId) {
+        Objects.requireNonNull(deviceId, "设备ID不能为空");
+        if (!isSqlitePersistenceEnabled()) return;
+
+        lock.writeLock().lock();
+        try {
+            LocalRuntimeGeneration owner = localRuntimeGenerations.get(deviceId);
+            if (isLocalRuntimeConfigurationCached(deviceId)) clearLocalRuntimeCaches(deviceId);
+            if (owner != null) {
+                localRuntimeGenerations.put(deviceId, new LocalRuntimeGeneration(owner.generation(), false));
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** 调用方持有配置写锁；只清理本地运行态，保留 SQLite CAS 修订和故障封闭标记。 */
+    private boolean clearLocalRuntimeCaches(String deviceId) {
+        boolean changed = deviceCache.remove(deviceId) != null;
+        changed |= pointCache.remove(deviceId) != null;
+        changed |= connectionCache.remove(deviceId) != null;
+        changed |= deviceContextCache.remove(deviceId) != null;
+        changed |= deviceConfigVersions.remove(deviceId) != null;
+        if (changed) markConfigMutation();
+        return changed;
+    }
+
+    private boolean isLocalRuntimeConfigurationCached(String deviceId) {
+        DeviceInfo cached = deviceCache.get(deviceId);
+        return isLocalTemporaryDeviceInfo(cached) || localConfigurationRevisions.containsKey(deviceId)
+                && (deviceContextCache.containsKey(deviceId) || pointCache.containsKey(deviceId)
+                || connectionCache.containsKey(deviceId) || deviceConfigVersions.containsKey(deviceId));
     }
 
     /**
@@ -1063,6 +1244,10 @@ public class ConfigManager {
         public DeviceConfigurationSnapshot(DeviceContext context, long configVersion) {
             this(context, configVersion, 0L);
         }
+    }
+
+    /** SQLite 单设备启动快照；只在启动准备阶段传递，不构成第二份配置缓存。 */
+    public record LocalStartConfiguration(DeviceContext context, long persistedRevision) {
     }
 
     /**

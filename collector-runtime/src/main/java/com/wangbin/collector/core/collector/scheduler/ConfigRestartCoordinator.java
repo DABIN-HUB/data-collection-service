@@ -231,11 +231,17 @@ public class ConfigRestartCoordinator {
         DeviceLifecycleCoordinator.StartReservation reservation = deviceLifecycleCoordinator.reserveStartForConfigRestart(
                 deviceId, revision, wasRunning, wasStarting, () -> isRestartCurrent(deviceId, selfReference));
         if (reservation == null) return;
-        beforeReservedStartContinuationForTest(deviceId, reservation);
-        if (!isRestartCurrent(deviceId, selfReference)
-                || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) return;
-        if (deviceLifecycleCoordinator.continueReservedStart(reservation) && !closed.get()) {
-            timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
+        boolean handedOff = false;
+        try {
+            beforeReservedStartContinuationForTest(deviceId, reservation);
+            if (!isRestartCurrent(deviceId, selfReference)
+                    || !deviceLifecycleCoordinator.isRunningIntent(deviceId, revision)) return;
+            handedOff = true;
+            if (deviceLifecycleCoordinator.continueReservedStart(reservation) && !closed.get()) {
+                timeSliceConfigCoordinator.adjustTimeSlicesAfterWorkloadChange();
+            }
+        } finally {
+            if (!handedOff) deviceLifecycleCoordinator.discardReservedStart(reservation);
         }
     }
 
