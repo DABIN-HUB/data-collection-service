@@ -242,6 +242,9 @@ public final class WangbinSqliteLocalConfigurationPersistence implements Wangbin
     @Override public Optional<DeviceInfo> findDeviceSummary(String deviceId) {
         return store.findDeviceSummary(deviceId).map(codec::toDeviceInfo);
     }
+    @Override public boolean existsDevice(String deviceId) {
+        return store.findDeviceSummary(deviceId).isPresent();
+    }
     @Override public Optional<DeviceContext> findDeviceConnectionContext(String deviceId) {
         return store.readSnapshot(reader -> reader.findDeviceSummary(deviceId).map(summary ->
                 codec.toRuntime(new DeviceConfiguration(summary.deviceId(), summary.deviceJson(),

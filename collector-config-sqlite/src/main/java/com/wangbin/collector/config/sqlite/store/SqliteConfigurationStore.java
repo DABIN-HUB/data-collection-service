@@ -1,6 +1,7 @@
 package com.wangbin.collector.config.sqlite.store;
 
 import com.wangbin.collector.config.sqlite.service.impl.SqliteConfigServiceImpl;
+import com.wangbin.collector.config.sqlite.database.SqliteDatabase;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -10,6 +11,10 @@ import java.sql.SQLException;
 public final class SqliteConfigurationStore extends SqliteConfigServiceImpl {
     private SqliteConfigurationStore(Path path, int busyTimeoutMs, boolean create) {
         super(path, busyTimeoutMs, create);
+    }
+
+    public SqliteConfigurationStore(SqliteDatabase database) {
+        super(database);
     }
 
     public static SqliteConfigurationStore createNew(Path path, int busyTimeoutMs) {

@@ -122,7 +122,7 @@ public final class SqliteDatabase {
         }
     }
 
-    /** 每次调用新建独立连接，调用方必须在当前操作内关闭；不注册任何 Spring 数据源。 */
+    /** 每次调用新建并校验一个物理连接；由 HikariCP 的物理连接来源调用。 */
     public Connection openConnection() {
         try {
             Connection connection = connect(true);
@@ -139,6 +139,14 @@ public final class SqliteDatabase {
         } catch (SQLException exception) {
             throw failure(exception);
         }
+    }
+
+    public Path path() {
+        return path;
+    }
+
+    public int busyTimeoutMs() {
+        return busyTimeoutMs;
     }
 
     private Connection connect(boolean requireContent) throws SQLException {

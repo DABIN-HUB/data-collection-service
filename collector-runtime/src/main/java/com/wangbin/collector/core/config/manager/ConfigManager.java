@@ -1104,10 +1104,12 @@ public class ConfigManager {
     /** 仅供配置管理页面使用；本地设备以 SQLite 基础记录为准，远端沿用运行缓存。 */
     public List<DeviceInfo> getConfigurationDevices() {
         if (!isSqlitePersistenceEnabled()) return getAllDevices();
+        // SQLite 查询不占用运行配置锁；锁内只合并短暂的恢复保护和远端缓存快照。
+        List<DeviceInfo> localDevices = localConfigurationPersistence.listDeviceSummaries();
         lock.readLock().lock();
         try {
             Map<String, DeviceInfo> devices = new LinkedHashMap<>();
-            for (DeviceInfo local : localConfigurationPersistence.listDeviceSummaries()) {
+            for (DeviceInfo local : localDevices) {
                 if (localRecoveryRequired.contains(local.getDeviceId())) continue;
                 devices.put(local.getDeviceId(), local);
             }
@@ -1127,16 +1129,19 @@ public class ConfigManager {
     public DeviceInfo getConfigurationDevice(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         if (!isSqlitePersistenceEnabled()) return getDevice(deviceId);
+        boolean readable;
+        DeviceInfo cached;
         lock.readLock().lock();
         try {
             requireConfigurationReadable(deviceId);
-            DeviceInfo local = localConfigurationPersistence.findDeviceSummary(deviceId).orElse(null);
-            if (local != null) return local;
-            DeviceInfo cached = deviceCache.get(deviceId);
-            return isLocalTemporaryDeviceInfo(cached) ? null : cached;
+            readable = true;
+            cached = deviceCache.get(deviceId);
         } finally {
             lock.readLock().unlock();
         }
+        DeviceInfo local = localConfigurationPersistence.findDeviceSummary(deviceId).orElse(null);
+        if (local != null) return local;
+        return readable && !isLocalTemporaryDeviceInfo(cached) ? cached : null;
     }
 
     /**
@@ -1188,56 +1193,61 @@ public class ConfigManager {
     public DeviceConfigurationSnapshot getConfigurationDeviceSnapshot(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId);
+        DeviceContext cachedRemote;
+        long configVersion;
         lock.readLock().lock();
         try {
             requireConfigurationReadable(deviceId);
-            StoredDeviceConfiguration stored;
-            try {
-                stored = localConfigurationPersistence.findDevice(deviceId).orElse(null);
-            } catch (RuntimeException readFailure) {
-                throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
-            }
-            DeviceContext local = stored == null ? null : localConfigurationPersistence.toRuntime(stored.configuration());
-            DeviceContext context = local != null ? local : cachedRemoteConfiguration(deviceId);
-            return new DeviceConfigurationSnapshot(context, deviceConfigVersions.getOrDefault(deviceId, 0L),
-                    stored == null ? 0L : stored.revision());
+            DeviceContext cached = deviceContextCache.get(deviceId);
+            cachedRemote = cached == null || isLocalTemporaryDeviceInfo(cached.getDeviceInfo()) ? null
+                    : DeviceContext.of(cached.getDeviceInfo(), cached.getConnectionConfig(), cached.getDataPoints());
+            configVersion = deviceConfigVersions.getOrDefault(deviceId, 0L);
         } finally {
             lock.readLock().unlock();
         }
+        StoredDeviceConfiguration stored;
+        try {
+            stored = localConfigurationPersistence.findDevice(deviceId).orElse(null);
+        } catch (RuntimeException readFailure) {
+            throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
+        }
+        DeviceContext local = stored == null ? null : localConfigurationPersistence.toRuntime(stored.configuration());
+        return new DeviceConfigurationSnapshot(local != null ? local : cachedRemote, configVersion,
+                stored == null ? 0L : stored.revision());
     }
 
     /** 只为配置页面定向读取点位；运行采集仍调用 getDataPoints。 */
     public DeviceContext getConfigurationPoints(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId).context();
+        DeviceContext cachedRemote;
         lock.readLock().lock();
         try {
             requireConfigurationReadable(deviceId);
-            return localConfigurationPersistence.findDevicePointsContext(deviceId)
-                    .orElseGet(() -> cachedRemoteConfiguration(deviceId));
+            DeviceContext cached = deviceContextCache.get(deviceId);
+            cachedRemote = cached == null || isLocalTemporaryDeviceInfo(cached.getDeviceInfo()) ? null
+                    : DeviceContext.of(cached.getDeviceInfo(), cached.getConnectionConfig(), cached.getDataPoints());
         } finally {
             lock.readLock().unlock();
         }
+        return localConfigurationPersistence.findDevicePointsContext(deviceId).orElse(cachedRemote);
     }
 
     /** 只为配置页面定向读取连接；运行采集仍调用 getConnectionConfig。 */
     public DeviceContext getConfigurationConnection(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
         if (!isSqlitePersistenceEnabled()) return getDeviceConfigurationSnapshot(deviceId).context();
+        DeviceContext cachedRemote;
         lock.readLock().lock();
         try {
             requireConfigurationReadable(deviceId);
-            return localConfigurationPersistence.findDeviceConnectionContext(deviceId)
-                    .orElseGet(() -> cachedRemoteConfiguration(deviceId));
+            DeviceContext cached = deviceContextCache.get(deviceId);
+            cachedRemote = cached == null || isLocalTemporaryDeviceInfo(cached.getDeviceInfo()) ? null
+                    : DeviceContext.of(cached.getDeviceInfo(), cached.getConnectionConfig(), cached.getDataPoints());
         } finally {
             lock.readLock().unlock();
         }
-    }
-
-    private DeviceContext cachedRemoteConfiguration(String deviceId) {
-        DeviceContext cached = deviceContextCache.get(deviceId);
-        return cached == null || isLocalTemporaryDeviceInfo(cached.getDeviceInfo()) ? null
-                : DeviceContext.of(cached.getDeviceInfo(), cached.getConnectionConfig(), cached.getDataPoints());
+        return localConfigurationPersistence.findDeviceConnectionContext(deviceId).orElse(cachedRemote);
     }
 
     public record DeviceConfigurationSnapshot(DeviceContext context, long configVersion, long persistedRevision) {
@@ -2216,14 +2226,20 @@ public class ConfigManager {
 
     public boolean isLocalTemporaryDevice(String deviceId) {
         Objects.requireNonNull(deviceId, "设备ID不能为空");
+        boolean cachedLocal;
+        boolean recovery;
+        boolean sqlite;
         lock.readLock().lock();
         try {
-            return isLocalTemporaryDeviceInfo(deviceCache.get(deviceId))
-                    || isSqlitePersistenceEnabled() && (localRecoveryRequired.contains(deviceId)
-                    || localConfigurationPersistence.findDevice(deviceId).isPresent());
+            cachedLocal = isLocalTemporaryDeviceInfo(deviceCache.get(deviceId));
+            recovery = localRecoveryRequired.contains(deviceId);
+            sqlite = isSqlitePersistenceEnabled();
         } finally {
             lock.readLock().unlock();
         }
+        if (cachedLocal || !sqlite || recovery) return cachedLocal || recovery;
+        // 存在性判断只做轻量单设备查询，且不在运行配置锁内读取 SQLite 聚合。
+        return localConfigurationPersistence.existsDevice(deviceId);
     }
 
     /**

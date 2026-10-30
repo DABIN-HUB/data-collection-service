@@ -17,7 +17,8 @@ class TdengineOptionalDataSourcePostProcessorTest {
 
         assertThat(environment.getProperty("spring.autoconfigure.exclude"))
                 .contains("example.ExistingAutoConfiguration")
-                .contains("org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration");
+                .contains("org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration")
+                .contains("org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration");
     }
 
     @Test

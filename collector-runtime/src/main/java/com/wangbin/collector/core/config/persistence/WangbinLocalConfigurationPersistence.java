@@ -20,6 +20,12 @@ public interface WangbinLocalConfigurationPersistence {
 
     /** 设备管理按 ID 定位的数据库配置；运行态仍通过 ConfigManager 缓存。 */
     Optional<DeviceInfo> findDeviceSummary(String deviceId);
+
+    /** 设备存在性只读取基础设备行，禁止为判断来源加载连接和点位聚合。 */
+    default boolean existsDevice(String deviceId) {
+        return findDeviceSummary(deviceId).isPresent();
+    }
+
     Optional<DeviceContext> findDeviceConnectionContext(String deviceId);
     Optional<DeviceContext> findDevicePointsContext(String deviceId);
 

@@ -16,30 +16,41 @@ public final class WangbinInstallationBootstrap {
     }
 
     public static SqliteConfigurationStore openOrInitializeInstallation(Path path, int busyTimeoutMs) {
+        return new SqliteConfigurationStore(openOrInitializeDatabase(path, busyTimeoutMs));
+    }
+
+    /**
+     * 只负责安装资格、数据库校验和保护目录；业务连接池由上层唯一运行时创建。
+     */
+    public static SqliteDatabase openOrInitializeDatabase(Path path, int busyTimeoutMs) {
         if (path == null) throw new IllegalArgumentException("数据库路径不能为空");
         Path target = path.toAbsolutePath().normalize();
         if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            return protectInstallation(SqliteConfigurationStore.openExisting(target, busyTimeoutMs), target);
+            return protectInstallation(SqliteDatabase.openExisting(target, busyTimeoutMs), target);
         }
         if (!Files.notExists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw new IllegalStateException("无法确认数据库状态，禁止自动初始化");
         }
         SqliteDatabase.claimNewInstallationDirectory(target, busyTimeoutMs);
-        return initializeNewInstallation(target, busyTimeoutMs, true);
+        return initializeNewDatabase(target, busyTimeoutMs, true);
     }
 
     public static SqliteConfigurationStore initializeNewInstallation(Path path, int busyTimeoutMs,
                                                                      boolean freshInstallConfirmed) {
-        if (!freshInstallConfirmed) throw new IllegalArgumentException("未明确声明 wangbin 全新安装，禁止初始化");
-        return protectInstallation(SqliteConfigurationStore.createNew(path, busyTimeoutMs), path);
+        return new SqliteConfigurationStore(initializeNewDatabase(path, busyTimeoutMs, freshInstallConfirmed));
     }
 
-    private static SqliteConfigurationStore protectInstallation(SqliteConfigurationStore store, Path path) {
+    public static SqliteDatabase initializeNewDatabase(Path path, int busyTimeoutMs,
+                                                       boolean freshInstallConfirmed) {
+        if (!freshInstallConfirmed) throw new IllegalArgumentException("未明确声明 wangbin 全新安装，禁止初始化");
+        return protectInstallation(SqliteDatabase.createNew(path, busyTimeoutMs), path);
+    }
+
+    private static SqliteDatabase protectInstallation(SqliteDatabase database, Path path) {
         try {
             SqliteDatabase.ensureInstallationGuard(path);
-            return store;
+            return database;
         } catch (RuntimeException exception) {
-            store.close();
             throw exception;
         }
     }

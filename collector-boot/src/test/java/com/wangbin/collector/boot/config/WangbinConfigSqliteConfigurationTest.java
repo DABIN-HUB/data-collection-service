@@ -3,7 +3,9 @@ package com.wangbin.collector.boot.config;
 import com.wangbin.collector.config.sqlite.store.SqliteConfigurationStore;
 import com.wangbin.collector.core.config.persistence.ConfigurationStore;
 import com.zaxxer.hikari.HikariDataSource;
+import com.wangbin.collector.config.sqlite.mybatis.SqliteTransactionManager;
 import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
@@ -29,8 +31,18 @@ class WangbinConfigSqliteConfigurationTest {
     void defaultCreatesPrivateDatabaseAndExplicitDisabledDoesNotCreateFiles() {
         Path database = directory.resolve("not-created/collector.db");
         runner.withPropertyValues("wangbin.config.sqlite.database-path=" + database).run(context -> {
-            assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class).doesNotHaveBean(DataSource.class)
-                    .doesNotHaveBean(SqlSessionFactory.class);
+            assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class)
+                    .hasBean("wangbinSqliteDataSource")
+                    .hasBean("wangbinSqliteSqlSessionFactory")
+                    .hasBean("wangbinSqliteSqlSessionTemplate")
+                    .hasBean("wangbinSqliteTransactionManager");
+            assertThat(context.getBeansOfType(DataSource.class)).hasSize(1);
+            assertThat(context.getBeansOfType(SqlSessionFactory.class)).hasSize(1);
+            assertThat(context.getBean(SqlSessionFactory.class).getConfiguration().getEnvironment().getDataSource())
+                    .isSameAs(context.getBean("wangbinSqliteDataSource"));
+            assertThat(context.getBean(SqlSessionTemplate.class).getSqlSessionFactory())
+                    .isSameAs(context.getBean("wangbinSqliteSqlSessionFactory"));
+            assertThat(context.getBean(SqliteTransactionManager.class)).isNotNull();
             assertTrue(Files.isRegularFile(database));
             assertTrue(context.getBean(ConfigurationStore.class).listDevices().isEmpty());
         });
@@ -55,7 +67,7 @@ class WangbinConfigSqliteConfigurationTest {
     }
 
     @Test
-    void enabledStoreClosesWithContextWithoutAddingDatasourceOrSqlSessionFactory() {
+    void enabledStoreClosesWithContextAndReleasesIndependentInfrastructure() {
         Path database = directory.resolve("private/collector.db");
         try (var ignored = SqliteConfigurationStore.createNew(database, 500)) {
             // 已有库必须只打开，不能重新初始化。
@@ -65,7 +77,12 @@ class WangbinConfigSqliteConfigurationTest {
                         "wangbin.config.sqlite.busy-timeout-ms=500")
                 .run(context -> {
                     assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class)
-                            .doesNotHaveBean(DataSource.class).doesNotHaveBean(SqlSessionFactory.class);
+                            .hasBean("wangbinSqliteDataSource")
+                            .hasBean("wangbinSqliteSqlSessionFactory")
+                            .hasBean("wangbinSqliteSqlSessionTemplate")
+                            .hasBean("wangbinSqliteTransactionManager");
+                    assertThat(context.getBean(SqlSessionFactory.class).getConfiguration().getEnvironment().getDataSource())
+                            .isSameAs(context.getBean("wangbinSqliteDataSource"));
                     captured[0] = context.getBean(ConfigurationStore.class);
                     assertTrue(captured[0].listDevices().isEmpty());
                 });
@@ -79,18 +96,30 @@ class WangbinConfigSqliteConfigurationTest {
             // 不调用真实 TDengine 或 Redis；Hikari 不获取连接即可核对绑定对象。
         }
         runner.withConfiguration(AutoConfigurations.of(DataSourceAutoConfiguration.class, MybatisAutoConfiguration.class))
-                .withPropertyValues("wangbin.config.sqlite.enabled=true", "wangbin.config.sqlite.database-path=" + database,
+                .withPropertyValues("telemetry.tdengine.enabled=true", "wangbin.config.sqlite.enabled=true", "wangbin.config.sqlite.database-path=" + database,
                         "spring.datasource.driver-class-name=com.taosdata.jdbc.rs.RestfulDriver",
                         "spring.datasource.url=jdbc:TAOS-RS://127.0.0.1:1/wangbin_phase1",
                         "spring.datasource.hikari.initialization-fail-timeout=-1")
                 .run(context -> {
-                    assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class).hasSingleBean(DataSource.class)
-                            .hasSingleBean(SqlSessionFactory.class);
-                    DataSource datasource = context.getBean(DataSource.class);
-                    assertInstanceOf(HikariDataSource.class, datasource);
-                    assertEquals("com.taosdata.jdbc.rs.RestfulDriver", ((HikariDataSource) datasource).getDriverClassName());
-                    assertSame(datasource, context.getBean(SqlSessionFactory.class).getConfiguration().getEnvironment().getDataSource());
-                    assertNotSame(datasource, context.getBean(ConfigurationStore.class));
+                    assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class)
+                            .hasBean("dataSource")
+                            .hasBean("wangbinSqliteDataSource")
+                            .hasBean("tdengineSqlSessionFactory")
+                            .hasBean("wangbinSqliteSqlSessionFactory");
+                    assertThat(context.getBeansOfType(DataSource.class)).hasSize(2);
+                    assertThat(context.getBeansOfType(SqlSessionFactory.class)).hasSize(2);
+                    DataSource tdengine = context.getBean("dataSource", DataSource.class);
+                    DataSource sqlite = context.getBean("wangbinSqliteDataSource", DataSource.class);
+                    assertInstanceOf(HikariDataSource.class, tdengine);
+                    assertInstanceOf(HikariDataSource.class, sqlite);
+                    assertEquals("com.taosdata.jdbc.rs.RestfulDriver", ((HikariDataSource) tdengine).getDriverClassName());
+                    assertSame(tdengine, context.getBean("tdengineSqlSessionFactory", SqlSessionFactory.class)
+                            .getConfiguration().getEnvironment().getDataSource());
+                    assertSame(sqlite, context.getBean("wangbinSqliteSqlSessionFactory", SqlSessionFactory.class)
+                            .getConfiguration().getEnvironment().getDataSource());
+                    assertNotSame(tdengine, sqlite);
+                    assertNotSame(context.getBean("tdengineSqlSessionFactory", SqlSessionFactory.class),
+                            context.getBean("wangbinSqliteSqlSessionFactory", SqlSessionFactory.class));
                 });
     }
 

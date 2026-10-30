@@ -14,6 +14,15 @@ public class WangbinConfigSqliteProperties {
     @Min(1)
     @Max(60000)
     private int busyTimeoutMs = 5000;
+    @Min(1)
+    @Max(32)
+    private int maximumPoolSize = 4;
+    @Min(0)
+    @Max(32)
+    private int minimumIdle = 1;
+    @Min(250)
+    @Max(60000)
+    private long connectionTimeoutMs = 5000;
 
     public boolean isEnabled() {
         return enabled;
@@ -37,5 +46,29 @@ public class WangbinConfigSqliteProperties {
 
     public void setBusyTimeoutMs(int busyTimeoutMs) {
         this.busyTimeoutMs = busyTimeoutMs;
+    }
+
+    public int getMaximumPoolSize() {
+        return maximumPoolSize;
+    }
+
+    public void setMaximumPoolSize(int maximumPoolSize) {
+        this.maximumPoolSize = maximumPoolSize;
+    }
+
+    public int getMinimumIdle() {
+        return minimumIdle;
+    }
+
+    public void setMinimumIdle(int minimumIdle) {
+        this.minimumIdle = minimumIdle;
+    }
+
+    public long getConnectionTimeoutMs() {
+        return connectionTimeoutMs;
+    }
+
+    public void setConnectionTimeoutMs(long connectionTimeoutMs) {
+        this.connectionTimeoutMs = connectionTimeoutMs;
     }
 }

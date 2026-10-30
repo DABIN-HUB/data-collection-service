@@ -470,9 +470,9 @@ git diff --check
 
 1. SQLite 是设备、协议、连接、点位及相关网关配置的持久化权威数据源，不能另建配置权威缓存或将 SQLite 配置复制到 Redis 作为第二权威源。
 2. 所有正式 SQLite 配置业务读写只能通过唯一的 `SqliteConfigService`。复用 `ConfigurationStore`、`ConfigurationReader` 契约，不建立业务等价的第二服务或第二个 `ConfigManager`；旧接口仅可作为无 SQL 的薄委托适配器。
-3. Service 接口只声明业务方法，不编写 SQL；ServiceImpl 负责事务、校验、CAS、保存编排及错误处理；Mapper 负责设备配置业务 SQL、参数绑定和 ResultSet 映射。
-4. Controller、ApplicationService、ConfigManager、采集模块和前端接口不得直接使用 SQLite JDBC、Connection、PreparedStatement 或 Mapper；业务数据库连接仅由统一 ServiceImpl 内部使用。`SqliteDatabase`、`SqliteFileSecurity`、`SqlitePaths` 属于物理基础设施，已有安装入口可继续执行目录认领和安装守卫，不得借此增加配置业务读写入口。
-5. 数据库建表 SQL 保留在现有 migration 资源；不引入 MyBatis、MyBatis-Plus、Hibernate 或其他 ORM；不因改造清空、删除、重建已有数据库或未经授权修改表结构。
+3. Service 接口只声明业务方法，不编写 SQL；ServiceImpl 负责事务、校验、CAS、保存编排及错误处理；SQLite 业务 SQL 由 MyBatis Mapper（可使用 XML）管理，不在业务 Mapper 中手写 JDBC 连接、语句或结果集映射。
+4. Controller、ApplicationService、ConfigManager、采集模块和前端接口不得直接使用 SQLite JDBC、Connection、PreparedStatement 或 Mapper；业务数据库连接由独立的 SQLite HikariCP 数据源和明确绑定的 SQLite 事务管理器管理。`SqliteDatabase`、`SqliteFileSecurity`、`SqlitePaths` 属于物理基础设施，已有安装入口可继续执行目录认领和安装守卫，不得借此增加配置业务读写入口。
+5. 数据库建表 SQL 保留在现有 migration 资源；SQLite 配置持久化使用 MyBatis + HikariCP，不因改造清空、删除、重建已有数据库或未经授权修改表结构。
 6. 保留稳定 `deviceId`、全局唯一 `pointId`、外键、唯一性、事务原子性及必要的修订校验；不得在提交失败时返回伪成功，也不得因编排失败重复执行已成功提交的 SQL。
 7. 不将实时数据或历史采集值写入 SQLite；SQLite CRUD 不依赖 Redis 或 TDengine 的可用性。
 8. 阶段 01 保持现有启动恢复行为；阶段 05 才取消应用启动时将全部 SQLite 设备配置载入长期内存。阶段 04 才实现用户手动启动时按 `deviceId` 读取完整配置、停止时释放任务和运行配置且不删除 SQLite 数据。

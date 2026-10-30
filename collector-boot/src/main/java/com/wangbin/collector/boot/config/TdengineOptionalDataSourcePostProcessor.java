@@ -11,7 +11,8 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 /**
- * 历史库存储关闭时阻止 JDBC 自动配置，避免默认 TDengine 地址进入启动依赖链。
+ * 历史库存储关闭时阻止 JDBC/MyBatis 自动配置，避免默认 TDengine 地址或 SQLite 数据源
+ * 进入启动依赖链。
  */
 public final class TdengineOptionalDataSourcePostProcessor
         implements EnvironmentPostProcessor, Ordered {
@@ -20,6 +21,8 @@ public final class TdengineOptionalDataSourcePostProcessor
     private static final String AUTOCONFIG_EXCLUDE_PROPERTY = "spring.autoconfigure.exclude";
     private static final String DATA_SOURCE_AUTOCONFIGURATION =
             "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration";
+    private static final String MYBATIS_AUTOCONFIGURATION =
+            "org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration";
     private static final String PROPERTY_SOURCE_NAME = "tdengineOptionalDataSourceExclusions";
 
     @Override
@@ -40,6 +43,7 @@ public final class TdengineOptionalDataSourcePostProcessor
             }
         }
         exclusions.add(DATA_SOURCE_AUTOCONFIGURATION);
+        exclusions.add(MYBATIS_AUTOCONFIGURATION);
 
         environment.getPropertySources().addFirst(new MapPropertySource(
                 PROPERTY_SOURCE_NAME,

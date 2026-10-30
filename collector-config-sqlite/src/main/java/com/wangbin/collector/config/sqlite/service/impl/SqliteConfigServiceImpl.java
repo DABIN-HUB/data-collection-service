@@ -3,6 +3,9 @@ package com.wangbin.collector.config.sqlite.service.impl;
 import com.wangbin.collector.config.sqlite.codec.ConfigurationJsonCodec;
 import com.wangbin.collector.config.sqlite.database.SqliteDatabase;
 import com.wangbin.collector.config.sqlite.mapper.SqliteConfigMapper;
+import com.wangbin.collector.config.sqlite.mapper.DeviceRow;
+import com.wangbin.collector.config.sqlite.mapper.PointOwner;
+import com.wangbin.collector.config.sqlite.mybatis.SqlitePersistenceRuntime;
 import com.wangbin.collector.core.config.persistence.*;
 
 import java.nio.file.Path;
@@ -10,8 +13,8 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -20,13 +23,17 @@ import java.util.function.Function;
 /** SQLite 配置业务的唯一实现；负责事务、校验、修订冲突及保存编排。 */
 public class SqliteConfigServiceImpl implements SqliteConfigService {
     private static final System.Logger LOGGER = System.getLogger(SqliteConfigServiceImpl.class.getName());
-    private final SqliteDatabase database;
+    private final SqlitePersistenceRuntime runtime;
     private final ConfigurationJsonCodec codec = new ConfigurationJsonCodec();
     private final ThreadLocal<Boolean> transactionActive = ThreadLocal.withInitial(() -> false);
     private volatile boolean closed;
 
     public SqliteConfigServiceImpl(SqliteDatabase database) {
-        this.database = java.util.Objects.requireNonNull(database, "数据库不能为空");
+        this(SqlitePersistenceRuntime.open(java.util.Objects.requireNonNull(database, "数据库不能为空")));
+    }
+
+    public SqliteConfigServiceImpl(SqlitePersistenceRuntime runtime) {
+        this.runtime = java.util.Objects.requireNonNull(runtime, "SQLite 运行时不能为空");
     }
 
     /** 兼容旧构造入口也必须从统一实现取得数据库连接。 */
@@ -43,7 +50,12 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         return new SqliteConfigServiceImpl(SqliteDatabase.openExisting(path, busyTimeoutMs));
     }
 
-    @Override public void close() { closed = true; }
+    @Override public void close() {
+        if (!closed) {
+            closed = true;
+            if (!transactionActive.get()) runtime.close();
+        }
+    }
 
     private void checkOpen() {
         if (closed) throw new IllegalStateException("配置仓储已经关闭");
@@ -55,7 +67,10 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         if (transactionActive.get()) throw new IllegalStateException("不允许嵌套配置事务");
         transactionActive.set(true);
         try { return operate(action::apply, true); }
-        finally { transactionActive.remove(); }
+        finally {
+            transactionActive.remove();
+            if (closed) runtime.close();
+        }
     }
 
     @Override public <T> T readSnapshot(Function<ConfigurationReader, T> action) {
@@ -64,58 +79,53 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         if (transactionActive.get()) throw new IllegalStateException("不允许嵌套配置事务");
         transactionActive.set(true);
         try { return read(action::apply); }
-        finally { transactionActive.remove(); }
+        finally {
+            transactionActive.remove();
+            if (closed) runtime.close();
+        }
     }
 
     private <T> T read(Function<Session, T> action) { return operate(action, false); }
 
     private <T> T operate(Function<Session, T> action, boolean write) {
         checkOpen();
-        boolean committed = false;
-        T result = null;
-        try (Connection connection = database.openConnection()) {
-            // 在读取 CAS 修订前取得写锁，保持原有 SQLite 事务隔离。
-            statement(connection, write ? "BEGIN IMMEDIATE" : "BEGIN");
-            Session session = new Session(connection, write);
-            try {
-                result = action.apply(session);
-                session.check();
-                if (session.rollbackOnly) throw new IllegalStateException("事务已因前序操作失败而失效");
-                database.secureFiles();
+        try {
+            var template = write ? runtime.writeTransaction() : runtime.readTransaction();
+            return template.execute(status -> {
+                Session session = new Session(runtime.mapper(), write);
                 try {
-                    commit(connection);
-                } catch (SQLException exception) {
-                    // COMMIT 返回异常时不能推断 SQLite 已回滚；调用方必须按目标设备核对。
-                    throw new ConfigurationCommitUncertainException();
+                    T result = action.apply(session);
+                    session.check();
+                    if (session.rollbackOnly) throw new IllegalStateException("事务已因前序操作失败而失效");
+                    if (write) runtime.database().secureFiles();
+                    return result;
+                } finally {
+                    session.active = false;
                 }
-                committed = true;
-                return result;
-            } catch (RuntimeException | Error exception) {
-                try {
-                    statement(connection, "ROLLBACK");
-                } catch (SQLException rollbackFailure) {
-                    if (write) throw new ConfigurationCommitUncertainException();
-                }
-                throw exception;
-            } finally { session.active = false; }
-        } catch (SQLException exception) {
-            if (committed) {
-                // 已提交结果不能因资源关闭失败被误报为回滚，避免调用方重复写入。
-                LOGGER.log(System.Logger.Level.WARNING, "配置事务已提交，但数据库连接资源关闭失败");
-                return result;
-            }
-            throw SqliteDatabase.failure(exception);
-        } catch (RuntimeException exception) {
-            if (exception instanceof ConfigurationCommitUncertainException) throw exception;
-            if (Arrays.stream(exception.getSuppressed()).anyMatch(SQLException.class::isInstance)) {
-                throw new IllegalStateException("数据库资源释放失败");
-            }
+            });
+        } catch (ConfigurationCommitUncertainException exception) {
             throw exception;
+        } catch (RuntimeException exception) {
+            throw translate(exception);
         }
     }
 
-    private static void statement(Connection connection, String sql) throws SQLException {
-        try (Statement statement = connection.createStatement()) { statement.execute(sql); }
+    private RuntimeException translate(RuntimeException exception) {
+        if (exception instanceof ConfigurationConflictException
+                || exception instanceof IllegalArgumentException
+                || exception instanceof IllegalStateException
+                && exception.getCause() == null) return exception;
+        SQLException sql = findSqlException(exception);
+        return sql == null ? exception : SqliteDatabase.failure(sql);
+    }
+
+    private static SQLException findSqlException(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof SQLException sql) return sql;
+            current = current.getCause();
+        }
+        return null;
     }
 
     /** 提交语句执行成功后，即使 statement 关闭失败也不得报告回滚。 */
@@ -161,8 +171,8 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         private boolean active = true;
         private boolean rollbackOnly;
 
-        private Session(Connection connection, boolean writable) {
-            this.mapper = new SqliteConfigMapper(connection, this::check);
+        private Session(SqliteConfigMapper mapper, boolean writable) {
+            this.mapper = mapper;
             this.writable = writable;
         }
 
@@ -177,7 +187,13 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
             check();
             if (!writable || rollbackOnly) throw new IllegalStateException("当前事务禁止继续写入");
             try { return action.apply(this); }
-            catch (RuntimeException | Error exception) { rollbackOnly = true; throw exception; }
+            catch (RuntimeException exception) {
+                rollbackOnly = true;
+                throw translate(exception);
+            } catch (Error exception) {
+                rollbackOnly = true;
+                throw exception;
+            }
         }
 
         private void cas(long actual, long expected, boolean deleting) {
@@ -186,7 +202,8 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
         }
 
         private long audit(String type, String id, String operation) {
-            return mapper.insertRevision(type, id, operation, Instant.now());
+            mapper.insertRevision(type, id, operation, Instant.now());
+            return mapper.lastInsertRevision();
         }
 
         private void validateStoredDevice(StoredDeviceConfiguration item) {
@@ -198,72 +215,98 @@ public class SqliteConfigServiceImpl implements SqliteConfigService {
             }
         }
 
+        private StoredDeviceConfiguration aggregate(DeviceRow row) {
+            if (row == null) return null;
+            return new StoredDeviceConfiguration(new DeviceConfiguration(row.deviceId(), row.deviceJson(),
+                    mapper.findDeviceConnection(row.deviceId()), mapper.listDevicePoints(row.deviceId())), row.revision());
+        }
+
         @Override public Optional<StoredDeviceConfiguration> findDevice(String id) {
             check(); identity(id);
-            Optional<StoredDeviceConfiguration> result = mapper.findDevice(id);
+            Optional<StoredDeviceConfiguration> result = Optional.ofNullable(aggregate(mapper.findDevice(id)));
             result.ifPresent(this::validateStoredDevice);
             return result;
         }
 
         @Override public List<StoredDeviceConfiguration> listDevices() {
-            List<StoredDeviceConfiguration> result = mapper.listDevices();
+            check();
+            List<StoredDeviceConfiguration> result = mapper.listDevices().stream().map(this::aggregate).toList();
             result.forEach(this::validateStoredDevice);
-            return result;
+            return List.copyOf(result);
         }
 
         @Override public Optional<StoredDeviceSummary> findDeviceSummary(String id) {
             check(); identity(id);
-            return mapper.findDeviceSummary(id);
+            return Optional.ofNullable(mapper.findDeviceSummary(id));
         }
 
-        @Override public List<StoredDeviceSummary> listDeviceSummaries() { return mapper.listDeviceSummaries(); }
+        @Override public List<StoredDeviceSummary> listDeviceSummaries() {
+            check();
+            return List.copyOf(mapper.listDeviceSummaries());
+        }
 
         @Override public Optional<ConnectionConfiguration> findDeviceConnection(String id) {
             check(); identity(id);
-            return mapper.findDeviceConnection(id);
+            return Optional.ofNullable(mapper.findDeviceConnection(id));
         }
 
         @Override public List<PointConfiguration> listDevicePoints(String id) {
             check(); identity(id);
-            return mapper.listDevicePoints(id);
+            return List.copyOf(mapper.listDevicePoints(id));
         }
 
         @Override public Map<String, String> findPointOwners(Collection<String> pointIds) {
             check();
             if (pointIds == null) throw new IllegalArgumentException("点位身份列表不能为空");
             pointIds.forEach(SqliteConfigServiceImpl::identity);
-            return mapper.findPointOwners(pointIds);
+            if (pointIds.isEmpty()) return Map.of();
+            Map<String, String> owners = new HashMap<>();
+            List<String> ids = List.copyOf(pointIds);
+            for (int offset = 0; offset < ids.size(); offset += 500) {
+                int end = Math.min(offset + 500, ids.size());
+                mapper.findPointOwners(ids.subList(offset, end)).forEach(owner -> owners.put(owner.pointId(), owner.deviceId()));
+            }
+            return Map.copyOf(owners);
         }
 
         @Override public Optional<ProtocolProfile> findProtocolProfile(String id) {
             check(); identity(id);
-            return mapper.findProtocolProfile(id);
+            return Optional.ofNullable(mapper.findProtocolProfile(id));
         }
-        @Override public List<ProtocolProfile> listProtocolProfiles() { return mapper.listProtocolProfiles(); }
+        @Override public List<ProtocolProfile> listProtocolProfiles() {
+            check();
+            return List.copyOf(mapper.listProtocolProfiles());
+        }
         @Override public Optional<GatewaySetting> findGatewaySetting(String key) {
             check(); identity(key);
-            return mapper.findGatewaySetting(key);
+            return Optional.ofNullable(mapper.findGatewaySetting(key));
         }
-        @Override public List<GatewaySetting> listGatewaySettings() { return mapper.listGatewaySettings(); }
+        @Override public List<GatewaySetting> listGatewaySettings() {
+            check();
+            return List.copyOf(mapper.listGatewaySettings());
+        }
         @Override public Optional<RemoteSnapshot> findRemoteSnapshot(String source, String id, String version) {
             check(); identity(source); identity(id); identity(version);
-            return mapper.findRemoteSnapshot(source, id, version);
+            return Optional.ofNullable(mapper.findRemoteSnapshot(source, id, version));
         }
         @Override public List<RemoteSnapshot> listRemoteSnapshots(String source) {
             check(); identity(source);
-            return mapper.listRemoteSnapshots(source);
+            return List.copyOf(mapper.listRemoteSnapshots(source));
         }
-        @Override public long currentRevision() { return mapper.currentRevision(); }
+        @Override public long currentRevision() { check(); return mapper.currentRevision(); }
         @Override public List<ConfigurationRevision> listRevisions(long after, int limit) {
             check();
             if (after < 0 || limit < 1) throw new IllegalArgumentException("修订查询游标或数量不合法");
-            return mapper.listRevisions(after, limit);
+            return List.copyOf(mapper.listRevisions(after, limit));
         }
         @Override public Optional<MigrationRecord> findMigration(String id) {
             check(); identity(id);
-            return mapper.findMigration(id);
+            return Optional.ofNullable(mapper.findMigration(id));
         }
-        @Override public List<MigrationRecord> listMigrations() { return mapper.listMigrations(); }
+        @Override public List<MigrationRecord> listMigrations() {
+            check();
+            return List.copyOf(mapper.listMigrations());
+        }
 
         @Override public StoredDeviceConfiguration saveDevice(DeviceConfiguration config, long expected) {
             return mutate(session -> {

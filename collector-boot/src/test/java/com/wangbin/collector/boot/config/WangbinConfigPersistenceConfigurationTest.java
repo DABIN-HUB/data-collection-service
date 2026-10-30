@@ -60,14 +60,19 @@ class WangbinConfigPersistenceConfigurationTest {
     }
 
     @Test
-    void existingMigratedDatabaseProvidesBridgeButNeverDatasourceOrMybatis() throws Exception {
+    void existingMigratedDatabaseProvidesBridgeAndIndependentMybatisInfrastructure() throws Exception {
         Path source = emptySource();
         Path database = migratedDatabase(source);
         byte[] original = Files.readAllBytes(source);
         sqliteRunner(database, source).run(context -> {
             assertThat(context).hasNotFailed().hasSingleBean(ConfigurationStore.class)
                     .hasBean("wangbinLocalConfigurationPersistence")
-                    .doesNotHaveBean(DataSource.class).doesNotHaveBean(SqlSessionFactory.class);
+                    .hasBean("wangbinSqliteDataSource")
+                    .hasBean("wangbinSqliteSqlSessionFactory")
+                    .hasBean("wangbinSqliteSqlSessionTemplate")
+                    .hasBean("wangbinSqliteTransactionManager");
+            assertThat(context.getBeansOfType(DataSource.class)).hasSize(1);
+            assertThat(context.getBeansOfType(SqlSessionFactory.class)).hasSize(1);
             assertTrue(context.getBean(ConfigurationStore.class).listDevices().isEmpty());
             assertEquals(1, context.getBean(ConfigurationStore.class).listMigrations().size());
         });
