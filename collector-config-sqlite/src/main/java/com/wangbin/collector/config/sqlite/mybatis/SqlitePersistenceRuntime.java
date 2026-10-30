@@ -13,6 +13,7 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.mybatis.spring.transaction.SpringManagedTransactionFactory;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,6 +51,15 @@ public final class SqlitePersistenceRuntime implements AutoCloseable {
                                                 int maximumPoolSize,
                                                 int minimumIdle,
                                                 long connectionTimeoutMs) {
+        return open(database, maximumPoolSize, minimumIdle, connectionTimeoutMs,
+                new SqliteConnectionDataSource(database));
+    }
+
+    static SqlitePersistenceRuntime open(SqliteDatabase database,
+                                         int maximumPoolSize,
+                                         int minimumIdle,
+                                         long connectionTimeoutMs,
+                                         DataSource physicalDataSource) {
         if (maximumPoolSize < 1 || minimumIdle < 0 || minimumIdle > maximumPoolSize || connectionTimeoutMs < 250) {
             throw new IllegalArgumentException("SQLite 连接池参数不合法");
         }
@@ -57,7 +67,7 @@ public final class SqlitePersistenceRuntime implements AutoCloseable {
         try {
             HikariConfig hikari = new HikariConfig();
             hikari.setPoolName("wangbin-sqlite");
-            hikari.setDataSource(new SqliteConnectionDataSource(database));
+            hikari.setDataSource(physicalDataSource);
             hikari.setMaximumPoolSize(maximumPoolSize);
             hikari.setMinimumIdle(minimumIdle);
             hikari.setConnectionTimeout(connectionTimeoutMs);

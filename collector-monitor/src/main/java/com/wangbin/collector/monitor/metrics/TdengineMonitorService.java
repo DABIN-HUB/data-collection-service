@@ -1,7 +1,7 @@
 package com.wangbin.collector.monitor.metrics;
 
 import com.wangbin.collector.storage.config.TdengineProperties;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -15,7 +15,6 @@ import java.util.concurrent.Semaphore;
  * TDengine 连通性监控服务。
  */
 @Service
-@RequiredArgsConstructor
 public class TdengineMonitorService {
 
     private static final String HEALTH_QUERY = "SELECT 1";
@@ -25,6 +24,12 @@ public class TdengineMonitorService {
 
     private final TdengineProperties tdengineProperties;
     private final ObjectProvider<DataSource> dataSourceProvider;
+
+    public TdengineMonitorService(TdengineProperties tdengineProperties,
+            @Qualifier("dataSource") ObjectProvider<DataSource> dataSourceProvider) {
+        this.tdengineProperties = tdengineProperties;
+        this.dataSourceProvider = dataSourceProvider;
+    }
 
     public StorageMetricsSnapshot getStorageMetrics() {
         if (!tdengineProperties.isEnabled()) {

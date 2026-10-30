@@ -2,6 +2,7 @@ package com.wangbin.collector.config.sqlite.mybatis;
 
 import com.wangbin.collector.config.sqlite.database.SqliteDatabase;
 import com.wangbin.collector.core.config.persistence.ConfigurationCommitUncertainException;
+import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionException;
@@ -9,7 +10,6 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -20,9 +20,9 @@ import java.sql.Statement;
  */
 public final class SqliteTransactionManager extends AbstractPlatformTransactionManager {
     private static final System.Logger LOGGER = System.getLogger(SqliteTransactionManager.class.getName());
-    private final DataSource dataSource;
+    private final HikariDataSource dataSource;
 
-    public SqliteTransactionManager(DataSource dataSource) {
+    public SqliteTransactionManager(HikariDataSource dataSource) {
         this.dataSource = java.util.Objects.requireNonNull(dataSource, "SQLite 数据源不能为空");
         setTransactionSynchronization(SYNCHRONIZATION_ON_ACTUAL_TRANSACTION);
         setRollbackOnCommitFailure(false);
@@ -55,9 +55,11 @@ public final class SqliteTransactionManager extends AbstractPlatformTransactionM
             current.holder = holder;
             current.readOnly = definition.isReadOnly();
         } catch (SQLException exception) {
+            if (connection != null) dataSource.evictConnection(connection);
             closeQuietly(connection);
             throw SqliteDatabase.failure(exception);
         } catch (RuntimeException exception) {
+            if (connection != null) dataSource.evictConnection(connection);
             closeQuietly(connection);
             throw exception;
         }
@@ -74,7 +76,11 @@ public final class SqliteTransactionManager extends AbstractPlatformTransactionM
             executed = true;
             current.completed = true;
         } catch (SQLException exception) {
-            if (!executed) throw new ConfigurationCommitUncertainException();
+            current.discardConnection = true;
+            if (!executed) {
+                if (current.readOnly) throw SqliteDatabase.failure(exception);
+                throw new ConfigurationCommitUncertainException();
+            }
             LOGGER.log(System.Logger.Level.WARNING, "SQLite COMMIT 已执行但资源关闭失败");
         }
     }
@@ -86,6 +92,8 @@ public final class SqliteTransactionManager extends AbstractPlatformTransactionM
             execute(connection(status), "ROLLBACK");
             current.completed = true;
         } catch (SQLException exception) {
+            current.discardConnection = true;
+            if (current.readOnly) throw SqliteDatabase.failure(exception);
             throw new ConfigurationCommitUncertainException();
         }
     }
@@ -102,21 +110,30 @@ public final class SqliteTransactionManager extends AbstractPlatformTransactionM
         if (holder == null) return;
         Object bound = TransactionSynchronizationManager.getResource(dataSource);
         if (bound == holder) TransactionSynchronizationManager.unbindResource(dataSource);
+        Connection connection = holder.getConnection();
         if (!current.completed && !current.commitAttempted) {
             try {
-                holder.getConnection().rollback();
-            } catch (SQLException ignored) {
-                // 原始异常优先，关闭阶段不覆盖事务结果。
+                execute(connection, "ROLLBACK");
+            } catch (SQLException exception) {
+                current.discardConnection = true;
+                LOGGER.log(System.Logger.Level.WARNING, "SQLite 回滚失败，驱逐事务连接");
+            }
+        }
+        if (!current.discardConnection) {
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException exception) {
+                current.discardConnection = true;
+                LOGGER.log(System.Logger.Level.WARNING, "SQLite 连接状态恢复失败，驱逐事务连接");
             }
         }
         try {
-            holder.getConnection().setAutoCommit(true);
-        } catch (SQLException ignored) {
-            // Hikari 回收前尽力恢复连接状态。
+            if (current.discardConnection) dataSource.evictConnection(connection);
+        } finally {
+            closeQuietly(connection);
+            holder.clear();
+            current.holder = null;
         }
-        closeQuietly(holder.getConnection());
-        holder.clear();
-        current.holder = null;
     }
 
     private Connection connection(DefaultTransactionStatus status) {
@@ -144,6 +161,7 @@ public final class SqliteTransactionManager extends AbstractPlatformTransactionM
         private ConnectionHolder holder;
         private boolean commitAttempted;
         private boolean completed;
+        private boolean discardConnection;
         private boolean readOnly;
     }
 }

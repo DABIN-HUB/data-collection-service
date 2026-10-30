@@ -2,7 +2,7 @@ package com.wangbin.collector.storage.service;
 
 import com.wangbin.collector.storage.repository.TdengineTableRows;
 import com.wangbin.collector.storage.repository.TelemetryInsertRow;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -17,7 +17,6 @@ import java.util.regex.Pattern;
  * 直接 JDBC Statement 写入实现，用于验证 MyBatis 参数绑定是否放大 TDengine 写入尾延迟。
  */
 @Component
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class DirectJdbcTdengineTelemetryWriter implements TdengineTelemetryWriter {
 
@@ -26,6 +25,10 @@ public class DirectJdbcTdengineTelemetryWriter implements TdengineTelemetryWrite
             + "value_text,unit,quality,success,message,raw_json,processed_json,metadata_json) VALUES ";
 
     private final DataSource dataSource;
+
+    public DirectJdbcTdengineTelemetryWriter(@Qualifier("dataSource") DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
 
     @Override
     public TdengineWriteMode mode() {
