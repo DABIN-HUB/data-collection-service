@@ -9,6 +9,7 @@ import com.wangbin.collector.storage.service.DirectJdbcTdengineTelemetryWriter;
 import com.wangbin.collector.storage.service.TdengineWriteException;
 import com.wangbin.collector.storage.service.TdengineWriteTarget;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.HikariPoolMXBean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -21,9 +22,13 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 
 import javax.sql.DataSource;
+import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,6 +49,7 @@ class WangbinDatasourceConsumersTest {
     void sqliteOnlyKeepsMonitorDisabledAndCrudIndependent() {
         Path path = directory.resolve("only/collector.db");
         HikariDataSource[] pool = new HikariDataSource[1];
+        PoolEvidence[] evidence = new PoolEvidence[1];
         runner.withPropertyValues("telemetry.tdengine.enabled=false", "wangbin.config.sqlite.database-path=" + path)
                 .run(context -> {
                     assertNull(context.getStartupFailure());
@@ -52,12 +58,11 @@ class WangbinDatasourceConsumersTest {
                     assertEquals(StorageMetricsSnapshot.Status.DISABLED,
                             context.getBean(TdengineMonitorService.class).getStorageMetrics().getStatus());
                     pool[0] = context.getBean("wangbinSqliteDataSource", HikariDataSource.class);
+                    evidence[0] = poolEvidence(pool[0]);
                     assertEquals(1, context.getBean(SqliteConfigService.class).transaction(
                             w -> w.saveGatewaySetting("sqlite-only", "{}", 0)).revision());
                 });
-        assertTrue(pool[0].isClosed());
-        assertTrue(Thread.getAllStackTraces().keySet().stream()
-                .noneMatch(thread -> thread.isAlive() && thread.getName().startsWith("wangbin-sqlite")));
+        assertPoolClosedAndTerminated(pool[0], evidence[0]);
     }
 
     @Test
@@ -119,4 +124,79 @@ class WangbinDatasourceConsumersTest {
                     assertTrue(context.getBean(SqliteConfigService.class).findGatewaySetting("offline-tdengine").isPresent());
                 });
     }
+
+    /**
+     * Hikari 使用固定的 wangbin-sqlite 名称，不能用全局线程名判断本测试是否泄漏。
+     * 通过本次 HikariDataSource 持有的 HikariPool 执行器关联资源，并保留线程名作为失败诊断。
+     */
+    private static PoolEvidence poolEvidence(HikariDataSource dataSource) {
+        Object hikariPool = readField(dataSource, "pool");
+        List<ExecutorService> executors = new ArrayList<>();
+        if (hikariPool != null) {
+            for (String fieldName : List.of("houseKeepingExecutorService", "addConnectionExecutor",
+                    "closeConnectionExecutor")) {
+                Object executor = readField(hikariPool, fieldName);
+                if (executor instanceof ExecutorService service) executors.add(service);
+            }
+        }
+        assertFalse(executors.isEmpty(), "必须捕获本次 SQLite Hikari 池的内部执行器");
+        HikariPoolMXBean poolMetrics = dataSource.getHikariPoolMXBean();
+        assertNotNull(poolMetrics, "必须捕获本次 SQLite Hikari 池的连接指标");
+        return new PoolEvidence(dataSource.getPoolName(), List.copyOf(executors), poolMetrics);
+    }
+
+    private static void assertPoolClosedAndTerminated(HikariDataSource dataSource, PoolEvidence evidence) {
+        assertNotNull(evidence, "必须记录本次 SQLite Hikari 池实例");
+        assertTrue(dataSource.isClosed(), "ApplicationContext 关闭后 SQLite Hikari 池必须 closed，"
+                + poolDiagnostic(dataSource, evidence));
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline && evidence.executors().stream().anyMatch(executor -> !executor.isTerminated())) {
+            try {
+                java.util.concurrent.TimeUnit.MILLISECONDS.sleep(10);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                fail("等待 SQLite Hikari 执行器退出时被中断，pool=" + evidence.poolName()
+                        + ", closed=" + dataSource.isClosed());
+            }
+        }
+        if (evidence.executors().stream().anyMatch(executor -> !executor.isTerminated())) {
+            fail("SQLite Hikari 资源未在有界等待内退出，" + poolDiagnostic(dataSource, evidence)
+                    + ", executors=" + evidence.executors());
+        }
+        assertEquals(0, evidence.poolMetrics().getActiveConnections(), "SQLite Hikari 不得残留活动连接，"
+                + poolDiagnostic(dataSource, evidence));
+        assertEquals(0, evidence.poolMetrics().getIdleConnections(), "SQLite Hikari 不得残留空闲连接，"
+                + poolDiagnostic(dataSource, evidence));
+        assertEquals(0, evidence.poolMetrics().getTotalConnections(), "SQLite Hikari 不得残留池连接，"
+                + poolDiagnostic(dataSource, evidence));
+    }
+
+    private static String poolDiagnostic(HikariDataSource dataSource, PoolEvidence evidence) {
+        List<String> liveThreads = Thread.getAllStackTraces().keySet().stream()
+                .filter(Thread::isAlive)
+                .map(Thread::getName)
+                .filter(name -> name.startsWith(evidence.poolName()))
+                .sorted()
+                .toList();
+        return "pool=" + evidence.poolName() + ", closed=" + dataSource.isClosed()
+                + ", liveThreads=" + liveThreads;
+    }
+
+    private static Object readField(Object target, String fieldName) {
+        Class<?> type = target.getClass();
+        while (type != null) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                type = type.getSuperclass();
+            } catch (ReflectiveOperationException exception) {
+                throw new IllegalStateException("无法读取 Hikari 资源字段: " + fieldName, exception);
+            }
+        }
+        throw new IllegalStateException("缺少 Hikari 资源字段: " + fieldName);
+    }
+
+    private record PoolEvidence(String poolName, List<ExecutorService> executors, HikariPoolMXBean poolMetrics) { }
 }

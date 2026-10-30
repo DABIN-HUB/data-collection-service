@@ -41,6 +41,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -56,11 +58,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -370,12 +374,127 @@ class WangbinPhase3ConfigHttpSqliteTest {
         }
     }
 
+    @Test
+    void runningDeviceCacheFaultsExposeReconciledAndRecoveryRequiredReceipts() throws Exception {
+        try (var store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000)) {
+            var realPersistence = new com.wangbin.collector.config.sqlite.runtime.WangbinSqliteLocalConfigurationPersistence(store);
+            var persistence = spy(realPersistence);
+            AtomicInteger persistenceWrites = new AtomicInteger();
+            doAnswer(invocation -> {
+                Function<com.wangbin.collector.core.config.persistence.ConfigurationStore.Writer, Object> action = invocation.getArgument(0);
+                return realPersistence.transaction(writer -> action.apply(countingWriter(writer, persistenceWrites)));
+            }).when(persistence).transaction(org.mockito.ArgumentMatchers.any());
+            ConfigManager manager = manager(store, persistence);
+            MockMvc mvc = mvc(manager);
+            for (String id : List.of("a", "b")) {
+                DeviceContext context = configuration(id, "p-" + id);
+                call(mvc, post("/api/config/local/devices").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsBytes(new LocalDeviceConfigRequest(context.getDeviceInfo(),
+                                context.copyConnectionConfig(), context.copyDataPoints(), false, false, null, 0L))), 200);
+            }
+            assertTrue(manager.installLocalStartConfiguration("a", 41L,
+                    manager.loadLocalStartConfiguration("a")));
+            assertTrue(manager.installLocalStartConfiguration("b", 42L,
+                    manager.loadLocalStartConfiguration("b")));
+            long aVersion = manager.getDeviceConfigVersion("a");
+            long bVersion = manager.getDeviceConfigVersion("b");
+            long bRevision = store.findDevice("b").orElseThrow().revision();
+
+            long aRevision = store.findDevice("a").orElseThrow().revision();
+            long globalRevision = store.currentRevision();
+            assertNotNull(manager.getDeviceContext("a"));
+            assertNotNull(manager.getDeviceContext("b"));
+            installFailingCache(manager, 1);
+            int writesBeforeReconciled = persistenceWrites.get();
+            List<DataPoint> reconciledPoints = manager.getConfigurationDeviceSnapshot("a").context().copyDataPoints();
+            reconciledPoints.get(0).setAddress("40002");
+            JsonNode reconciled = call(mvc, put("/api/config/device/a/points")
+                    .param("baseRevision", String.valueOf(aRevision))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(reconciledPoints)), 200);
+            assertEquals("CONFIG_COMMITTED_RECONCILED", reconciled.path("machineCode").asText());
+            assertTrue(reconciled.path("data").path("committed").asBoolean());
+            assertTrue(reconciled.path("data").path("reconciled").asBoolean());
+            assertTrue(reconciled.path("data").path("reloadRequired").asBoolean());
+            assertEquals(writesBeforeReconciled + 1, persistenceWrites.get(), "提交后的缓存故障不得重试 SQLite 写入");
+            long reconciledRevision = store.findDevice("a").orElseThrow().revision();
+            assertEquals(globalRevision + 1, reconciledRevision);
+            assertEquals("40002", manager.getDataPoints("a").get(0).getAddress());
+            assertTrue(manager.getDeviceConfigVersion("a") > aVersion);
+            assertEquals(41L, runtimeGeneration(manager, "a"));
+            assertTrue(runtimeGenerationActive(manager, "a"));
+            assertNotNull(manager.getDeviceContext("b"));
+            assertEquals(bVersion, manager.getDeviceConfigVersion("b"));
+            assertEquals(bRevision, store.findDevice("b").orElseThrow().revision());
+
+            installFailingCache(manager, 2);
+            int writesBeforeRecovery = persistenceWrites.get();
+            List<DataPoint> recoveryPoints = manager.getConfigurationDeviceSnapshot("a").context().copyDataPoints();
+            recoveryPoints.get(0).setAddress("40003");
+            JsonNode recovery = call(mvc, put("/api/config/device/a/points")
+                    .param("baseRevision", String.valueOf(reconciledRevision))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsBytes(recoveryPoints)), 200);
+            assertEquals("CONFIG_COMMITTED_RECOVERY_REQUIRED", recovery.path("machineCode").asText());
+            assertTrue(recovery.path("data").path("committed").asBoolean());
+            assertFalse(recovery.path("data").path("reconciled").asBoolean());
+            assertTrue(recovery.path("data").path("reloadRequired").asBoolean());
+            assertEquals(writesBeforeRecovery + 1, persistenceWrites.get(), "恢复必需分支不得重试 SQLite 写入");
+            assertEquals(reconciledRevision + 1, store.findDevice("a").orElseThrow().revision());
+            assertEquals("40003", codec.toRuntime(store.findDevice("a").orElseThrow().configuration())
+                    .getDataPoints().get(0).getAddress());
+            assertEquals(41L, runtimeGeneration(manager, "a"));
+            assertTrue(runtimeGenerationActive(manager, "a"));
+            var unavailable = assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class,
+                    () -> manager.getDeviceContext("a"));
+            assertEquals(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.Outcome.CONFIGURATION_UNAVAILABLE,
+                    unavailable.getOutcome());
+            assertNotNull(manager.getDeviceContext("b"));
+            assertEquals(bVersion, manager.getDeviceConfigVersion("b"));
+            assertEquals(bRevision, store.findDevice("b").orElseThrow().revision());
+        }
+    }
+
     private void installFailingCache(ConfigManager manager, int failures) throws Exception {
         var field = ConfigManager.class.getDeclaredField("deviceContextCache");
         field.setAccessible(true);
         var replacement = new FailingContextMap(failures);
         replacement.putAll((Map<String, DeviceContext>) field.get(manager));
         field.set(manager, replacement);
+    }
+
+    @SuppressWarnings("unchecked")
+    private long runtimeGeneration(ConfigManager manager, String deviceId) throws Exception {
+        Field field = ConfigManager.class.getDeclaredField("localRuntimeGenerations");
+        field.setAccessible(true);
+        Object owner = ((Map<String, Object>) field.get(manager)).get(deviceId);
+        assertNotNull(owner, "运行设备必须保留 generation owner");
+        Method generation = owner.getClass().getDeclaredMethod("generation");
+        generation.setAccessible(true);
+        return (long) generation.invoke(owner);
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean runtimeGenerationActive(ConfigManager manager, String deviceId) throws Exception {
+        Field field = ConfigManager.class.getDeclaredField("localRuntimeGenerations");
+        field.setAccessible(true);
+        Object owner = ((Map<String, Object>) field.get(manager)).get(deviceId);
+        assertNotNull(owner, "运行设备必须保留 generation owner");
+        Method active = owner.getClass().getDeclaredMethod("active");
+        active.setAccessible(true);
+        return (boolean) active.invoke(owner);
+    }
+
+    private com.wangbin.collector.core.config.persistence.ConfigurationStore.Writer countingWriter(
+            com.wangbin.collector.core.config.persistence.ConfigurationStore.Writer delegate,
+            AtomicInteger writes) {
+        return (com.wangbin.collector.core.config.persistence.ConfigurationStore.Writer) Proxy.newProxyInstance(
+                delegate.getClass().getClassLoader(),
+                new Class<?>[]{com.wangbin.collector.core.config.persistence.ConfigurationStore.Writer.class},
+                (proxy, method, args) -> {
+                    if ("saveDevice".equals(method.getName())) writes.incrementAndGet();
+                    return invoke(delegate, method, args);
+                });
     }
 
     private static final class FailingContextMap extends HashMap<String, DeviceContext> {
@@ -527,13 +646,16 @@ class WangbinPhase3ConfigHttpSqliteTest {
     }
 
     private ConfigManager manager(SqliteConfigService store) throws Exception {
+        return manager(store, new com.wangbin.collector.config.sqlite.runtime.WangbinSqliteLocalConfigurationPersistence(store));
+    }
+
+    private ConfigManager manager(SqliteConfigService store, WangbinLocalConfigurationPersistence bridge) throws Exception {
         Path remote = directory.resolve("remote.json");
         Files.writeString(remote, "[]");
         var properties = new CollectorProperties();
         properties.getConfig().getFile().setDevices(remote.toString());
         properties.getConfig().setLocalDeviceSnapshotFile(directory.resolve("unused.json").toString());
         var sync = new ConfigSyncService(new FileConfigLoader(properties), Runnable::run, properties);
-        var bridge = new com.wangbin.collector.config.sqlite.runtime.WangbinSqliteLocalConfigurationPersistence(store);
         var beans = new StaticListableBeanFactory(Map.of("persistence", bridge));
         var manager = new ConfigManager(sync, event -> { if (failEvent.get()) throw new IllegalStateException("test-only-event-failure"); },
                 new FieldUniquenessValidator(), new LocalDeviceConfigStore(json, properties), null, null,
