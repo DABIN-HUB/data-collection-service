@@ -106,7 +106,7 @@ class WangbinPhase4ModbusSqliteChainTest {
                     event -> { }, new FieldUniquenessValidator(), new LocalDeviceConfigStore(new ObjectMapper(), properties),
                     null, null, provider);
             config.init();
-            // 现有 init() 会全量恢复：隔离新设备在初始化之后按正式写入口保存，再走手动 START。
+            // 阶段 05 启动不恢复 SQLite 全库；正式写入后的设备仍通过手动 START 按 ID 读取。
             sqlite.transaction(writer -> writer.saveDevice(new ConfigurationJsonCodec().fromRuntime(
                     DeviceContext.of(device, connection, List.of(point))), 0));
             assertNull(config.getDeviceContext(device.getDeviceId()));

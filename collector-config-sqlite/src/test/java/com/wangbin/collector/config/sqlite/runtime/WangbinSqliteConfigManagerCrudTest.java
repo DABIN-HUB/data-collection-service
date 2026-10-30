@@ -51,7 +51,10 @@ class WangbinSqliteConfigManagerCrudTest {
             assertEquals(result.configVersion(), ((ConfigUpdateEvent) events.get(0)).getConfigVersion());
             events.clear();
             ConfigManager restarted = manager(store);
-            assertTrue(codec.equivalent(manager.getDeviceContext("device-a"), restarted.getDeviceContext("device-a")));
+            // 阶段 05 新契约：重启不恢复运行缓存；配置事实仍通过 SQLite 定向查询可读。
+            assertNull(restarted.getDeviceContext("device-a"));
+            assertTrue(codec.equivalent(manager.getDeviceContext("device-a"),
+                    restarted.getConfigurationDeviceSnapshot("device-a").context()));
             assertTrue(events.isEmpty());
         }
     }
@@ -106,7 +109,10 @@ class WangbinSqliteConfigManagerCrudTest {
             assertEquals(3, store.listDevices().size());
             assertTrue(manager.refreshDeviceConfig("c"));
             assertState(store, manager, "c");
-            assertEquals(3, manager(store).getAllDeviceIds().size());
+            // clearAllCache 后新实例不再从 SQLite 全量安装运行缓存，配置列表仍保持完整。
+            ConfigManager restarted = manager(store);
+            assertEquals(3, restarted.getConfigurationDevices().size());
+            assertTrue(restarted.getAllDeviceIds().isEmpty());
             assertFalse(Files.exists(directory.resolve("never-write.json")));
         }
     }

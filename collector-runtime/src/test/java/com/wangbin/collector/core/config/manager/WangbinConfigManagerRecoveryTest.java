@@ -43,7 +43,7 @@ class WangbinConfigManagerRecoveryTest {
     }
 
     @Test
-    void sqliteRecoveryDoesNotReadJsonOrPublishStartupEventsAndSeparatesVersions() {
+    void sqliteStartupKeepsPersistedConfigurationReadableWithoutInstallingRuntimeCache() {
         DeviceContext local = context("wangbin-restored", "wangbin-restored-point");
         var sync = mock(ConfigSyncService.class);
         var legacy = mock(LocalDeviceConfigStore.class);
@@ -54,15 +54,17 @@ class WangbinConfigManagerRecoveryTest {
         var manager = new ConfigManager(sync, publisher, new FieldUniquenessValidator(), legacy);
         installBridge(manager, List.of(local), null);
         manager.init();
-        assertEquals(local.getDeviceInfo(), manager.getDevice(local.getDeviceId()));
-        assertEquals(local.getDataPoints().get(0).getPointId(), manager.getDataPoints(local.getDeviceId()).get(0).getPointId());
+        assertNull(manager.getDevice(local.getDeviceId()));
+        var snapshot = manager.getConfigurationDeviceSnapshot(local.getDeviceId());
+        assertEquals(local.getDeviceInfo(), snapshot.context().getDeviceInfo());
+        assertEquals(local.getDataPoints().get(0).getPointId(),
+                snapshot.context().getDataPoints().get(0).getPointId());
         Map<?, ?> revisions = (Map<?, ?>) ReflectionTestUtils.getField(manager, "localConfigurationRevisions");
         assertNotNull(revisions);
-        assertEquals(77L, revisions.get(local.getDeviceId()));
-        long version = manager.getDeviceConfigVersion(local.getDeviceId());
-        assertTrue(version > 0);
-        assertNotEquals(77L, version);
-        assertEquals(version, manager.getDeviceConfigurationSnapshot(local.getDeviceId()).configVersion());
+        assertTrue(revisions.isEmpty());
+        assertEquals(0L, manager.getDeviceConfigVersion(local.getDeviceId()));
+        assertEquals(0L, snapshot.configVersion());
+        assertEquals(77L, snapshot.persistedRevision());
         assertEquals("wangbin-source-v9", sync.getSourceVersion());
         verifyNoInteractions(legacy, publisher);
         verify(sync).startSyncTask();
@@ -70,34 +72,38 @@ class WangbinConfigManagerRecoveryTest {
     }
 
     @Test
-    void invalidMigrationSourceFailsBeforeAnyCacheOrJsonFallback() {
+    void sqliteStartupDoesNotReadInvalidMigrationSourceOrPopulateRuntimeCache() {
         var sync = mock(ConfigSyncService.class);
         var legacy = mock(LocalDeviceConfigStore.class);
         var publisher = mock(ApplicationEventPublisher.class);
         var manager = new ConfigManager(sync, publisher, new FieldUniquenessValidator(), legacy);
         installBridge(manager, List.of(), new IllegalStateException("wangbin迁移源摘要不一致"));
-        assertThrows(IllegalStateException.class, manager::init);
+        assertDoesNotThrow(manager::init);
         assertTrue(manager.getAllDevices().isEmpty());
         assertEquals(0L, manager.getDeviceConfigVersion("wangbin-restored"));
-        verifyNoInteractions(legacy, publisher, sync);
+        verifyNoInteractions(legacy, publisher);
+        verify(sync).startSyncTask();
+        verify(sync).registerConfigListener(any());
     }
 
     @Test
-    void duplicateGlobalPointIdsRejectTheWholeRecoveryWithoutPartialCache() {
+    void sqliteStartupDoesNotValidateOrPartiallyInstallUnloadedConfigurations() {
         var sync = mock(ConfigSyncService.class);
         var legacy = mock(LocalDeviceConfigStore.class);
         var publisher = mock(ApplicationEventPublisher.class);
         var manager = new ConfigManager(sync, publisher, new FieldUniquenessValidator(), legacy);
         installBridge(manager, List.of(context("wangbin-first", "wangbin-shared-point"),
                 context("wangbin-second", "wangbin-shared-point")), null);
-        assertThrows(IllegalStateException.class, manager::init);
+        assertDoesNotThrow(manager::init);
         assertTrue(manager.getAllDevices().isEmpty());
         assertTrue(manager.getAllDeviceContexts().isEmpty());
-        verifyNoInteractions(legacy, publisher, sync);
+        verifyNoInteractions(legacy, publisher);
+        verify(sync).startSyncTask();
+        verify(sync).registerConfigListener(any());
     }
 
     @Test
-    void providerIdentityCollisionCannotReplaceRestoredLocalOwnership() {
+    void providerIdentityCollisionCannotReplacePersistedLocalOwnership() {
         DeviceContext local = context("wangbin-owned", "wangbin-owned-point");
         var sync = mock(ConfigSyncService.class);
         var legacy = mock(LocalDeviceConfigStore.class);
@@ -110,8 +116,11 @@ class WangbinConfigManagerRecoveryTest {
         var manager = new ConfigManager(sync, publisher, new FieldUniquenessValidator(), legacy);
         installBridge(manager, List.of(local), null);
         manager.init();
-        assertEquals("local", manager.getDevice(local.getDeviceId()).getConfigSource());
-        assertEquals(local.getDeviceInfo().getDeviceName(), manager.getDevice(local.getDeviceId()).getDeviceName());
+        ReflectionTestUtils.invokeMethod(manager, "loadAllConfig");
+        assertNull(manager.getDevice(local.getDeviceId()));
+        var snapshot = manager.getConfigurationDeviceSnapshot(local.getDeviceId());
+        assertEquals("local", snapshot.context().getDeviceInfo().getConfigSource());
+        assertEquals(local.getDeviceInfo().getDeviceName(), snapshot.context().getDeviceInfo().getDeviceName());
         verify(sync, never()).loadDataPoints(local.getDeviceId());
         verifyNoInteractions(legacy, publisher);
     }
@@ -130,6 +139,7 @@ class WangbinConfigManagerRecoveryTest {
                 case "toRuntime" -> contexts.stream().filter(context -> context.getDeviceId().equals(
                         ((DeviceConfiguration) args[0]).deviceId())).findFirst().orElseThrow();
                 case "findDevice" -> stored.stream().filter(item -> item.configuration().deviceId().equals(args[0])).findFirst();
+                case "existsDevice" -> stored.stream().anyMatch(item -> item.configuration().deviceId().equals(args[0]));
                 case "equivalent" -> equivalent((DeviceContext) args[0], (DeviceContext) args[1]);
                 case "toString" -> "wangbin恢复测试桥接";
                 case "hashCode" -> System.identityHashCode(proxy);

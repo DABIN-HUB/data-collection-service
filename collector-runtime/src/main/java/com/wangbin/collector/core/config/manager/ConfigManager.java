@@ -510,8 +510,14 @@ public class ConfigManager {
     @PostConstruct
     public void init() {
         log.info("配置管理器初始化开始...");
-        restorePersistedLocalTemporaryContexts();
-        if (!isSqlitePersistenceEnabled()) loadAllConfig();
+        if (isSqlitePersistenceEnabled()) {
+            // SQLite 是配置权威源，但启动时不把全库配置安装进运行缓存；数据库身份、Schema
+            // 和可用性已由 WangbinConfigSqliteConfiguration 在创建仓储前完成校验。
+            log.info("SQLite配置权威已就绪，跳过本地设备全量运行配置恢复");
+        } else {
+            restorePersistedLocalTemporaryContexts();
+            loadAllConfig();
+        }
         startConfigSync();
         log.info("配置管理器初始化完成");
     }
@@ -745,7 +751,8 @@ public class ConfigManager {
         try {
             previousContexts = new HashMap<>(deviceContextCache);
             previousVersions = new HashMap<>(deviceConfigVersions);
-            localSnapshot = snapshotLocalAuthority();
+            localSnapshot = isSqlitePersistenceEnabled()
+                    ? snapshotInstalledLocalAuthority() : snapshotLocalAuthority();
             localTemporaryContexts = localSnapshot.contexts();
         } finally {
             lock.readLock().unlock();
@@ -769,7 +776,8 @@ public class ConfigManager {
                     log.warn("远端设备ID为空，跳过设备");
                     continue;
                 }
-                if (localIds.contains(deviceId)) {
+                if (localIds.contains(deviceId)
+                        || isSqlitePersistenceEnabled() && isLocalTemporaryDevice(deviceId)) {
                     log.warn("远端设备身份与本地配置冲突，保留本地配置: {}", deviceId);
                     continue;
                 }
@@ -823,7 +831,8 @@ public class ConfigManager {
                     return;
                 }
                 // 在安装前重读同一权威全集，缓存 clear 不能把本地身份让给远端。
-                localSnapshot = snapshotLocalAuthority();
+                localSnapshot = isSqlitePersistenceEnabled()
+                        ? snapshotInstalledLocalAuthority() : snapshotLocalAuthority();
                 for (String localId : localIds) {
                     candidateDevices.remove(localId);
                     candidateConnections.remove(localId);
@@ -850,10 +859,7 @@ public class ConfigManager {
                 pointCache.putAll(candidatePoints);
                 deviceContextCache.clear();
                 deviceContextCache.putAll(candidateContexts);
-                if (isSqlitePersistenceEnabled()) {
-                    localConfigurationRevisions.clear();
-                    localConfigurationRevisions.putAll(localSnapshot.revisions());
-                }
+                // SQLite 停止设备的持久修订不属于运行缓存；全量远端刷新不得清除或重建它。
                 reconcileConfigVersions(previousContexts, previousVersions);
                 for (String deviceId : candidateContexts.keySet()) {
                     if (!sameDeviceConfiguration(previousContexts.get(deviceId), candidateContexts.get(deviceId))) {
@@ -885,6 +891,20 @@ public class ConfigManager {
     }
 
     private record LocalAuthoritySnapshot(List<DeviceContext> contexts, Map<String, Long> revisions) {}
+
+    /** 只快照已经安装的本地运行配置；禁止通过此路径扫描 SQLite 全量配置。调用方持有配置读锁。 */
+    private LocalAuthoritySnapshot snapshotInstalledLocalAuthority() {
+        List<DeviceContext> contexts = snapshotLocalTemporaryContexts();
+        Map<String, Long> revisions = new LinkedHashMap<>();
+        for (DeviceContext context : contexts) {
+            if (context != null && context.getDeviceInfo() != null) {
+                String deviceId = context.getDeviceId();
+                Long revision = localConfigurationRevisions.get(deviceId);
+                if (revision != null) revisions.put(deviceId, revision);
+            }
+        }
+        return new LocalAuthoritySnapshot(contexts, revisions);
+    }
 
     /** 只读权威全集；不安装缓存、不重放迁移、不调用远端。调用方持有配置锁。 */
     private LocalAuthoritySnapshot snapshotLocalAuthority() {
@@ -2746,7 +2766,7 @@ public class ConfigManager {
      * 启动配置同步监听
      */
     private void startConfigSync() {
-        // 先注册监听；SQLite 启动只恢复本地，首轮远端读取交给既有同步执行器。
+        // 先注册监听；SQLite 启动不恢复本地运行缓存，首轮远端读取交给既有同步执行器。
         configSyncService.registerConfigListener(this::handleConfigChange);
         // 不新增恢复调度器；异步首次刷新与后续定时刷新共用同步服务。
         configSyncService.startSyncTask();

@@ -164,9 +164,8 @@ class WangbinPhase4SqliteDeviceLifecycleTest {
         save("a");
         save("b");
         save("c");
-        // 先按现有 init() 路径全量恢复合法的 A/B/C；再损坏 B，不把阶段 05 的启动恢复问题混入本用例。
-        config.init();
-        assertNotNull(config.getDeviceContext("b"));
+        // 阶段 05 启动不再全量恢复 SQLite；损坏 B 不能阻断随后按 ID 启动 A。
+        assertNull(config.getDeviceContext("b"));
         clearInvocations(persistence);
         try (var sql = DriverManager.getConnection("jdbc:sqlite:" + directory.resolve("private/collector.db"));
              var statement = sql.createStatement()) {

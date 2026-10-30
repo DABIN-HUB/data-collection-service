@@ -88,15 +88,17 @@ class WangbinSqliteConfigManagerRecoveryTest {
                 ConfigManager manager = manager(bridge, remote, poisonJson, events);
                 manager.init();
                 var records = store.listDevices();
-                assertEquals(records.size(), manager.getAllDevices().size());
-                assertTrue(events.stream().noneMatch(ConfigUpdateEvent.class::isInstance), "恢复不能发布自动启停事件");
+                // 阶段 05 新契约：迁移后的配置仍可查询，但启动不安装 SQLite 全量运行缓存。
+                assertEquals(records.size(), manager.getConfigurationDevices().size());
+                assertTrue(manager.getAllDevices().isEmpty());
+                assertTrue(events.stream().noneMatch(ConfigUpdateEvent.class::isInstance), "启动不能发布自动启停事件");
                 for (var record : records) {
                     String id = record.configuration().deviceId();
-                    var snapshot = manager.getDeviceConfigurationSnapshot(id);
+                    var snapshot = manager.getConfigurationDeviceSnapshot(id);
                     assertNotNull(snapshot.context());
                     assertEquals(id, snapshot.context().getDeviceId());
-                    assertTrue(manager.getDeviceConfigVersion(id) > 0);
-                    assertNotEquals(record.revision(), manager.getDeviceConfigVersion(id));
+                    assertNull(manager.getDeviceContext(id));
+                    assertEquals(0L, manager.getDeviceConfigVersion(id));
                     assertNotEquals("ONLINE", snapshot.context().getDeviceInfo().getStatus());
                     assertTrue(snapshot.context().getDataPoints().stream().allMatch(point -> point.getLastValue() == null));
                     JsonNode expected = codec.encodeLocalDevice(record.configuration());
