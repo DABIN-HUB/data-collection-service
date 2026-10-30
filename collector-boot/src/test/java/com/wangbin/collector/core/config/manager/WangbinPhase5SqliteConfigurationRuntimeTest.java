@@ -7,15 +7,26 @@ import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.config.sqlite.codec.ConfigurationJsonCodec;
 import com.wangbin.collector.config.sqlite.runtime.WangbinSqliteLocalConfigurationPersistence;
 import com.wangbin.collector.config.sqlite.store.SqliteConfigurationStore;
+import com.wangbin.collector.core.collector.manager.CollectionManager;
 import com.wangbin.collector.core.collector.runtime.AcquisitionRuntimeTracker;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimePhase;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeSnapshot;
 import com.wangbin.collector.core.collector.runtime.DeviceRuntimeState;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.runtime.RuntimeStateCoordinator;
+import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
+import com.wangbin.collector.core.collector.scheduler.ConfigRestartCoordinator;
+import com.wangbin.collector.core.collector.scheduler.DeviceBatchExecutor;
+import com.wangbin.collector.core.collector.scheduler.DeviceLifecycleCoordinator;
+import com.wangbin.collector.core.collector.scheduler.PerformanceMonitor;
+import com.wangbin.collector.core.collector.scheduler.ReconnectCoordinator;
+import com.wangbin.collector.core.collector.scheduler.SchedulerMaintenanceCoordinator;
 import com.wangbin.collector.core.collector.scheduler.SchedulerRuntimeState;
+import com.wangbin.collector.core.collector.scheduler.TimeSliceConfigCoordinator;
+import com.wangbin.collector.core.collector.scheduler.TimeSliceExecutionCoordinator;
+import com.wangbin.collector.core.collector.scheduler.TimeSliceSchedulingCoordinator;
 import com.wangbin.collector.core.config.CollectorProperties;
 import com.wangbin.collector.core.config.loader.FileConfigLoader;
 import com.wangbin.collector.core.config.model.DeviceContext;
@@ -153,24 +164,180 @@ class WangbinPhase5SqliteConfigurationRuntimeTest {
         assertEquals(1, state.configuredPointCount());
     }
 
+    @Test
+    void TEST_05_07_formalCrudSavePersistsConfigurationWithoutInstallingRuntimeCache() {
+        store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000);
+        ConfigManager config = newManager(store);
+        DeviceContext input = configuration("crud-a");
+
+        ConfigManager.DeviceConfigCommitResult result = config.saveLocalDeviceConfigWithResult(
+                input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
+        var stored = store.findDevice("crud-a").orElseThrow();
+
+        assertNotNull(result);
+        assertNotNull(config.getConfigurationDeviceSnapshot("crud-a").context());
+        assertEquals(stored.revision(), config.getConfigurationDeviceSnapshot("crud-a").persistedRevision());
+        assertNull(config.getDeviceContext("crud-a"));
+        assertFalse(config.getAllDeviceIds().contains("crud-a"));
+        assertEquals(0L, config.getDeviceConfigVersion("crud-a"));
+        assertEquals(0, ((Number) config.getCacheStats().get("contextCount")).intValue());
+    }
+
+    @Test
+    void TEST_05_08_stopThenEditKeepsRuntimeCacheEmptyUntilExplicitStart() {
+        store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000);
+        ConfigManager config = newManager(store);
+        DeviceContext input = configuration("edit-a");
+        DeviceContext other = configuration("edit-b");
+        config.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
+        config.saveLocalDeviceConfigWithResult(other.getDeviceInfo(), other.copyConnectionConfig(), other.copyDataPoints(), false);
+
+        assertTrue(config.installLocalStartConfiguration("edit-a", 1L,
+                config.loadLocalStartConfiguration("edit-a")));
+        assertTrue(config.installLocalStartConfiguration("edit-b", 2L,
+                config.loadLocalStartConfiguration("edit-b")));
+        assertNotNull(config.getDeviceContext("edit-a"));
+        config.releaseLocalRuntimeConfiguration("edit-a", 1L);
+        assertNull(config.getDeviceContext("edit-a"));
+        assertNotNull(config.getDeviceContext("edit-b"));
+
+        ConfigManager.DeviceConfigurationSnapshot before = config.getConfigurationDeviceSnapshot("edit-a");
+        List<DataPoint> editedPoints = before.context().copyDataPoints();
+        editedPoints.get(0).setAddress("40002");
+        assertTrue(config.updateDataPoints("edit-a", editedPoints, before.persistedRevision()));
+
+        assertNull(config.getDeviceContext("edit-a"));
+        assertEquals("40002", config.getConfigurationPoints("edit-a").getDataPoints().get(0).getAddress());
+        assertTrue(config.getConfigurationDeviceSnapshot("edit-a").persistedRevision() > before.persistedRevision());
+        assertNotNull(config.getDeviceContext("edit-b"));
+        assertEquals("40001", config.getDataPoints("edit-b").get(0).getAddress());
+
+        assertTrue(config.installLocalStartConfiguration("edit-a", 2L,
+                config.loadLocalStartConfiguration("edit-a")));
+        assertEquals("40002", config.getDataPoints("edit-a").get(0).getAddress());
+        config.releaseLocalRuntimeConfiguration("edit-a", 2L);
+        config.releaseLocalRuntimeConfiguration("edit-b", 2L);
+    }
+
+    @Test
+    void TEST_05_09_conflictAndCommitUnknownReconciliationNeverInstallsStoppedDevice() {
+        store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000);
+        ConfigManager config = newManager(store);
+        DeviceContext input = configuration("failure-a");
+        config.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
+        ConfigManager.DeviceConfigurationSnapshot before = config.getConfigurationDeviceSnapshot("failure-a");
+
+        DeviceContext external = configuration("failure-a");
+        external.getDeviceInfo().setDeviceName("external-winner");
+        store.transaction(writer -> writer.saveDevice(
+                new ConfigurationJsonCodec().fromRuntime(external), before.persistedRevision()));
+        List<DataPoint> stalePoints = before.context().copyDataPoints();
+        stalePoints.get(0).setAddress("40002");
+        assertThrows(ConfigVersionConflictException.class,
+                () -> config.updateDataPoints("failure-a", stalePoints, before.persistedRevision()));
+        assertNull(config.getDeviceContext("failure-a"));
+
+        store.close();
+        store = SqliteConfigurationStore.openExisting(directory.resolve("private/collector.db"), 1000);
+        var uncertainPersistence = spy(new WangbinSqliteLocalConfigurationPersistence(store));
+        doThrow(new com.wangbin.collector.core.config.persistence.ConfigurationCommitUncertainException())
+                .when(uncertainPersistence).transaction(any());
+        ConfigManager uncertain = newManager(uncertainPersistence);
+        ConfigManager.DeviceConfigurationSnapshot winner = uncertain.getConfigurationDeviceSnapshot("failure-a");
+        assertThrows(com.wangbin.collector.core.config.persistence.WangbinConfigurationPersistenceException.class,
+                () -> uncertain.updateDeviceConfig(winner.context().getDeviceInfo(), winner.persistedRevision()));
+        assertEquals(0, ((Number) uncertain.getCacheStats().get("contextCount")).intValue());
+        assertTrue(store.findDevice("failure-a").isPresent());
+    }
+
+    @Test
+    void TEST_05_10_refreshAndFullReloadDoNotReinstallStoppedSqliteDevice() throws Exception {
+        store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000);
+        ConfigManager config = newManager(store);
+        DeviceContext input = configuration("refresh-a");
+        config.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
+
+        assertTrue(config.refreshDeviceConfig("refresh-a"));
+        assertNull(config.getDeviceContext("refresh-a"));
+        Method fullReload = ConfigManager.class.getDeclaredMethod("loadAllConfig");
+        fullReload.setAccessible(true);
+        fullReload.invoke(config);
+        assertNull(config.getDeviceContext("refresh-a"));
+        assertNotNull(config.getConfigurationDeviceSnapshot("refresh-a").context());
+
+        CollectionScheduler scheduler = newReloadScheduler(config);
+        scheduler.reloadAllDevices();
+        assertNull(config.getDeviceContext("refresh-a"));
+        assertNotNull(config.getConfigurationDeviceSnapshot("refresh-a").context());
+    }
+
+    @Test
+    void TEST_05_11_runningGenerationOwnsConfigEditAndStopReleasesIt() {
+        store = SqliteConfigurationStore.createNew(directory.resolve("private/collector.db"), 1000);
+        ConfigManager config = newManager(store);
+        DeviceContext a = configuration("running-a");
+        DeviceContext b = configuration("running-b");
+        config.saveLocalDeviceConfigWithResult(a.getDeviceInfo(), a.copyConnectionConfig(), a.copyDataPoints(), false);
+        config.saveLocalDeviceConfigWithResult(b.getDeviceInfo(), b.copyConnectionConfig(), b.copyDataPoints(), false);
+        assertTrue(config.installLocalStartConfiguration("running-a", 1L,
+                config.loadLocalStartConfiguration("running-a")));
+        assertTrue(config.installLocalStartConfiguration("running-b", 2L,
+                config.loadLocalStartConfiguration("running-b")));
+        long oldVersion = config.getDeviceConfigVersion("running-a");
+
+        ConfigManager.DeviceConfigurationSnapshot before = config.getConfigurationDeviceSnapshot("running-a");
+        List<DataPoint> editedPoints = before.context().copyDataPoints();
+        editedPoints.get(0).setAddress("40003");
+        assertTrue(config.updateDataPoints("running-a", editedPoints, before.persistedRevision()));
+        assertTrue(config.getDeviceConfigVersion("running-a") > oldVersion);
+        assertEquals("40003", config.getDataPoints("running-a").get(0).getAddress());
+        assertNotNull(config.getDeviceContext("running-b"));
+        assertEquals("40001", config.getDataPoints("running-b").get(0).getAddress());
+
+        config.releaseLocalRuntimeConfiguration("running-a", 1L);
+        assertNotNull(config.getDeviceContext("running-b"));
+        config.releaseLocalRuntimeConfiguration("running-b", 2L);
+        assertNull(config.getDeviceContext("running-a"));
+        assertEquals("40003", config.getConfigurationPoints("running-a").getDataPoints().get(0).getAddress());
+    }
+
     private ConfigManager newManager(SqliteConfigurationStore sqlite) {
+        return newManager(new WangbinSqliteLocalConfigurationPersistence(sqlite), "remote.json", "unused.json");
+    }
+
+    private ConfigManager newManager(WangbinSqliteLocalConfigurationPersistence persistence) {
+        return newManager(persistence, "remote-uncertain.json", "unused-uncertain.json");
+    }
+
+    private ConfigManager newManager(WangbinSqliteLocalConfigurationPersistence persistence,
+                                     String remoteName, String snapshotName) {
         CollectorProperties properties = new CollectorProperties();
         properties.getAdaptiveCollection().setEnabled(false);
-        Path remote = directory.resolve("remote.json");
+        Path remote = directory.resolve(remoteName);
         try {
             Files.writeString(remote, "[]");
         } catch (Exception exception) {
             throw new IllegalStateException(exception);
         }
         properties.getConfig().getFile().setDevices(remote.toString());
-        properties.getConfig().setLocalDeviceSnapshotFile(directory.resolve("unused.json").toString());
-        WangbinSqliteLocalConfigurationPersistence persistence =
-                new WangbinSqliteLocalConfigurationPersistence(sqlite);
+        properties.getConfig().setLocalDeviceSnapshotFile(directory.resolve(snapshotName).toString());
         var beans = new StaticListableBeanFactory(Map.of("sqlite", persistence));
         return new ConfigManager(new ConfigSyncService(new FileConfigLoader(properties), Runnable::run, properties),
                 event -> { }, new FieldUniquenessValidator(),
                 new LocalDeviceConfigStore(new ObjectMapper(), properties), null, null,
                 beans.getBeanProvider(com.wangbin.collector.core.config.persistence.WangbinLocalConfigurationPersistence.class));
+    }
+
+    private CollectionScheduler newReloadScheduler(ConfigManager config) {
+        CollectionScheduler scheduler = new CollectionScheduler(
+                mock(CollectionManager.class), mock(CollectionStatistics.class), new SchedulerRuntimeState(),
+                mock(PerformanceMonitor.class), mock(DeviceLifecycleCoordinator.class),
+                mock(DeviceBatchExecutor.class), mock(ReconnectCoordinator.class),
+                mock(TimeSliceSchedulingCoordinator.class), mock(TimeSliceExecutionCoordinator.class),
+                mock(TimeSliceConfigCoordinator.class), mock(SchedulerMaintenanceCoordinator.class),
+                mock(ConfigRestartCoordinator.class), mock(AcquisitionRuntimeTracker.class));
+        scheduler.setConfigManager(config);
+        return scheduler;
     }
 
     private void save(String id) {

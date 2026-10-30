@@ -35,6 +35,7 @@ class WangbinSqliteConfigManagerCrudTest {
     @TempDir Path directory;
     final List<Object> events = new java.util.concurrent.CopyOnWriteArrayList<>();
     final ConfigurationJsonCodec codec = new ConfigurationJsonCodec();
+    long nextExplicitStartGeneration = 1000L;
 
     @Test
     void createCommitsAggregateAndRestartRestoresIt() throws Exception {
@@ -44,8 +45,11 @@ class WangbinSqliteConfigManagerCrudTest {
             var result = manager.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
             assertNotNull(result);
             assertEquals(1, store.listDevices().size());
-            assertTrue(codec.equivalent(manager.getDeviceContext("device-a"), codec.toRuntime(store.findDevice("device-a").orElseThrow().configuration())));
-            assertEquals(result.configVersion(), manager.getDeviceConfigVersion("device-a"));
+            assertTrue(codec.equivalent(manager.getConfigurationDeviceSnapshot("device-a").context(),
+                    codec.toRuntime(store.findDevice("device-a").orElseThrow().configuration())));
+            assertNull(manager.getDeviceContext("device-a"));
+            assertEquals(0L, result.configVersion());
+            assertEquals(0L, manager.getDeviceConfigVersion("device-a"));
             assertNotEquals(store.findDevice("device-a").orElseThrow().revision(), result.configVersion());
             assertEquals(1, events.size());
             assertEquals(result.configVersion(), ((ConfigUpdateEvent) events.get(0)).getConfigVersion());
@@ -53,7 +57,7 @@ class WangbinSqliteConfigManagerCrudTest {
             ConfigManager restarted = manager(store);
             // 阶段 05 新契约：重启不恢复运行缓存；配置事实仍通过 SQLite 定向查询可读。
             assertNull(restarted.getDeviceContext("device-a"));
-            assertTrue(codec.equivalent(manager.getDeviceContext("device-a"),
+            assertTrue(codec.equivalent(manager.getConfigurationDeviceSnapshot("device-a").context(),
                     restarted.getConfigurationDeviceSnapshot("device-a").context()));
             assertTrue(events.isEmpty());
         }
@@ -95,6 +99,7 @@ class WangbinSqliteConfigManagerCrudTest {
             assertState(store, manager, "a");
             assertTrue(manager.replaceDeviceContextsAtomically(List.of(configuration("c", "p-c"), configuration("d", "p-d"))));
             assertEquals(4, store.listDevices().size());
+            assertTrue(manager.installLocalStartConfiguration("c", 1L, manager.loadLocalStartConfiguration("c")));
             assertState(store, manager, "c");
             assertTrue(manager.updateDataPoints("a", List.of()));
             assertTrue(store.findDevice("a").orElseThrow().configuration().points().isEmpty());
@@ -119,6 +124,9 @@ class WangbinSqliteConfigManagerCrudTest {
 
     void save(ConfigManager manager, DeviceContext input) {
         manager.saveLocalDeviceConfigWithResult(input.getDeviceInfo(), input.copyConnectionConfig(), input.copyDataPoints(), false);
+        // 旧 CRUD 回归在后续断言中验证运行态；运行态必须由正式 START 显式建立，不能由 CRUD 隐式建立。
+        assertTrue(manager.installLocalStartConfiguration(input.getDeviceInfo().getDeviceId(), nextExplicitStartGeneration++,
+                manager.loadLocalStartConfiguration(input.getDeviceInfo().getDeviceId())));
     }
 
     @Test
@@ -286,6 +294,7 @@ class WangbinSqliteConfigManagerCrudTest {
                 point.setAlarmRule("[{\"type\":\"threshold\",\"unknown\":{\"precise\":12345678901234567890.123456789,\"values\":[true,null]}}]");
                 point.setAdditionalConfig(Map.of("historyEnabled", false, "nested", nested));
                 var result = manager.saveLocalDeviceConfigWithResult(candidate.getDeviceInfo(), connection, List.of(point), false);
+                assertTrue(manager.installLocalStartConfiguration(id, 1L, manager.loadLocalStartConfiguration(id)));
                 assertState(store, manager, id);
                 var snapshot = manager.getDeviceConfigurationSnapshot(id).context();
                 var raw = DataPoint.class.getDeclaredField("alarmRule");
@@ -299,9 +308,10 @@ class WangbinSqliteConfigManagerCrudTest {
                 var ext = new java.util.LinkedHashMap<>(edited.getExtJson());
                 ext.put("nested", reordered);
                 edited.setExtJson(ext);
+                long runtimeVersion = manager.getDeviceConfigVersion(id);
                 assertTrue(manager.updateConnectionConfig(id, edited));
                 assertEquals(sql, store.currentRevision());
-                assertEquals(result.configVersion(), manager.getDeviceConfigVersion(id));
+                assertEquals(runtimeVersion, manager.getDeviceConfigVersion(id));
             }
             var restarted = manager(store);
             for (String id : restarted.getAllDeviceIds()) assertState(store, restarted, id);

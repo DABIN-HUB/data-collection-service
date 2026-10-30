@@ -128,7 +128,12 @@ class WangbinPhase3ConfigHttpSqliteTest {
                 body = json.writeValueAsString(new LocalDeviceConfigRequest(edited.getDeviceInfo(),
                         edited.copyConnectionConfig(), edited.copyDataPoints(), true, false, null, reconciledBase));
                 JsonNode reconciled = http(client, base.resolve("local/device/a"), "PUT", body, 200);
-                assertEquals("CONFIG_COMMITTED_RECONCILED", reconciled.path("machineCode").asText());
+                // A stopped SQLite device has no runtime owner, so a cache publication fault is
+                // irrelevant to the committed persistence receipt and must not install a cache.
+                assertEquals("", reconciled.path("machineCode").asText());
+                assertTrue(reconciled.path("data").path("saved").asBoolean());
+                assertFalse(reconciled.path("data").path("started").asBoolean());
+                assertNull(manager.getDeviceContext("a"));
                 if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_RECONCILED=" + reconciled);
                 long recoveryBase = store.findDevice("a").orElseThrow().revision();
                 installFailingCache(manager, 2);
@@ -137,7 +142,10 @@ class WangbinPhase3ConfigHttpSqliteTest {
                 body = json.writeValueAsString(new LocalDeviceConfigRequest(edited.getDeviceInfo(),
                         edited.copyConnectionConfig(), edited.copyDataPoints(), true, false, null, recoveryBase));
                 JsonNode recovery = http(client, base.resolve("local/device/a"), "PUT", body, 200);
-                assertEquals("CONFIG_COMMITTED_RECOVERY_REQUIRED", recovery.path("machineCode").asText());
+                assertEquals("", recovery.path("machineCode").asText());
+                assertTrue(recovery.path("data").path("saved").asBoolean());
+                assertFalse(recovery.path("data").path("started").asBoolean());
+                assertNull(manager.getDeviceContext("a"));
                 if (Boolean.getBoolean("phase3.capture")) System.out.println("PHASE3_RAW_RECOVERY_REQUIRED=" + recovery);
             }
         }
@@ -336,9 +344,9 @@ class WangbinPhase3ConfigHttpSqliteTest {
             JsonNode reconciled = call(mvc, put("/api/config/device/a")
                     .param("baseRevision", String.valueOf(aRevision)).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(edit)), 200);
-            assertEquals("CONFIG_COMMITTED_RECONCILED", reconciled.path("machineCode").asText());
-            assertTrue(reconciled.path("data").path("committed").asBoolean());
-            assertTrue(reconciled.path("data").path("reconciled").asBoolean());
+            assertEquals("", reconciled.path("machineCode").asText());
+            assertEquals("a", reconciled.path("data").path("deviceId").asText());
+            assertNull(manager.getDeviceContext("a"));
             long reconciledRevision = store.findDevice("a").orElseThrow().revision();
             assertEquals(globalRevision + 1, reconciledRevision);
             assertEquals("reconciled-after-commit", manager.getConfigurationDevice("a").getDeviceName());
@@ -349,15 +357,14 @@ class WangbinPhase3ConfigHttpSqliteTest {
             JsonNode recovery = call(mvc, put("/api/config/device/a")
                     .param("baseRevision", String.valueOf(reconciledRevision)).contentType(MediaType.APPLICATION_JSON)
                     .content(json.writeValueAsBytes(edit)), 200);
-            assertEquals("CONFIG_COMMITTED_RECOVERY_REQUIRED", recovery.path("machineCode").asText());
-            assertTrue(recovery.path("data").path("committed").asBoolean());
-            assertFalse(recovery.path("data").path("reconciled").asBoolean());
-            assertTrue(recovery.path("data").path("reloadRequired").asBoolean());
+            assertEquals("", recovery.path("machineCode").asText());
+            assertEquals("a", recovery.path("data").path("deviceId").asText());
+            assertNull(manager.getDeviceContext("a"));
             assertEquals(reconciledRevision + 1, store.findDevice("a").orElseThrow().revision());
             assertEquals(bRevision, store.findDevice("b").orElseThrow().revision());
             assertEquals("b", call(mvc, get("/api/config/local/device/b"), 200)
                     .path("data").path("bundle").path("device").path("deviceName").asText());
-            assertEquals(503, mvc.perform(get("/api/config/local/device/a")).andReturn().getResponse().getStatus());
+            assertEquals(200, mvc.perform(get("/api/config/local/device/a")).andReturn().getResponse().getStatus());
             assertTrue(manager.refreshDeviceConfig("a"));
             assertEquals("recovery-required", manager.getConfigurationDevice("a").getDeviceName());
         }

@@ -354,16 +354,25 @@ public class ConfigManager {
         }
     }
 
-    /** 先准备全部事件及新版本，随后安装缓存；发生故障由调用方从权威源重建。 */
+    /**
+     * 先准备全部事件及新版本，随后只向当前运行代次安装缓存；发生故障由调用方从权威源重建。
+     *
+     * SQLite 是配置权威源，普通 CRUD 不能因为发布配置事件而隐式创建本地运行缓存。
+     * 只有 installLocalStartConfiguration 建立的、仍处于 active 状态的运行代次拥有者，
+     * 才允许通过配置变更事件更新运行缓存；停止设备和从未启动设备只更新持久修订。
+     */
     private void installLocalAggregates(Map<String, DeviceContext> candidates, Map<String, Long> revisions,
                                         Map<String, DeviceContext> previous, Map<String, Long> previousVersions,
                                         List<ConfigUpdateEvent> events, ConfigUpdateType type, String source) {
         Map<String, Long> newVersions = new LinkedHashMap<>();
+        Map<String, Boolean> runtimeOwners = new LinkedHashMap<>();
         List<ConfigUpdateEvent> prepared = new ArrayList<>();
         for (var entry : candidates.entrySet()) {
             String id = entry.getKey();
             DeviceContext candidate = entry.getValue();
-            long version = nextConfigVersion();
+            boolean runtimeOwner = ownsActiveLocalRuntime(id);
+            runtimeOwners.put(id, runtimeOwner);
+            long version = runtimeOwner ? nextConfigVersion() : previousVersions.getOrDefault(id, 0L);
             newVersions.put(id, version);
             ConfigUpdateEvent event = configChangeEvent(id, candidate == null ? ConfigUpdateType.LOCAL_DELETE : type,
                     source, previousVersions.getOrDefault(id, 0L), version,
@@ -375,17 +384,40 @@ public class ConfigManager {
         }
         for (var entry : candidates.entrySet()) {
             String id = entry.getKey();
-            restoreDeviceContext(id, entry.getValue());
-            if (entry.getValue() == null) localConfigurationRevisions.remove(id);
+            DeviceContext candidate = entry.getValue();
+            if (runtimeOwners.getOrDefault(id, false)) {
+                restoreDeviceContext(id, candidate);
+            } else if (candidate == null || isLocalRuntimeConfigurationCached(id)) {
+                // 旧版本或异常路径留下的缓存也不能在 STOPPED 状态继续暴露为运行配置。
+                clearLocalRuntimeCaches(id);
+            }
+            if (candidate == null) localConfigurationRevisions.remove(id);
             else localConfigurationRevisions.put(id, revisions.get(id));
         }
         for (var entry : candidates.entrySet()) {
-            if (entry.getValue() == null) registerDeletedConfigurationVersion(entry.getKey(), newVersions.get(entry.getKey()));
-            else deviceConfigVersions.put(entry.getKey(), newVersions.get(entry.getKey()));
+            String id = entry.getKey();
+            if (entry.getValue() == null) {
+                registerDeletedConfigurationVersion(id, newVersions.get(id));
+                LocalRuntimeGeneration owner = localRuntimeGenerations.get(id);
+                if (owner != null) {
+                    localRuntimeGenerations.put(id, new LocalRuntimeGeneration(owner.generation(), false));
+                }
+            } else if (runtimeOwners.getOrDefault(id, false)) {
+                deviceConfigVersions.put(id, newVersions.get(id));
+            } else {
+                // 持久配置版本与 JVM 运行配置版本保持独立；未启动设备没有运行版本。
+                deviceConfigVersions.remove(id);
+            }
         }
         localRecoveryRequired.removeAll(candidates.keySet());
         markConfigMutation();
         events.addAll(prepared);
+    }
+
+    /** 调用方持有 ConfigManager 写锁；只有当前有效运行代次才能拥有配置发布权。 */
+    private boolean ownsActiveLocalRuntime(String deviceId) {
+        LocalRuntimeGeneration owner = localRuntimeGenerations.get(deviceId);
+        return owner != null && owner.active();
     }
 
     /** 对账使用单一事务快照，不重试用户写入、不覆盖外部赢家。 */
@@ -414,13 +446,28 @@ public class ConfigManager {
             } else {
                 // 相同业务配置仍需修复已被部分发布污染的缓存，并吸收权威修订。
                 Long previousRevision = localConfigurationRevisions.get(id);
-                restoreDeviceContext(id, candidate);
-                if (item == null) localConfigurationRevisions.remove(id);
-                else localConfigurationRevisions.put(id, item.revision());
-                if (!Objects.equals(previousRevision, item == null ? null : item.revision())) {
+                if (ownsActiveLocalRuntime(id)) {
+                    restoreDeviceContext(id, candidate);
+                } else if (candidate == null || isLocalRuntimeConfigurationCached(id)) {
+                    clearLocalRuntimeCaches(id);
+                }
+                if (item == null) {
+                    localConfigurationRevisions.remove(id);
+                    deviceConfigVersions.remove(id);
+                    LocalRuntimeGeneration owner = localRuntimeGenerations.get(id);
+                    if (owner != null) {
+                        localRuntimeGenerations.put(id, new LocalRuntimeGeneration(owner.generation(), false));
+                    }
+                } else {
+                    localConfigurationRevisions.put(id, item.revision());
+                }
+                if (item != null && ownsActiveLocalRuntime(id)
+                        && !Objects.equals(previousRevision, item.revision())) {
                     deviceConfigVersions.put(id, nextConfigVersion());
-                } else if (versions.getOrDefault(id, 0L) > 0) {
+                } else if (item != null && ownsActiveLocalRuntime(id) && versions.getOrDefault(id, 0L) > 0) {
                     deviceConfigVersions.put(id, versions.get(id));
+                } else if (item != null) {
+                    deviceConfigVersions.remove(id);
                 }
             }
         }
@@ -2314,7 +2361,8 @@ public class ConfigManager {
                     localRecoveryRequired.add(deviceId);
                     throw new WangbinConfigurationPersistenceException(Outcome.CONFIGURATION_UNAVAILABLE, List.of(deviceId));
                 }
-                return isCachedDeviceConfigAvailable(deviceId);
+                // SQLite 刷新只校验并吸收持久配置；STOPPED 设备没有运行缓存时仍应报告配置可用。
+                return getConfigurationDeviceSnapshot(deviceId).context() != null;
             } finally {
                 lock.writeLock().unlock();
                 publishConfigurationEvents(events, false);
