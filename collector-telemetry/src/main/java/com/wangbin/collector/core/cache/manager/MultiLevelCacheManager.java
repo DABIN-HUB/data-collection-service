@@ -63,6 +63,13 @@ public class MultiLevelCacheManager implements CacheManager {
     private final AtomicLong level2Hits = new AtomicLong(0);
     private final AtomicLong totalMisses = new AtomicLong(0);
 
+    /**
+     * 记录当前线程最近一次写入是否至少有一层缓存成功。
+     *
+     * <p>保留 put 的“全部层级成功”返回语义，同时允许实时缓存阶段识别本地层成功、Redis 层降级的可用结果。</p>
+     */
+    private final ThreadLocal<Boolean> lastWriteFallbackSuccess = new ThreadLocal<>();
+
     private final ExecutorService asyncExecutor;
 
     private final Striped<Lock> cacheLocks = Striped.lazyWeakLock(MUTATION_STRIPES);
@@ -162,6 +169,7 @@ public class MultiLevelCacheManager implements CacheManager {
      */
     @Override
     public <T> boolean put(CacheKey key, T value, long expireTime) {
+        lastWriteFallbackSuccess.remove();
         if (!isOperational() || key == null || value == null) {
             return false;
         }
@@ -172,10 +180,22 @@ public class MultiLevelCacheManager implements CacheManager {
         try {
             long mutationRevision = advanceMutationRevision(key);
             boolean allSuccess = true;
+            boolean anySuccess = false;
             if (writeThrough) {
                 for (int i = cacheManagers.size() - 1; i >= 0; i--) {
                     CacheManager manager = cacheManagers.get(i);
-                    boolean success = manager.put(key, value, expireTime);
+                    boolean success;
+                    try {
+                        success = manager.put(key, value, expireTime);
+                    } catch (Exception exception) {
+                        success = false;
+                        log.warn("缓存层写入异常: {} [层级: {}]",
+                                manager.getCacheType(), manager.getCacheLevel(), exception);
+                        recordCacheException(exception, key);
+                    }
+                    if (success) {
+                        anySuccess = true;
+                    }
                     if (!success) {
                         allSuccess = false;
                         log.warn("缓存写入失败: {} [层级: {}]",
@@ -189,6 +209,7 @@ public class MultiLevelCacheManager implements CacheManager {
             } else if (cacheAside) {
                 CacheManager primaryManager = getPrimaryCacheManager(key);
                 boolean success = primaryManager.put(key, value, expireTime);
+                anySuccess = success;
                 if (!success) {
                     allSuccess = false;
                     log.warn("主缓存写入失败: {}", primaryManager.getCacheType());
@@ -200,11 +221,16 @@ public class MultiLevelCacheManager implements CacheManager {
             } else {
                 CacheManager primaryManager = getPrimaryCacheManager(key);
                 boolean success = primaryManager != null && primaryManager.put(key, value, expireTime);
+                anySuccess = success;
                 if (!success) {
                     allSuccess = false;
                     log.warn("本地缓存写入失败");
                     recordCacheWarning("本地缓存写入失败", key);
                 }
+            }
+
+            if (!allSuccess && anySuccess) {
+                lastWriteFallbackSuccess.set(true);
             }
 
             log.debug("多级缓存写入完成: 键={}, 层级={}, 成功={}",
@@ -213,6 +239,19 @@ public class MultiLevelCacheManager implements CacheManager {
         } finally {
             lock.unlock();
         }
+    }
+
+    /**
+     * 消费最近一次写入的部分成功结果。
+     *
+     * <p>该结果只表示至少一层缓存已经写入，不代表 Redis 等所有配置层均已成功。</p>
+     *
+     * @return 是否可以按降级语义继续处理
+     */
+    public boolean consumeLastWriteFallbackSuccess() {
+        Boolean fallbackSuccess = lastWriteFallbackSuccess.get();
+        lastWriteFallbackSuccess.remove();
+        return Boolean.TRUE.equals(fallbackSuccess);
     }
 
     /**
@@ -707,7 +746,17 @@ public class MultiLevelCacheManager implements CacheManager {
 
         Map<String, Map<String, Object>> levelStats = new HashMap<>();
         for (CacheManager manager : cacheManagers) {
-            levelStats.put(manager.getCacheType(), manager.getStatistics());
+            try {
+                levelStats.put(manager.getCacheType(), manager.getStatistics());
+            } catch (RuntimeException exception) {
+                Map<String, Object> unavailableStats = new HashMap<>();
+                unavailableStats.put(CacheMetricKeys.CACHE_TYPE, manager.getCacheType());
+                unavailableStats.put(CacheMetricKeys.CACHE_LEVEL, manager.getCacheLevel());
+                unavailableStats.put(CacheMetricKeys.INITIALIZED, false);
+                unavailableStats.put(CacheMetricKeys.TOTAL_ERRORS, 1L);
+                levelStats.put(manager.getCacheType(), unavailableStats);
+                recordCacheException(exception, null);
+            }
         }
         stats.put(CacheMetricKeys.LEVEL_STATISTICS, levelStats);
         return stats;
@@ -1001,25 +1050,22 @@ public class MultiLevelCacheManager implements CacheManager {
             Map<String, Object> levelStatus = new HashMap<>();
             levelStatus.put(CommonMapKeys.TYPE, manager.getCacheType());
             levelStatus.put(CacheMetricKeys.LEVEL, manager.getCacheLevel());
-            levelStatus.put(CacheMetricKeys.SIZE, manager.size());
 
             try {
-                if (manager instanceof LocalCacheManager) {
+                if (manager instanceof RedisCacheManager redisManager) {
+                    redisManager.getRedisTemplate().opsForValue().get("health:test");
+                    levelStatus.put(CacheMetricKeys.SIZE, manager.size());
                     levelStatus.put(CommonMapKeys.STATUS, "HEALTHY");
-                } else if (manager instanceof RedisCacheManager redisManager) {
-                    try {
-                        redisManager.getRedisTemplate().opsForValue().get("health:test");
-                        levelStatus.put(CommonMapKeys.STATUS, "HEALTHY");
-                    } catch (Exception e) {
-                        levelStatus.put(CommonMapKeys.STATUS, "UNHEALTHY");
-                        levelStatus.put(CommonMapKeys.ERROR, e.getMessage());
-                    }
                 } else {
-                    levelStatus.put(CommonMapKeys.STATUS, "UNKNOWN");
+                    levelStatus.put(CacheMetricKeys.SIZE, manager.size());
+                    levelStatus.put(CommonMapKeys.STATUS,
+                            manager instanceof LocalCacheManager ? "HEALTHY" : "UNKNOWN");
                 }
-            } catch (Exception e) {
-                levelStatus.put(CommonMapKeys.STATUS, "ERROR");
-                levelStatus.put(CommonMapKeys.ERROR, e.getMessage());
+            } catch (Exception exception) {
+                levelStatus.put(CacheMetricKeys.SIZE, -1L);
+                levelStatus.put(CommonMapKeys.STATUS,
+                        manager instanceof RedisCacheManager ? "UNHEALTHY" : "ERROR");
+                levelStatus.put(CommonMapKeys.ERROR, exception.getClass().getSimpleName());
             }
 
             levelHealth.add(levelStatus);

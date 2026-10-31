@@ -41,8 +41,12 @@ public class RedisCacheManager extends AbstractCacheManager {
      */
     @Override
     protected void doInit() throws Exception {
-        // 测试Redis连接
-        testConnection();
+        // Redis 是可选的实时缓存依赖；初始化阶段只探测，不因暂时不可用阻断本地缓存和采集。
+        try {
+            testConnection();
+        } catch (Exception exception) {
+            log.warn("Redis缓存初始化探测失败，后续操作将按当前连接状态报告失败", exception);
+        }
 
         log.info("Redis缓存管理器初始化完成: 键前缀={}, 默认过期秒数={}",
                 redisProperties.getKeyPrefix(), redisProperties.getDefaultExpire());

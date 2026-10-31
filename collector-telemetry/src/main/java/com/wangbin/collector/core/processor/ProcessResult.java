@@ -168,6 +168,7 @@ public class ProcessResult implements Serializable {
     /**
      * 获取最终值（如果处理成功返回处理后的值，否则返回原始值）
      */
+    @JsonIgnore
     public Object getFinalValue() {
         return success ? processedValue : rawValue;
     }
@@ -207,6 +208,7 @@ public class ProcessResult implements Serializable {
     /**
      * 获取质量等级
      */
+    @JsonIgnore
     public String getQualityLevel() {
         if (quality >= 90) return "A";
         if (quality >= 80) return "B";
@@ -218,6 +220,7 @@ public class ProcessResult implements Serializable {
     /**
      * 判断质量是否可接受
      */
+    @JsonIgnore
     public boolean isQualityAcceptable() {
         return quality >= 60;
     }
@@ -225,6 +228,7 @@ public class ProcessResult implements Serializable {
     /**
      * 判断是否为跳过结果
      */
+    @JsonIgnore
     public boolean isSkipped() {
         return success && rawValue == processedValue && message != null && message.startsWith("跳过处理");
     }
@@ -295,6 +299,7 @@ public class ProcessResult implements Serializable {
     /**
      * 创建结果摘要
      */
+    @JsonIgnore
     public String getSummary() {
         return String.format(
                 "ProcessResult{success=%s, quality=%d(%s), raw=%s, processed=%s, time=%dms, message=%s}",
