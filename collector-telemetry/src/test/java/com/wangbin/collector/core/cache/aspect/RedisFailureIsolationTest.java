@@ -189,7 +189,8 @@ class RedisFailureIsolationTest {
     private void registerPoints(String deviceId, long generation, List<DataPoint> points) {
         tracker.open(deviceId, generation, points);
         for (DataPoint point : points) {
-            when(configManager.getDataPointByPointId(deviceId, point.getPointId())).thenReturn(point);
+            org.mockito.Mockito.doReturn(point)
+                    .when(configManager).getDataPointByPointId(deviceId, point.getPointId());
         }
         when(configManager.runIfConfigurationCurrent(eq(deviceId), eq(1L), any(Runnable.class)))
                 .thenAnswer(invocation -> {
