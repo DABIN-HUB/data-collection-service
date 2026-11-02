@@ -117,7 +117,6 @@ public class RedisConfig {
         taskExecutor.setMaxPoolSize(10);
         taskExecutor.setQueueCapacity(100);
         taskExecutor.setThreadNamePrefix("redis-listener-");
-        taskExecutor.initialize();
         taskExecutor.setWaitForTasksToCompleteOnShutdown(true);
         taskExecutor.setAwaitTerminationSeconds(5);
         return taskExecutor;

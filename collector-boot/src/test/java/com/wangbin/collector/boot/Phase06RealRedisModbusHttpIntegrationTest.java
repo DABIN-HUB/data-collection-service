@@ -3,7 +3,6 @@ package com.wangbin.collector.boot;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wangbin.collector.Application;
-import com.wangbin.collector.common.config.RedisConfig;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
@@ -24,15 +23,15 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
-import org.junit.jupiter.api.extension.AfterAllCallback;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.extension.ExtensionContext;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
-
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -43,7 +42,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
+
 import org.junit.jupiter.api.TestInstance;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -57,7 +56,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -75,7 +73,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -108,7 +105,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         })
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @EnabledIfSystemProperty(named = "phase6.redis.port", matches = "\\d+")
-@ExtendWith(Phase06ContextCloseExtension.class)
 class Phase06RealRedisModbusHttpIntegrationTest {
 
     private static final String DEVICE_A = "phase6-real-a";
@@ -300,7 +296,7 @@ class Phase06RealRedisModbusHttpIntegrationTest {
                 () -> !liveThreadNames("redis-listener-").isEmpty());
         listenerThreadsBeforeClose = liveThreadNames("redis-listener-");
         assertTrue(!listenerThreadsBeforeClose.isEmpty(), "必须实际创建 Redis listener executor 线程");
-        verifyRedisConfigContextClose();
+        verifyOwnedBusinessContextCloseMatrix();
         System.out.printf("PHASE6_CONTEXT_CLOSE listenerThreadsBefore=%s "
                         + "streamShutdownDroppedRows=%d streamWriterLoopFailures=%d%n",
                 listenerThreadsBeforeClose,
@@ -530,48 +526,185 @@ class Phase06RealRedisModbusHttpIntegrationTest {
                 .collect(java.util.stream.Collectors.toSet());
     }
 
-    private void verifyRedisConfigContextClose() throws Exception {
-        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
-        LettuceConnectionFactory connectionFactory = new LettuceConnectionFactory(
-                "127.0.0.1", requiredInteger(REDIS_PORT_PROPERTY));
-        Set<Long> existingListenerThreadIds = liveThreadIds("redis-listener-");
-        Set<Long> threadIdsBeforeClose = Set.of();
-        ThreadPoolTaskExecutor listenerExecutor = null;
+    private void verifyOwnedBusinessContextCloseMatrix() throws Exception {
+        verifyOwnedBusinessContextClose(true);
+        stopIsolatedRedis();
         try {
-            context.registerBean(LettuceConnectionFactory.class, () -> connectionFactory);
-            context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
-            context.register(RedisConfig.class);
-            context.refresh();
-            listenerExecutor = context.getBean("redisListenerTaskExecutor", ThreadPoolTaskExecutor.class);
-
-            String topic = REDIS_NAMESPACE + ":context-close";
-            CountDownLatch received = new CountDownLatch(1);
-            RedisMessageListenerContainer container = context.getBean(RedisMessageListenerContainer.class);
-            container.addMessageListener((message, pattern) -> received.countDown(), new ChannelTopic(topic));
-            container.start();
-            awaitCondition("独立 Redis listener container 启动", container::isRunning);
-            context.getBean(StringRedisTemplate.class).convertAndSend(topic, "phase6-context-close");
-            assertTrue(received.await(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-                    "独立 Redis listener 必须收到真实 Pub/Sub 消息");
-            threadIdsBeforeClose = liveThreadIds("redis-listener-").stream()
-                    .filter(threadId -> !existingListenerThreadIds.contains(threadId))
-                    .collect(java.util.stream.Collectors.toSet());
-            assertTrue(!threadIdsBeforeClose.isEmpty(), "独立 Context 必须创建 Redis listener 线程");
+            verifyOwnedBusinessContextClose(false);
         } finally {
-            context.close();
+            startIsolatedRedis();
+            awaitCondition("关闭验收后恢复隔离 Redis", this::redisPing);
         }
-        assertNotNull(listenerExecutor, "独立 Context 必须装配 listener executor");
-        assertTrue(listenerExecutor.getThreadPoolExecutor().isShutdown(),
-                "独立 Context 关闭后 listener executor 必须 shutdown");
-        assertFalse(connectionFactory.isRunning(),
-                "独立 Context 关闭后 Lettuce factory 必须停止");
-        Set<Long> observedThreadIds = threadIdsBeforeClose;
-        awaitCondition("独立 Spring Context 关闭后 Redis listener 线程释放",
-                () -> observedThreadIds.stream()
-                        .noneMatch(Phase06RealRedisModbusHttpIntegrationTest::isLiveThread));
-        System.out.printf("PHASE6_CONTEXT_CLOSE_STANDALONE threadIdsBefore=%s threadNamesAfter=%s%n",
-                threadIdsBeforeClose, liveThreadNames("redis-listener-"));
     }
+
+    /**
+     * 使用本测试自己创建并拥有的完整 Web Context，验证正常和 Redis 不可用时的实例级关闭。
+     */
+    private void verifyOwnedBusinessContextClose(boolean redisAvailable) throws Exception {
+        String namespace = REDIS_NAMESPACE + ":owned-close:" + UUID.randomUUID().toString().replace("-", "");
+        Path configuredPath = Path.of(requiredProperty(SQLITE_PATH_PROPERTY)).toAbsolutePath();
+        Path sqliteParent = configuredPath.getParent().resolve(
+                "phase6-owned-close-" + UUID.randomUUID().toString().replace("-", ""));
+        Path sqlitePath = sqliteParent.resolve("collector.db");
+        Set<Long> listenerIdsBefore = liveThreadIds("redis-listener-");
+        ConfigurableApplicationContext context = null;
+        RedisMessageListenerContainer listenerContainer = null;
+        ThreadPoolTaskExecutor listenerExecutor = null;
+        LettuceConnectionFactory connectionFactory = null;
+        StreamWriteBuffer streamBuffer = null;
+        RedisTelemetryIngressBuffer ingressBuffer = null;
+        HikariDataSource sqliteDataSource = null;
+        ThreadPoolTaskExecutor streamExecutor = null;
+        Set<Long> ownedListenerIds = Set.of();
+        HttpClient previousClient = httpClient;
+        URI previousBaseUri = baseUri;
+        try {
+            SpringApplication application = new SpringApplication(Application.class);
+            application.setWebApplicationType(WebApplicationType.SERVLET);
+            application.setRegisterShutdownHook(false);
+            context = application.run(
+                    "--server.address=127.0.0.1",
+                    "--server.port=0",
+                    "--server.servlet.context-path=",
+                    "--spring.jmx.enabled=false",
+                    "--spring.main.banner-mode=off",
+                    "--collector.config.loader=file",
+                    "--collector.cache.type=multi-level",
+                    "--collector.cache.redis.default-expire=60",
+                    "--collector.cache.redis.connection-timeout=1000",
+                    "--collector.auth.allow-ip-authentication=true",
+                    "--collector.auth.ip-allow-list=127.0.0.1",
+                    "--collector.report.enabled=false",
+                    "--collector.report.mqtt.enabled=false",
+                    "--collector.cloud.enabled=false",
+                    "--telemetry.tdengine.enabled=false",
+                    "--spring.data.redis.host=127.0.0.1",
+                    "--spring.data.redis.port=" + requiredProperty(REDIS_PORT_PROPERTY),
+                    "--spring.data.redis.password=",
+                    "--spring.data.redis.database=15",
+                    "--spring.data.redis.timeout=1000ms",
+                    "--spring.data.redis.lettuce.shutdown-timeout=100ms",
+                    "--spring.data.redis.stream.key=" + namespace + ":stream",
+                    "--collector.cache.redis.key-prefix=" + namespace + ":cache:",
+                    "--wangbin.config.sqlite.database-path=" + sqlitePath,
+                    "--collector.config.file.devices=" + requiredProperty(EMPTY_CONFIG_PROPERTY),
+                    "--collector.config.local-device-snapshot-file=" + requiredProperty(EMPTY_CONFIG_PROPERTY));
+
+            assertTrue(context instanceof ServletWebServerApplicationContext,
+                    "关闭验收必须使用真实 Servlet Web Context");
+            assertTrue(((ServletWebServerApplicationContext) context).getWebServer().getPort() > 0,
+                    "真实 Web Context 必须绑定随机端口");
+            listenerContainer = context.getBean(RedisMessageListenerContainer.class);
+            listenerExecutor = context.getBean("redisListenerTaskExecutor", ThreadPoolTaskExecutor.class);
+            connectionFactory = context.getBean(LettuceConnectionFactory.class);
+            streamBuffer = context.getBean(StreamWriteBuffer.class);
+            ingressBuffer = context.getBean(RedisTelemetryIngressBuffer.class);
+            sqliteDataSource = context.getBean("wangbinSqliteDataSource", HikariDataSource.class);
+            Executor streamWriter = context.getBean(TelemetryExecutorNames.STREAM_WRITE, Executor.class);
+            assertTrue(streamWriter instanceof ThreadPoolTaskExecutor,
+                    "Stream writer 必须使用可关联的 Spring 执行器");
+            streamExecutor = (ThreadPoolTaskExecutor) streamWriter;
+            assertTrue(streamBuffer.isRunning(), "业务 Context 启动后 StreamWriteBuffer 必须运行");
+
+            if (redisAvailable) {
+                String topic = namespace + ":lifecycle";
+                CountDownLatch received = new CountDownLatch(1);
+                listenerContainer.addMessageListener((message, pattern) -> received.countDown(),
+                        new ChannelTopic(topic));
+                listenerContainer.start();
+                awaitCondition("完整 Web Context 的 Redis listener 启动", listenerContainer::isRunning);
+                context.getBean(StringRedisTemplate.class).convertAndSend(topic, "phase6-owned-context-close");
+                assertTrue(received.await(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                        "完整 Web Context 必须收到真实 Redis Pub/Sub 消息");
+
+                ConfigManager ownedConfigManager = context.getBean(ConfigManager.class);
+                ownedConfigManager.saveLocalDeviceConfigWithResult(
+                        configuration(DEVICE_A, POINT_A, serverA.port()).getDeviceInfo(),
+                        configuration(DEVICE_A, POINT_A, serverA.port()).copyConnectionConfig(),
+                        configuration(DEVICE_A, POINT_A, serverA.port()).copyDataPoints(), false);
+                ownedConfigManager.saveLocalDeviceConfigWithResult(
+                        configuration(DEVICE_B, POINT_B, serverB.port()).getDeviceInfo(),
+                        configuration(DEVICE_B, POINT_B, serverB.port()).copyConnectionConfig(),
+                        configuration(DEVICE_B, POINT_B, serverB.port()).copyDataPoints(), false);
+                int ownedPort = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
+                httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
+                baseUri = URI.create("http://127.0.0.1:" + ownedPort);
+                post("/api/device/" + DEVICE_A + "/start");
+                awaitPoint(DEVICE_A, POINT_A, 505);
+                post("/api/device/" + DEVICE_B + "/start");
+                awaitPoint(DEVICE_B, POINT_B, 303);
+                post("/api/device/" + DEVICE_A + "/stop");
+                awaitRuntimeStopped(DEVICE_A);
+                post("/api/device/" + DEVICE_B + "/stop");
+                awaitRuntimeStopped(DEVICE_B);
+                ConfigurableApplicationContext ownedContext = context;
+                RedisCacheManager ownedCache = ownedContext.getBean(RedisCacheManager.class);
+                CacheProperties ownedCacheProperties = ownedContext.getBean(CacheProperties.class);
+                String cacheKey = ownedCacheProperties.getRedis().getKeyPrefix()
+                        + CacheKey.dataKey(DEVICE_B, POINT_B).getFullKey();
+                awaitCondition("完整 Web Context 的 Redis Cache 写入", () -> {
+                    Object value = ownedCache.getRedisTemplate().opsForValue().get(cacheKey);
+                    return value instanceof ProcessResult result && result.getProcessedValue() instanceof Number;
+                });
+                awaitCondition("完整 Web Context 的 Redis Stream 写入",
+                        () -> ownedContext.getBean(StreamWriteBuffer.class).metrics().redisXaddRows() > 0L);
+            } else {
+                assertFalse(ping(connectionFactory), "Redis 不可用关闭场景不得误报可用");
+            }
+            ownedListenerIds = liveThreadIds("redis-listener-").stream()
+                    .filter(threadId -> !listenerIdsBefore.contains(threadId))
+                    .collect(java.util.stream.Collectors.toSet());
+        } finally {
+            httpClient = previousClient;
+            baseUri = previousBaseUri;
+            if (context != null) {
+                closeOwnedContextWithinTimeout(context);
+            }
+        }
+
+        assertFalse(context.isActive(), "完整 Web Context 必须已关闭");
+        assertFalse(listenerContainer.isRunning(), "RedisMessageListenerContainer 必须已停止");
+        assertTrue(listenerExecutor.getThreadPoolExecutor().isShutdown(),
+                "Redis listener executor 必须 shutdown");
+        awaitCondition("Redis listener executor terminated", listenerExecutor.getThreadPoolExecutor()::isTerminated);
+        assertFalse(connectionFactory.isRunning(), "Lettuce RedisConnectionFactory 必须停止");
+        assertFalse(streamBuffer.isRunning(), "StreamWriteBuffer 必须停止");
+        assertTrue(sqliteDataSource.isClosed(), "SQLite HikariDataSource 必须 closed");
+        awaitCondition("Stream writer executor terminated", streamExecutor.getThreadPoolExecutor()::isTerminated);
+        Set<Long> observedOwnedListenerIds = ownedListenerIds;
+        awaitCondition("本次 Web Context 创建的 listener 线程退出",
+                () -> observedOwnedListenerIds.stream()
+                        .noneMatch(Phase06RealRedisModbusHttpIntegrationTest::isLiveThread));
+        System.out.printf("PHASE6_CONTEXT_CLOSE ownedRedisAvailable=%s listenerIds=%s listenerTerminated=%s "
+                        + "lettuceRunning=%s streamRunning=%s streamExecutorTerminated=%s sqliteClosed=%s "
+                        + "ingressBeanDestroyedByContext=%s%n",
+                redisAvailable, ownedListenerIds, listenerExecutor.getThreadPoolExecutor().isTerminated(),
+                connectionFactory.isRunning(), streamBuffer.isRunning(),
+                streamExecutor.getThreadPoolExecutor().isTerminated(), sqliteDataSource.isClosed(), ingressBuffer != null);
+    }
+
+    private static boolean ping(LettuceConnectionFactory connectionFactory) {
+        try {
+            return "PONG".equals(connectionFactory.getConnection().ping());
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    private static void closeOwnedContextWithinTimeout(ConfigurableApplicationContext context) throws Exception {
+        ExecutorService closer = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "phase6-context-close");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            closer.submit(context::close).get(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } finally {
+            closer.shutdownNow();
+            closer.awaitTermination(2L, TimeUnit.SECONDS);
+        }
+    }
+
 
     private static boolean isLiveThread(long threadId) {
         return Thread.getAllStackTraces().keySet().stream()
@@ -697,68 +830,6 @@ class Phase06RealRedisModbusHttpIntegrationTest {
             if (acceptThread != null) acceptThread.join(2000L);
             clients.shutdownNow();
             clients.awaitTermination(2L, TimeUnit.SECONDS);
-        }
-    }
-}
-
-/**
- * 在 Spring TestContext 完成 afterAll 回调后关闭真实业务 Context，避免测试框架在关闭后再次读取已失效 Context。
- */
-final class Phase06ContextCloseExtension implements AfterAllCallback {
-    private static final ExtensionContext.Namespace NAMESPACE =
-            ExtensionContext.Namespace.create(Phase06ContextCloseExtension.class);
-
-    @Override
-    public void afterAll(ExtensionContext context) {
-        ConfigurableApplicationContext applicationContext =
-                (ConfigurableApplicationContext) SpringExtension.getApplicationContext(context);
-        context.getStore(NAMESPACE).put("business-context-close", new BusinessContextCloseResource(applicationContext));
-    }
-
-    private static final class BusinessContextCloseResource implements ExtensionContext.Store.CloseableResource {
-        private final ConfigurableApplicationContext applicationContext;
-
-        private BusinessContextCloseResource(ConfigurableApplicationContext applicationContext) {
-            this.applicationContext = applicationContext;
-        }
-
-        @Override
-        public void close() {
-            ThreadPoolTaskExecutor listenerExecutor = applicationContext
-                    .getBean("redisListenerTaskExecutor", ThreadPoolTaskExecutor.class);
-            RedisMessageListenerContainer listenerContainer = applicationContext
-                    .getBean(RedisMessageListenerContainer.class);
-            LettuceConnectionFactory connectionFactory = applicationContext
-                    .getBean(LettuceConnectionFactory.class);
-            StreamWriteBuffer streamBuffer = applicationContext.getBean(StreamWriteBuffer.class);
-            RedisTelemetryIngressBuffer ingressBuffer = applicationContext.getBean(RedisTelemetryIngressBuffer.class);
-            HikariDataSource sqliteDataSource = applicationContext
-                    .getBean("wangbinSqliteDataSource", HikariDataSource.class);
-            Executor streamWriteExecutor = applicationContext.getBean(TelemetryExecutorNames.STREAM_WRITE, Executor.class);
-
-            applicationContext.close();
-
-            assertFalse(applicationContext.isActive(), "业务 Web Context 必须已关闭");
-            assertFalse(listenerContainer.isRunning(), "Redis listener container 必须已停止");
-            assertTrue(listenerExecutor.getThreadPoolExecutor().isShutdown(),
-                    "业务 Context 关闭后 Redis listener executor 必须 shutdown");
-            assertTrue(listenerExecutor.getThreadPoolExecutor().isTerminated(),
-                    "业务 Context 关闭后 Redis listener executor 必须 terminated");
-            assertFalse(connectionFactory.isRunning(), "业务 Context 关闭后 Lettuce factory 必须停止");
-            assertFalse(streamBuffer.isRunning(), "StreamWriteBuffer 必须停止");
-            assertTrue(sqliteDataSource.isClosed(), "SQLite HikariDataSource 必须 closed");
-            assertTrue(streamWriteExecutor instanceof ThreadPoolTaskExecutor,
-                    "Stream writer 必须使用可关联的 Spring 执行器");
-            ThreadPoolTaskExecutor streamExecutor = (ThreadPoolTaskExecutor) streamWriteExecutor;
-            assertTrue(streamExecutor.getThreadPoolExecutor().isTerminated(),
-                    "Stream writer 执行器必须 terminated");
-            System.out.printf("PHASE6_CONTEXT_CLOSE businessContextActive=%s listenerRunning=%s "
-                            + "listenerExecutorTerminated=%s lettuceRunning=%s streamRunning=%s "
-                            + "ingressMetrics=%s sqliteClosed=%s streamExecutorTerminated=%s%n",
-                    applicationContext.isActive(), listenerContainer.isRunning(),
-                    listenerExecutor.getThreadPoolExecutor().isTerminated(), connectionFactory.isRunning(),
-                    streamBuffer.isRunning(), ingressBuffer.metrics(), sqliteDataSource.isClosed(),
-                    streamExecutor.getThreadPoolExecutor().isTerminated());
         }
     }
 }
