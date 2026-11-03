@@ -59,6 +59,8 @@ INSTALL/START/STOP/RESTART/UNINSTALL 使用本机命名互斥锁串行化；mark
 
 模块只校验并记录所提供文件的实际哈希，不把哈希校验伪装成上游签名、版本支持或商业再分发许可结论。正式发布仍需审核 Redis Windows 发行物、WinSW 版本、依赖、LICENSE/NOTICE 和再分发授权。禁止把 Docker、WSL 或旧 `REISUN-Prototype` 文件冒充本机托管 Redis 构件。
 
+Redis ZIP 必须使用固定顶层目录 `Redis-8.10.3-Windows-x64-msys2/`；允许该目录自身的一个 ZIP 目录条目，目录下必须正好包含批准的 16 个文件。根目录名称、嵌套目录、目录外文件和其他目录条目都会被拒绝；ZIP 中的文件条目路径会记录为 marker 的 `EntryPath`，复制阶段按该精确路径读回。
+
 ## 命令入口
 
 PowerShell 5.1 管理员窗口中执行。普通用户可以执行 STATUS，但无法进行 INSTALL、START、STOP、RESTART、UNINSTALL。
@@ -106,8 +108,8 @@ powershell.exe -NoProfile -File .\tools\windows-service-management\Invoke-Wangbi
 安装过程：
 
 1. 只读检查 Windows、管理员令牌、服务名、端口、根目录和重解析点；
-2. 校验固定 Redis 8.10.3 MSYS2 x64 ZIP 的归档 SHA-256、完整允许清单、每个 PE 架构及运行时 DLL；
-3. 拒绝 ZIP 路径穿越、重复条目、额外文件、Cygwin 运行库和缺少 DLL；
+2. 校验固定 Redis 8.10.3 MSYS2 x64 ZIP 的归档 SHA-256、固定顶层目录、完整允许清单、每个 PE 架构及运行时 DLL；
+3. 拒绝 ZIP 路径穿越、绝对路径、反斜杠路径、重复/大小写碰撞条目、嵌套目录、额外文件、Cygwin 运行库和缺少 DLL；
 4. 将完整发行目录逐文件复制到受控代码目录，并把相对路径、大小、架构和 SHA-256 写入 marker；
 5. 创建隔离的代码、配置、数据、日志、状态目录；
 6. 运行时生成随机 Redis 密码并仅写入受保护文件和 Redis 配置；

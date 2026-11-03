@@ -10,6 +10,7 @@ $script:RedisVersion = '8.10.3'
 $script:RedisArchitecture = 'x64'
 $script:RedisRuntimeFamily = 'MSYS2'
 $script:RedisArchiveFileName = 'Redis-8.10.3-Windows-x64-msys2.zip'
+$script:RedisDistributionDirectoryName = 'Redis-8.10.3-Windows-x64-msys2'
 $script:RedisArchiveSha256 = 'af16df340525b431e9ec8dabfd625d5e7a233f82805b5418819904ea909c447f'
 $script:Utf8 = New-Object System.Text.UTF8Encoding($false)
 $script:SystemSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')
@@ -232,22 +233,35 @@ function Get-PeArchitecture {
 }
 
 function ConvertTo-ZipEntryPath {
-    param([Parameter(Mandatory)][string]$Name)
-    if ([string]::IsNullOrWhiteSpace($Name) -or $Name.EndsWith('/')) { throw ('ZIP 条目不是受支持文件：{0}。' -f $Name) }
-    $normalized = $Name.Replace('\\', '/')
+    param([Parameter(Mandatory)][string]$Name, [switch]$AllowDirectory)
+    if ([string]::IsNullOrWhiteSpace($Name)) { throw ('ZIP 条目不是受支持路径：{0}。' -f $Name) }
+    if ($Name.IndexOf([char]92) -ge 0) { throw ('拒绝 ZIP 反斜杠路径：{0}。' -f $Name) }
+    $isDirectory = $Name.EndsWith('/')
+    if ($isDirectory -and -not $AllowDirectory) { throw ('ZIP 条目不是受支持文件：{0}。' -f $Name) }
+    $normalized = if ($isDirectory) { $Name.Substring(0, $Name.Length - 1) } else { $Name }
     if ($normalized.StartsWith('/') -or $normalized -match '^[A-Za-z]:') { throw ('拒绝 ZIP 绝对路径：{0}。' -f $Name) }
     $parts = $normalized -split '/'
     if ($parts | Where-Object { $_ -eq '' -or $_ -eq '.' -or $_ -eq '..' -or $_ -match ':|[\x00-\x1f]' }) { throw ('拒绝 ZIP 路径穿越或非法条目：{0}。' -f $Name) }
-    if ($parts.Count -ne 1) { throw ('Redis 发行包不允许嵌套路径：{0}。' -f $Name) }
+    if ($parts.Count -lt 1 -or $parts.Count -gt 2) { throw ('Redis 发行包不允许嵌套路径：{0}。' -f $Name) }
+    if ($isDirectory -and $parts.Count -ne 1) { throw ('Redis 发行包只允许一个顶层发行目录：{0}。' -f $Name) }
+    if ($isDirectory) { return ($normalized + '/') }
     return $normalized
 }
 
 function Assert-ZipEntrySafe {
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][string]$ArchivePath)
-    if ($Entry.FullName -ne (ConvertTo-ZipEntryPath $Entry.FullName)) { throw ('ZIP 条目路径未规范化：{0}。' -f $Entry.FullName) }
-    if ($Entry.Length -le 0 -or $Entry.Length -gt 1073741824) { throw ('ZIP 条目大小不受支持：{0}。' -f $Entry.FullName) }
+    $isDirectory = ([string]$Entry.FullName).EndsWith('/')
+    $normalized = ConvertTo-ZipEntryPath -Name ([string]$Entry.FullName) -AllowDirectory:$isDirectory
+    if ([string]$Entry.FullName -cne $normalized) { throw ('ZIP 条目路径未规范化：{0}。' -f $Entry.FullName) }
+    if ($isDirectory) {
+        if ($normalized -cne ($script:RedisDistributionDirectoryName + '/')) { throw ('ZIP 顶层目录名称不匹配：{0}。' -f $Entry.FullName) }
+        if ($Entry.Length -ne 0) { throw ('ZIP 目录条目大小不为零：{0}。' -f $Entry.FullName) }
+    } elseif ($Entry.Length -le 0 -or $Entry.Length -gt 1073741824) {
+        throw ('ZIP 条目大小不受支持：{0}。' -f $Entry.FullName)
+    }
     $archiveRoot = [IO.Path]::GetDirectoryName((ConvertTo-FullPath $ArchivePath))
     Assert-NoReparsePoint $archiveRoot
+    return [pscustomobject]@{ IsDirectory = $isDirectory; Path = $normalized }
 }
 
 function Assert-RedisDistributionArchive {
@@ -264,14 +278,24 @@ function Assert-RedisDistributionArchive {
     if (-not $SkipFixedCandidateCheck -and ($archiveHash -cne $script:RedisArchiveSha256 -or [IO.Path]::GetFileName($archive) -cne $script:RedisArchiveFileName)) { throw 'Redis 发行包不是已批准的 Redis 8.10.3 MSYS2 候选。' }
     $contract = Get-RedisDistributionContract
     $entries = New-Object -TypeName 'System.Collections.Generic.Dictionary[string,object]' -ArgumentList ([StringComparer]::OrdinalIgnoreCase)
+    $rootDirectorySeen = $false
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)
     try {
         foreach ($entry in $zip.Entries) {
-            Assert-ZipEntrySafe -Entry $entry -ArchivePath $archive
-            $name = ConvertTo-ZipEntryPath $entry.FullName
-            if (-not $contract.Contains($name)) { throw ('Redis 发行包包含未批准文件：{0}。' -f $name) }
+            $safeEntry = Assert-ZipEntrySafe -Entry $entry -ArchivePath $archive
+            if ($safeEntry.IsDirectory) {
+                if ($rootDirectorySeen) { throw 'Redis 发行包包含重复顶层目录条目。' }
+                $rootDirectorySeen = $true
+                continue
+            }
+            $rootPrefix = $script:RedisDistributionDirectoryName + '/'
+            if (-not $safeEntry.Path.StartsWith($rootPrefix, [StringComparison]::Ordinal)) { throw ('Redis 发行包文件不在固定顶层目录：{0}。' -f $entry.FullName) }
+            $name = $safeEntry.Path.Substring($rootPrefix.Length)
+            if ($name.IndexOf('/') -ge 0) { throw ('Redis 发行包不允许嵌套文件目录：{0}。' -f $entry.FullName) }
+            $canonical = @($contract.Keys | Where-Object { $_ -ceq $name })
+            if ($canonical.Count -ne 1) { throw ('Redis 发行包包含未批准文件：{0}。' -f $name) }
             if ($entries.ContainsKey($name)) { throw ('Redis 发行包包含重复文件：{0}。' -f $name) }
-            $entries.Add($name, [pscustomobject]@{ Name = $name; Length = $entry.Length; Sha256 = $null; Kind = $contract[$name].Kind; Architecture = $contract[$name].Architecture })
+            $entries.Add($name, [pscustomobject]@{ Name = $name; EntryPath = $safeEntry.Path; Length = $entry.Length; Sha256 = $null; Kind = $contract[$name].Kind; Architecture = $contract[$name].Architecture })
             if ($contract[$name].Architecture -in @('x64','x86','ARM64')) {
                 $temporary = [IO.Path]::GetTempFileName()
                 try {
@@ -284,6 +308,7 @@ function Assert-RedisDistributionArchive {
             }
         }
     } finally { $zip.Dispose() }
+    if (-not $rootDirectorySeen) { throw ('Redis 发行包缺少固定顶层目录：{0}。' -f $script:RedisDistributionDirectoryName) }
     foreach ($name in $contract.Keys) { if ($contract[$name].Required -and -not $entries.ContainsKey($name)) { throw ('Redis 发行包缺少必需文件：{0}。' -f $name) } }
     [pscustomobject][ordered]@{ ArchivePath = $archive; ArchiveSha256 = $archiveHash; Version = $script:RedisVersion; Architecture = $script:RedisArchitecture; RuntimeFamily = $script:RedisRuntimeFamily; Files = @($entries.Values | Sort-Object Name) }
 }
@@ -294,8 +319,10 @@ function Copy-RedisDistribution {
     $copied = New-Object System.Collections.Generic.List[object]
     try {
         foreach ($file in @($Distribution.Files | Sort-Object Name)) {
-            $entry = $archive.GetEntry([string]$file.Name)
-            if ($null -eq $entry) { throw ('Redis 发行包条目读回失败：{0}。' -f $file.Name) }
+            $expectedEntryPath = $script:RedisDistributionDirectoryName + '/' + [string]$file.Name
+            if ([string]$file.EntryPath -cne $expectedEntryPath) { throw ('Redis 发行包条目路径不匹配：{0}。' -f $file.Name) }
+            $entry = $archive.GetEntry($expectedEntryPath)
+            if ($null -eq $entry) { throw ('Redis 发行包条目读回失败：{0}。' -f $expectedEntryPath) }
             $target = Join-Path $DestinationRoot $file.Name
             Assert-NoReparsePoint $target
             $input = $entry.Open()
@@ -322,6 +349,7 @@ function Assert-MarkerDistribution {
         if ($entry.Count -ne 1) { throw ('marker 构件清单缺少或重复文件：{0}。' -f $name) }
         $target = Join-Path $Layout.CodeRoot $name
         if (-not (Test-SamePath $entry[0].Path $target)) { throw ('marker 构件路径重定向：{0}。' -f $name) }
+        if ($entry[0].PSObject.Properties.Name -contains 'EntryPath' -and [string]$entry[0].EntryPath -cne ($script:RedisDistributionDirectoryName + '/' + $name)) { throw ('marker ZIP 条目路径重定向：{0}。' -f $name) }
         Assert-MarkerArtifact -Marker ([pscustomobject]@{ ArtifactSha256 = $entry[0].Sha256 }) -Path $target -HashProperty ArtifactSha256
         if ([string]$entry[0].Architecture -in @('x64','x86','ARM64') -and (Get-PeArchitecture $target) -ne [string]$entry[0].Architecture) { throw ('磁盘构件架构漂移：{0}。' -f $name) }
     }

@@ -42,15 +42,16 @@ function New-PeBytes {
 }
 
 function New-DistributionArchive {
-    param([Parameter(Mandatory)][string]$Path, [string]$Architecture = 'x64', [string[]]$Missing = @(), [string[]]$Extra = @(), [switch]$Traversal, [switch]$Duplicate)
+    param([Parameter(Mandatory)][string]$Path, [string]$Architecture = 'x64', [string[]]$Missing = @(), [string[]]$Extra = @(), [string]$AlternateRoot = 'Redis-8.10.3-Windows-x64-msys2', [switch]$Traversal, [switch]$Backslash, [switch]$Absolute, [switch]$Duplicate)
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $contract = Invoke-Private -Action { Get-RedisDistributionContract }
     $zip = [IO.Compression.ZipFile]::Open($Path, [IO.Compression.ZipArchiveMode]::Create)
     try {
+        $rootEntry = $zip.CreateEntry($AlternateRoot + '/')
         foreach ($name in $contract.Keys) {
             if ($Missing -contains $name) { continue }
-            $entryName = if ($Traversal -and $name -eq 'redis-server.exe') { '../redis-server.exe' } else { $name }
+            $entryName = if ($Traversal -and $name -eq 'redis-server.exe') { $AlternateRoot + '/../redis-server.exe' } elseif ($Backslash -and $name -eq 'redis-server.exe') { $AlternateRoot + '\' + $name } elseif ($Absolute -and $name -eq 'redis-server.exe') { '/redis-server.exe' } else { $AlternateRoot + '/' + $name }
             $entry = $zip.CreateEntry($entryName)
             $stream = $entry.Open()
             try {
@@ -64,12 +65,12 @@ function New-DistributionArchive {
             } finally { $stream.Dispose() }
         }
         foreach ($name in $Extra) {
-            $entry = $zip.CreateEntry($name)
+            $entry = $zip.CreateEntry($AlternateRoot + '/' + $name)
             $stream = $entry.Open()
             try { $bytes = [Text.Encoding]::UTF8.GetBytes(('fixture:' + $name)); $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
         }
         if ($Duplicate) {
-            $entry = $zip.CreateEntry('redis-server.exe')
+            $entry = $zip.CreateEntry($AlternateRoot + '/redis-server.exe')
             $stream = $entry.Open()
             try { $bytes = New-PeBytes; $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
         }
@@ -118,7 +119,7 @@ try {
         $dll = @($distribution.Files | Where-Object Name -eq 'msys-2.0.dll')[0]
         $dllPath = Join-Path $testRoot $dll.Name
         $zip = [IO.Compression.ZipFile]::OpenRead($path)
-        try { $dllEntry = $zip.GetEntry($dll.Name); $input = $dllEntry.Open(); $output = [IO.File]::Open($dllPath, [IO.FileMode]::CreateNew); try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() } } finally { $zip.Dispose() }
+        try { $dllEntry = $zip.GetEntry($dll.EntryPath); $input = $dllEntry.Open(); $output = [IO.File]::Open($dllPath, [IO.FileMode]::CreateNew); try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() } } finally { $zip.Dispose() }
         $bytes = [IO.File]::ReadAllBytes($dllPath); $bytes[0] = $bytes[0] -bxor 1; [IO.File]::WriteAllBytes($dllPath, $bytes)
         Assert-Throws -Action { Invoke-Private -Action { param($m, $p) Assert-MarkerArtifact -Marker $m -Path $p -HashProperty ArtifactSha256 } -Arguments @([pscustomobject]@{ ArtifactSha256 = $dll.Sha256 }, $dllPath) } -MessagePattern '*哈希不匹配*'
         $bytes = [IO.File]::ReadAllBytes($path); $bytes[$bytes.Length - 1] = $bytes[$bytes.Length - 1] -bxor 1
@@ -148,7 +149,27 @@ try {
         New-DistributionArchive -Path $duplicatePath -Duplicate
         $duplicateHash = (Get-FileHash -LiteralPath $duplicatePath -Algorithm SHA256).Hash
         Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($duplicatePath, $duplicateHash) } -MessagePattern '*重复文件*'
-        'ZIP 路径穿越拒绝通过。'
+        $casePath = Join-Path $testRoot 'case-collision.zip'
+        New-DistributionArchive -Path $casePath -Extra @('REDIS-SERVER.EXE')
+        $caseHash = (Get-FileHash -LiteralPath $casePath -Algorithm SHA256).Hash
+        Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($casePath, $caseHash) } -MessagePattern '*未批准文件*'
+        $wrongRootPath = Join-Path $testRoot 'wrong-root.zip'
+        New-DistributionArchive -Path $wrongRootPath -AlternateRoot 'Redis-8.10.3-Windows-x64-msys2-other'
+        $wrongRootHash = (Get-FileHash -LiteralPath $wrongRootPath -Algorithm SHA256).Hash
+        Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($wrongRootPath, $wrongRootHash) } -MessagePattern '*顶层目录名称不匹配*'
+        $nestedPath = Join-Path $testRoot 'nested.zip'
+        New-DistributionArchive -Path $nestedPath -Extra @('nested/extra.txt')
+        $nestedHash = (Get-FileHash -LiteralPath $nestedPath -Algorithm SHA256).Hash
+        Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($nestedPath, $nestedHash) } -MessagePattern '*嵌套路径*'
+        $backslashPath = Join-Path $testRoot 'backslash.zip'
+        New-DistributionArchive -Path $backslashPath -Backslash
+        $backslashHash = (Get-FileHash -LiteralPath $backslashPath -Algorithm SHA256).Hash
+        Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($backslashPath, $backslashHash) } -MessagePattern '*反斜杠*'
+        $absolutePath = Join-Path $testRoot 'absolute.zip'
+        New-DistributionArchive -Path $absolutePath -Absolute
+        $absoluteHash = (Get-FileHash -LiteralPath $absolutePath -Algorithm SHA256).Hash
+        Assert-Throws -Action { Invoke-Private -Action { param($p, $s) Assert-RedisDistributionArchive -ArchivePath $p -ExpectedSha256 $s -SkipFixedCandidateCheck } -Arguments @($absolutePath, $absoluteHash) } -MessagePattern '*绝对路径*'
+        'ZIP 顶层目录、路径穿越、绝对路径、反斜杠、嵌套目录、额外文件和重复文件拒绝通过。'
     }
 
     $results += New-Result -Id 'F-MSYS2-PATH' -Action {
@@ -176,7 +197,7 @@ try {
         $code = Join-Path $testRoot 'code'; [IO.Directory]::CreateDirectory($code) | Out-Null
         $zip = [IO.Compression.ZipFile]::OpenRead($path)
         try {
-            foreach ($entry in $zip.Entries) {
+            foreach ($entry in $zip.Entries | Where-Object { -not ([string]$_.FullName).EndsWith('/') }) {
                 $target = Join-Path $code $entry.Name
                 $input = $entry.Open(); $output = [IO.File]::Open($target, [IO.FileMode]::CreateNew)
                 try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() }
@@ -185,7 +206,7 @@ try {
         $files = New-Object System.Collections.Generic.List[object]
         foreach ($item in @($distribution.Files)) {
             $target = Join-Path $code $item.Name
-            $files.Add([pscustomobject]@{ Name = $item.Name; Path = $target; Sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); Length = ([IO.FileInfo]$target).Length; Kind = $item.Kind; Architecture = $item.Architecture })
+            $files.Add([pscustomobject]@{ Name = $item.Name; EntryPath = $item.EntryPath; Path = $target; Sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant(); Length = ([IO.FileInfo]$target).Length; Kind = $item.Kind; Architecture = $item.Architecture })
         }
         $layout = [pscustomobject]@{ CodeRoot = $code }
         $marker = [pscustomobject]@{ RedisVersion = '8.10.3'; RedisArchitecture = 'x64'; RedisRuntimeFamily = 'MSYS2'; RedisArchiveSha256 = 'af16df340525b431e9ec8dabfd625d5e7a233f82805b5418819904ea909c447f'; RedisDistributionFiles = $files.ToArray() }
@@ -198,7 +219,7 @@ try {
 
     $results += New-Result -Id 'I-IDEMPOTENT-INSTALL' -Action {
         $source = [IO.File]::ReadAllText($modulePath, (New-Object Text.UTF8Encoding($true)))
-        Assert-Condition ($source.Contains('AlreadyInstalled') -and $source.Contains('Assert-MarkerDistribution')) 'INSTALL 幂等或 marker 完整校验缺失。'
+        Assert-Condition ($source.Contains('AlreadyInstalled') -and $source.Contains('Assert-MarkerDistribution') -and $source.Contains('$archive.GetEntry($expectedEntryPath)')) 'INSTALL 幂等、marker 或 ZIP 条目读回校验缺失。'
         'INSTALL 幂等完整归属路径保留。'
     }
 
