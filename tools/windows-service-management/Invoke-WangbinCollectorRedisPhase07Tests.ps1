@@ -184,8 +184,8 @@ try {
         $layout = Invoke-Private -Action { Get-WangbinCollectorRedisLayout -ProgramFilesRoot 'C:\pf' -ProgramDataRoot 'C:\pd' }
         $xml = [xml](Invoke-Private -Action { param($l) New-WinSwXml -Layout $l } -Arguments @($layout))
         $config = Invoke-Private -Action { param($l) New-RedisConfigText -Layout $l -Password 'fixture-password' } -Arguments @($layout)
-        Assert-Condition ($xml.service.arguments -ceq '"/c/pd/WangbinCollector/Redis/config/redis.conf"') 'WinSW XML 未使用 MSYS2 配置路径。'
-        Assert-Condition ($config -like '*/c/pd/WangbinCollector/Redis/data*' -and $config -like '*/c/pd/WangbinCollector/Redis/logs/redis.log*') 'Redis 配置路径未使用 MSYS2 形式。'
+        Assert-Condition ($xml.service.arguments -ceq 'redis.conf' -and $xml.service.workingdirectory -ceq $layout.ConfigRoot) 'WinSW XML must use relative redis.conf under the controlled config directory.'
+        Assert-Condition ($config -like '*C:/pd/WangbinCollector/Redis/data*' -and $config -like '*C:/pd/WangbinCollector/Redis/logs/redis.log*') 'Redis config must use Windows forward-slash absolute paths for dir and logfile.'
         '配置路径、WinSW XML 和进程参数一致性通过。'
     }
 

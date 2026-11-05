@@ -118,7 +118,7 @@ powershell.exe -NoProfile -File .\tools\windows-service-management\Invoke-Wangbi
 9. 为服务 SID 设置最小 ACL；
 10. 原子写入并读回 ownership marker。
 
-MSYS2 构件的 Redis 配置 `dir`、`logfile` 和 WinSW arguments 使用统一的 `/c/...` 形式；Windows 文件路径和进程命令行校验同时接受等价的 Windows/MSYS2 规范化形式，但不会用端口匹配替代进程归属。
+WinSW 将工作目录设为受控配置目录，并以相对文件名 `redis.conf` 启动 Redis，避免 Windows 服务账号下的 MSYS2 绝对路径挂载不可用；Redis 配置中的 `dir`、`logfile` 使用指向本产品专用目录的 Windows 正斜杠绝对路径。进程归属仍校验固定可执行文件、受控 wrapper/SCM、配置参数、文件哈希和监听 PID，不会用端口匹配替代进程归属。
 
 失败时不会删除半安装目录，也不会盲目注销无法证明归属的服务；目录和 marker 会保留供人工审计。
 安装器不会修改 Collector 的 `application.yml`、环境变量或其他用户配置。由于 Redis 配置使用受保护的随机密码，部署 Collector 前必须通过项目既有的 Redis 密码注入方式配置同一凭据；Redis 管理器的 `STATUS` 只证明 Redis 服务自身，不把它冒充为 Collector 数据链路就绪。

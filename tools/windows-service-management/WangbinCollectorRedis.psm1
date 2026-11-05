@@ -85,8 +85,12 @@ function ConvertTo-Msys2Path {
 }
 
 function Test-CommandLineContainsPath {
-    param([Parameter(Mandatory)][string]$CommandLine, [Parameter(Mandatory)][string]$Path)
+    param([Parameter(Mandatory)][string]$CommandLine, [Parameter(Mandatory)][string]$Path, [switch]$AllowRelativeConfig)
     if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $false }
+    if ($AllowRelativeConfig -and
+        [regex]::IsMatch($CommandLine, '(?i)(?:^|\s)(?:"redis\.conf"|redis\.conf)\s*$')) {
+        return $true
+    }
     $normalizedCommand = $CommandLine.Replace([char]92, [char]47)
     $normalizedWindows = (ConvertTo-FullPath $Path).Replace([char]92, [char]47)
     $normalizedMsys = ConvertTo-Msys2Path $Path
@@ -138,16 +142,20 @@ function Get-WangbinCollectorRedisLayout {
     Assert-WindowsPlatform
     $programFiles = ConvertTo-FullPath $ProgramFilesRoot
     $programData = ConvertTo-FullPath $ProgramDataRoot
-    $productCode = Join-Path $programFiles $script:ProductName
-    $codeRoot = Join-Path $productCode 'Redis\bin'
-    $productData = Join-Path $programData $script:ProductName
-    $dataRoot = Join-Path $productData 'Redis'
+    $productCodeParent = Join-Path $programFiles $script:ProductName
+    $productCode = Join-Path $productCodeParent 'Redis'
+    $codeRoot = Join-Path $productCode 'bin'
+    $productDataParent = Join-Path $programData $script:ProductName
+    $productData = Join-Path $productDataParent 'Redis'
+    $dataRoot = $productData
     [pscustomobject][ordered]@{
         ProductName = $script:ProductName
         ServiceName = $script:ServiceName
         Port = $Port
+        ProductCodeParentRoot = $productCodeParent
         ProductCodeRoot = $productCode
         CodeRoot = $codeRoot
+        ProductDataParentRoot = $productDataParent
         ProductDataRoot = $productData
         DataRoot = $dataRoot
         ConfigRoot = Join-Path $dataRoot 'config'
@@ -314,27 +322,42 @@ function Assert-RedisDistributionArchive {
 }
 
 function Copy-RedisDistribution {
-    param([Parameter(Mandatory)]$Distribution, [Parameter(Mandatory)][string]$ArchivePath, [Parameter(Mandatory)][string]$DestinationRoot, [Parameter(Mandatory)][string]$ServiceSid)
+    param([Parameter(Mandatory)]$Distribution, [Parameter(Mandatory)][string]$ArchivePath, [Parameter(Mandatory)][string]$DestinationRoot, [string]$ServiceSid)
+    $copyStage = 'OPEN_ARCHIVE'
     $archive = [IO.Compression.ZipFile]::OpenRead((ConvertTo-FullPath $ArchivePath))
     $copied = New-Object System.Collections.Generic.List[object]
     try {
-        foreach ($file in @($Distribution.Files | Sort-Object Name)) {
-            $expectedEntryPath = $script:RedisDistributionDirectoryName + '/' + [string]$file.Name
-            if ([string]$file.EntryPath -cne $expectedEntryPath) { throw ('Redis 发行包条目路径不匹配：{0}。' -f $file.Name) }
-            $entry = $archive.GetEntry($expectedEntryPath)
-            if ($null -eq $entry) { throw ('Redis 发行包条目读回失败：{0}。' -f $expectedEntryPath) }
-            $target = Join-Path $DestinationRoot $file.Name
-            Assert-NoReparsePoint $target
-            $input = $entry.Open()
-            $output = [IO.File]::Open($target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-            try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() }
-            Set-ControlledFileAcl -Path $target -Mode Code -ServiceSid $ServiceSid
-            $actual = Get-Sha256 $target
-            if ($actual -cne [string]$file.Sha256 -and [string]$file.Name -notin @('redis.conf', 'sentinel.conf', 'README.md', 'README.zh_CN.md', 'start.bat')) { throw ('Redis 发行文件复制后哈希不匹配：{0}。' -f $file.Name) }
-            $copied.Add([pscustomobject]@{ Name = $file.Name; Path = $target; Sha256 = $actual; Length = ([IO.FileInfo]$target).Length; Kind = $file.Kind; Architecture = $file.Architecture })
+        $copyStage = 'ENUMERATE_FILES'
+        $files = @($Distribution.Files | Sort-Object Name)
+        $copyStage = 'COPY_FILES'
+        foreach ($file in $files) {
+            try {
+                $expectedEntryPath = $script:RedisDistributionDirectoryName + '/' + [string]$file.Name
+                if ([string]$file.EntryPath -cne $expectedEntryPath) { throw ('Redis 发行包条目路径不匹配：{0}。' -f $file.Name) }
+                $entry = $archive.GetEntry($expectedEntryPath)
+                if ($null -eq $entry) { throw ('Redis 发行包条目读回失败：{0}。' -f $expectedEntryPath) }
+                $target = Join-Path $DestinationRoot $file.Name
+                Assert-NoReparsePoint $target
+                $input = $entry.Open()
+                $output = [IO.File]::Open($target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                try { $input.CopyTo($output) } finally { $output.Dispose(); $input.Dispose() }
+                if ([string]::IsNullOrWhiteSpace($ServiceSid)) {
+                    $null = Set-ControlledFileAcl -Path $target -Mode Code
+                } else {
+                    $null = Set-ControlledFileAcl -Path $target -Mode Code -ServiceSid $ServiceSid
+                }
+                $actual = Get-Sha256 $target
+                if ($actual -cne [string]$file.Sha256 -and [string]$file.Name -notin @('redis.conf', 'sentinel.conf', 'README.md', 'README.zh_CN.md', 'start.bat')) { throw ('Redis 发行文件复制后哈希不匹配：{0}。' -f $file.Name) }
+                [void]$copied.Add([pscustomobject]@{ Name = $file.Name; Path = $target; Sha256 = $actual; Length = ([IO.FileInfo]$target).Length; Kind = $file.Kind; Architecture = $file.Architecture })
+            } catch {
+                throw ('Redis 发行文件 {0} 复制或初始 ACL 失败：{1}' -f [string]$file.Name, $_.Exception.Message)
+            }
         }
+        $copyStage = 'RETURN_RESULT'
+        return @($copied.ToArray())
+    } catch {
+        throw ('Redis 发行包复制阶段 {0} 失败：{1}' -f $copyStage, $_.Exception.Message)
     } finally { $archive.Dispose() }
-    return @($copied)
 }
 
 function Assert-MarkerDistribution {
@@ -427,6 +450,7 @@ function New-DirectorySecurity {
     $acl.SetOwner($script:SystemSid)
     $inherit = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
     $none = [Security.AccessControl.PropagationFlags]::None
+    $noRights = [Security.AccessControl.FileSystemRights]0
     foreach ($sid in @($script:SystemSid, $script:AdministratorsSid)) {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid, [Security.AccessControl.FileSystemRights]::FullControl, $inherit, $none, [Security.AccessControl.AccessControlType]::Allow)))
     }
@@ -437,9 +461,9 @@ function New-DirectorySecurity {
             Traverse { $rights = [Security.AccessControl.FileSystemRights]'Traverse, ReadAttributes, Synchronize' }
             Read { $rights = [Security.AccessControl.FileSystemRights]::ReadAndExecute }
             Write { $rights = [Security.AccessControl.FileSystemRights]::Modify }
-            Admin { $rights = [Security.AccessControl.FileSystemRights]::None }
+            Admin { $rights = $noRights }
         }
-        if ($rights -ne [Security.AccessControl.FileSystemRights]::None) {
+        if ($rights -ne $noRights) {
             $inheritance = [Security.AccessControl.InheritanceFlags]::None
             if ($Mode -in @('Code', 'Read', 'Write')) { $inheritance = $inherit }
             $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($service, $rights, $inheritance, $none, [Security.AccessControl.AccessControlType]::Allow)))
@@ -451,11 +475,12 @@ function New-DirectorySecurity {
 function New-FileSecurity {
     param(
         [Parameter(Mandatory)][ValidateSet('Code', 'Read', 'Write', 'Admin')][string]$Mode,
-        [string]$ServiceSid
+        [string]$ServiceSid,
+        [switch]$PreserveOwner
     )
     $acl = New-Object Security.AccessControl.FileSecurity
     $acl.SetAccessRuleProtection($true, $false)
-    $acl.SetOwner($script:SystemSid)
+    if (-not $PreserveOwner) { $acl.SetOwner($script:SystemSid) }
     foreach ($sid in @($script:SystemSid, $script:AdministratorsSid)) {
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($sid, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]::None, [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)))
     }
@@ -472,15 +497,27 @@ function New-FileSecurity {
 function Set-ControlledDirectoryAcl {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Mode, [string]$ServiceSid)
     Assert-NoReparsePoint $Path
-    $acl = New-DirectorySecurity -Mode $Mode -ServiceSid $ServiceSid
+    if ([string]::IsNullOrWhiteSpace($ServiceSid)) {
+        $acl = New-DirectorySecurity -Mode $Mode
+    } else {
+        $acl = New-DirectorySecurity -Mode $Mode -ServiceSid $ServiceSid
+    }
     Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
 }
 
 function Set-ControlledFileAcl {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Mode, [string]$ServiceSid)
     Assert-NoReparsePoint $Path
-    $acl = New-FileSecurity -Mode $Mode -ServiceSid $ServiceSid
+    if ([string]::IsNullOrWhiteSpace($ServiceSid)) {
+        $acl = New-FileSecurity -Mode $Mode -PreserveOwner
+    } else {
+        $acl = New-FileSecurity -Mode $Mode -ServiceSid $ServiceSid -PreserveOwner
+    }
     Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+    $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
+    Invoke-NativeProcess -FilePath $icacls -Arguments ('"{0}" /setowner "NT AUTHORITY\SYSTEM"' -f $Path) -Deadline ([datetime]::UtcNow.AddSeconds(10))
+    $owner = (Get-Acl -LiteralPath $Path -ErrorAction Stop).GetOwner([Security.Principal.SecurityIdentifier]).Value
+    if ($owner -cne $script:SystemSid.Value) { throw ('受控文件所有者设置后不匹配：{0}' -f $Path) }
 }
 
 function Get-AccessRuleSignature {
@@ -565,7 +602,7 @@ function Write-ControlledText {
         [IO.File]::WriteAllText($temporary, $Text, $script:Utf8)
         Set-ControlledFileAcl -Path $temporary -Mode $Mode -ServiceSid $ServiceSid
         if ($Replace -and [IO.File]::Exists($Path)) {
-            [IO.File]::Replace($temporary, $Path, $null)
+            [IO.File]::Replace($temporary, $Path, [System.Management.Automation.Language.NullString]::Value)
         } else {
             [IO.File]::Move($temporary, $Path)
         }
@@ -644,7 +681,7 @@ function Invoke-NativeProcess {
             throw ('受控运维请求失败：{0}，退出码 {1}。' -f [IO.Path]::GetFileName($FilePath), $process.ExitCode)
         }
         if ($CaptureOutput) { return $outText }
-        return $null
+        return
     } finally {
         $process.Dispose()
     }
@@ -653,16 +690,30 @@ function Invoke-NativeProcess {
 function Get-ServiceCommandTail {
     param([Parameter(Mandatory)][string]$CommandLine, [Parameter(Mandatory)][string]$Executable)
     if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $null }
-    $pathPattern = [regex]::Escape((ConvertTo-FullPath $Executable).Replace('\', '/')).Replace('/', '[/\\]')
-    $match = [regex]::Match($CommandLine, '^\s*(?:"' + $pathPattern + '"|' + $pathPattern + ')(?:\s+(.*))?\s*$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-    if (-not $match.Success) { return $null }
-    return $match.Groups[1].Value.Trim()
+    $actual = $CommandLine.Trim()
+    $expectedPath = (ConvertTo-FullPath $Executable).Replace('/', '\')
+    $expectedTail = $null
+    $prefixes = @(
+        ('"' + $expectedPath + '"')
+        $expectedPath
+    )
+    foreach ($prefix in $prefixes) {
+        if ($actual.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $remainder = $actual.Substring($prefix.Length).Trim()
+            if ([string]::IsNullOrEmpty($remainder)) { $expectedTail = '' } else { $expectedTail = $remainder }
+            break
+        }
+    }
+    return [pscustomobject]@{ Tail = $expectedTail }
 }
 
 function Test-ServicePath {
     param([Parameter(Mandatory)][string]$Actual, [Parameter(Mandatory)][string]$Expected, [string]$ExpectedTail = '')
-    $tail = Get-ServiceCommandTail -CommandLine $Actual -Executable $Expected
-    return $null -ne $tail -and $tail -ceq $ExpectedTail
+    $parsed = Get-ServiceCommandTail -CommandLine $Actual -Executable $Expected
+    if ($null -eq $parsed) { return $false }
+    $actualTail = if ($null -eq $parsed.Tail) { '' } else { [string]$parsed.Tail }
+    $expectedTailValue = if ($null -eq $ExpectedTail) { '' } else { [string]$ExpectedTail }
+    return $actualTail.Replace('/', '\') -ceq $expectedTailValue.Replace('/', '\')
 }
 
 function Get-ProcessRecord {
@@ -755,7 +806,13 @@ function Assert-ServiceDacl {
 
 function Assert-ServiceConfiguration {
     param([Parameter(Mandatory)]$Layout, [Parameter(Mandatory)]$Service)
-    if (-not (Test-ServicePath -Actual $Service.PathName -Expected $Layout.WrapperExecutable -ExpectedTail ('//RS//' + $Layout.ServiceName))) { throw 'SCM wrapper 完整命令行不是本产品固定服务调用。' }
+    # WinSW v2.12.0 registers the SCM ImagePath as the quoted wrapper path;
+    # the //RS// service-dispatch tail is used by the wrapper process and is
+    # not persisted in the service's ImagePath on this host.
+    $expectedServiceTail = ''
+    if (-not (Test-ServicePath -Actual $Service.PathName -Expected $Layout.WrapperExecutable -ExpectedTail $expectedServiceTail)) {
+        throw ('SCM wrapper 完整命令行不是本产品固定服务调用；实际路径：{0}；期望可执行文件：{1}；期望尾部：{2}。' -f $Service.PathName, $Layout.WrapperExecutable, $expectedServiceTail)
+    }
     if ($Service.StartName -ine ('NT SERVICE\' + $Layout.ServiceName)) { throw 'SCM 服务账号不是本产品虚拟服务账号。' }
     if ($Service.StartMode -ine 'Manual') { throw 'SCM 启动类型不是 Manual。' }
     $registry = Get-ServiceRegistrySnapshot $Layout.ServiceName
@@ -852,7 +909,7 @@ function Get-ManagedRedisProcessIdentity {
     $children = @(Get-CimInstance Win32_Process -Filter ('ParentProcessId={0}' -f [int]$Service.ProcessId) -OperationTimeoutSec 2 -ErrorAction Stop)
     $redis = @($children | Where-Object {
         (Test-SamePath $_.ExecutablePath $Layout.RedisExecutable) -and
-        (Test-CommandLineContainsPath -CommandLine ([string]$_.CommandLine) -Path $Layout.RedisConfig) -and
+        (Test-CommandLineContainsPath -CommandLine ([string]$_.CommandLine) -Path $Layout.RedisConfig -AllowRelativeConfig) -and
         $null -ne $_.CreationDate -and $null -ne $wrapper.CreationDate -and $_.CreationDate -ge $wrapper.CreationDate
     })
     $unexpected = @($children | Where-Object {
@@ -884,7 +941,7 @@ function Get-ManagedRedisProcessCandidates {
         $name = [IO.Path]::GetFileName($Layout.RedisExecutable)
         return @(Get-CimInstance Win32_Process -Filter ("Name='{0}'" -f $name) -OperationTimeoutSec 2 -ErrorAction Stop | Where-Object {
             (Test-SamePath $_.ExecutablePath $Layout.RedisExecutable) -and
-            (Test-CommandLineContainsPath -CommandLine ([string]$_.CommandLine) -Path $Layout.RedisConfig)
+            (Test-CommandLineContainsPath -CommandLine ([string]$_.CommandLine) -Path $Layout.RedisConfig -AllowRelativeConfig)
         })
     } catch {
         throw '无法读取 Redis 进程候选；归属状态为 UNKNOWN，拒绝生命周期操作。'
@@ -1279,8 +1336,8 @@ function New-WinSwXml {
         name = $Layout.ServiceName
         description = 'WangbinCollector 独立 Redis 服务'
         executable = $Layout.RedisExecutable
-        arguments = ('"{0}"' -f (ConvertTo-Msys2Path $Layout.RedisConfig))
-        workingdirectory = $Layout.RedisDataRoot
+        arguments = 'redis.conf'
+        workingdirectory = $Layout.ConfigRoot
         logpath = $Layout.RedisLogRoot
         startmode = 'Manual'
         stoptimeout = '120 sec'
@@ -1332,8 +1389,8 @@ maxmemory 256mb
 maxmemory-policy noeviction
 appendonly yes
 appendfsync everysec
-dir "$(ConvertTo-Msys2Path $Layout.RedisDataRoot)"
-logfile "$(ConvertTo-Msys2Path $Layout.RedisLog)"
+dir "$($Layout.RedisDataRoot.Replace([char]92, [char]47))"
+logfile "$($Layout.RedisLog.Replace([char]92, [char]47))"
 save 900 1
 save 300 10
 save 60 10000
@@ -1470,10 +1527,16 @@ function Install-WangbinCollectorRedis {
     Assert-PortVacant -Port $Port
     $createdPaths = New-Object System.Collections.Generic.List[string]
     $serviceInstalled = $false
+    $installStage = 'INITIALIZE'
     try {
+        $installStage = 'CREATE_PARENT_DIRECTORIES'
         $programFilesParent = [IO.Path]::GetDirectoryName($layout.ProductCodeRoot)
         $programDataParent = [IO.Path]::GetDirectoryName($layout.ProductDataRoot)
-        foreach ($parent in @($programFilesParent, $programDataParent)) { Assert-NoReparsePoint $parent; if (-not [IO.Directory]::Exists($parent)) { throw ('产品父目录不存在：{0}。' -f $parent) } }
+        foreach ($parent in @($programFilesParent, $programDataParent)) {
+            Assert-NoReparsePoint $parent
+            if (-not [IO.Directory]::Exists($parent)) { [IO.Directory]::CreateDirectory($parent) | Out-Null }
+        }
+        $installStage = 'CREATE_DEDICATED_DIRECTORIES'
         [IO.Directory]::CreateDirectory($layout.ProductCodeRoot) | Out-Null; $createdPaths.Add($layout.ProductCodeRoot)
         [IO.Directory]::CreateDirectory($layout.CodeRoot) | Out-Null; $createdPaths.Add($layout.CodeRoot)
         [IO.Directory]::CreateDirectory($layout.ProductDataRoot) | Out-Null; $createdPaths.Add($layout.ProductDataRoot)
@@ -1482,29 +1545,44 @@ function Install-WangbinCollectorRedis {
         [IO.Directory]::CreateDirectory($layout.RedisDataRoot) | Out-Null; $createdPaths.Add($layout.RedisDataRoot)
         [IO.Directory]::CreateDirectory($layout.RedisLogRoot) | Out-Null; $createdPaths.Add($layout.RedisLogRoot)
         [IO.Directory]::CreateDirectory($layout.StateRoot) | Out-Null; $createdPaths.Add($layout.StateRoot)
+        $installStage = 'APPLY_INITIAL_DIRECTORY_ACL'
         foreach ($entry in @(
             @($layout.ProductCodeRoot, 'Admin'), @($layout.CodeRoot, 'Admin'),
             @($layout.ProductDataRoot, 'Admin'), @($layout.DataRoot, 'Admin'),
             @($layout.ConfigRoot, 'Admin'), @($layout.RedisDataRoot, 'Admin'),
             @($layout.RedisLogRoot, 'Admin'), @($layout.StateRoot, 'Admin')
         )) { Set-ControlledDirectoryAcl -Path $entry[0] -Mode $entry[1] }
-        $copiedDistribution = Copy-RedisDistribution -Distribution $redisDistribution -ArchivePath $redisArchive -DestinationRoot $layout.CodeRoot -ServiceSid ''
-        $redisDistribution.Files = @($copiedDistribution)
+        $installStage = 'COPY_REDIS_DISTRIBUTION_CALL'
+        $copiedDistribution = @(Copy-RedisDistribution -Distribution $redisDistribution -ArchivePath $redisArchive -DestinationRoot $layout.CodeRoot)
+        $installStage = 'COPY_REDIS_DISTRIBUTION_RESULT'
+        if ($copiedDistribution.Count -ne $redisDistribution.Files.Count) { throw ('Redis 发行文件复制结果数量不匹配：实际 {0}，预期 {1}。' -f $copiedDistribution.Count, $redisDistribution.Files.Count) }
+        $redisDistribution = [pscustomobject][ordered]@{
+            ArchivePath = $redisDistribution.ArchivePath
+            ArchiveSha256 = $redisDistribution.ArchiveSha256
+            Version = $redisDistribution.Version
+            Architecture = $redisDistribution.Architecture
+            RuntimeFamily = $redisDistribution.RuntimeFamily
+            Files = $copiedDistribution
+        }
+        $installStage = 'COPY_WINSW_EXECUTABLE'
         [IO.File]::Copy($winSwSource, $layout.WrapperExecutable, $false)
         Set-ControlledFileAcl -Path $layout.WrapperExecutable -Mode Code
         Assert-Sha256 -Path $layout.WrapperExecutable -Expected $wrapperHash | Out-Null
+        $installStage = 'WRITE_WINSW_XML'
         $xmlText = New-WinSwXml -Layout $layout
         Write-ControlledText -Path $layout.WrapperXml -Text $xmlText -Mode Code
+        $installStage = 'WRITE_REDIS_SECRET'
         $password = New-RandomSecret
         $secretText = ([ordered]@{ RedisPassword = $password; CreatedUtc = [datetime]::UtcNow.ToString('o') } | ConvertTo-Json -Depth 4)
         Write-ControlledText -Path $layout.SecretFile -Text $secretText -Mode Admin
+        $installStage = 'WRITE_REDIS_CONFIG'
         $configText = New-RedisConfigText -Layout $layout -Password $password
         Write-ControlledText -Path $layout.RedisConfig -Text $configText -Mode Read
-        $configEntry = @($redisDistribution.Files | Where-Object { $_.Name -ceq 'redis.conf' })[0]
-        $configEntry.Sha256 = Get-Sha256 $layout.RedisConfig
         $password = $null; $secretText = $null; $configText = $null
+        $installStage = 'WRITE_INSTALLING_MARKER'
         $marker = New-InitialMarker -Layout $layout -RedisDistribution $redisDistribution -RedisHash (Get-Sha256 $layout.RedisExecutable) -WrapperHash $wrapperHash -XmlHash (Get-Sha256 $layout.WrapperXml) -ConfigHash (Get-Sha256 $layout.RedisConfig) -SecretHash (Get-Sha256 $layout.SecretFile) -RedisVersion $script:RedisVersion -WrapperVersion (Get-FileVersionText $winSwSource) -RedisSource $RedisSourceDescription -WrapperSource $WinSwSourceDescription -RedisLicensePath $redisLicense -WrapperLicensePath $winSwLicense -RedisLicenseHash $redisLicenseHash -WrapperLicenseHash $wrapperLicenseHash
         Write-ControlledText -Path $layout.MarkerFile -Text ($marker | ConvertTo-Json -Depth 8) -Mode Admin
+        $installStage = 'REGISTER_SERVICE'
         $deadline = [datetime]::UtcNow.AddSeconds(30)
         Invoke-NativeProcess -FilePath $layout.WrapperExecutable -Arguments 'install' -Deadline $deadline
         $serviceInstalled = $true
@@ -1533,11 +1611,11 @@ function Install-WangbinCollectorRedis {
         Save-ManagedMarker -Layout $layout -Marker $marker
         [pscustomobject]@{ Installed = $true; AlreadyInstalled = $false; ServiceName = $layout.ServiceName; Port = $Port; OwnershipRecorded = $true; DataPreservedOnUninstall = $true }
     } catch {
-        $reason = $_.Exception.Message
+        $reason = ('阶段 {0}：{1}' -f $installStage, $_.Exception.Message)
         $rollback = 'NOT_ATTEMPTED'
         try {
             $service = Get-ServiceRecord $layout.ServiceName
-            if ($null -ne $service -and $serviceInstalled -and $service.State -eq 'Stopped' -and (Test-ServicePath -Actual $service.PathName -Expected $layout.WrapperExecutable -ExpectedTail ('//RS//' + $layout.ServiceName))) {
+            if ($null -ne $service -and $serviceInstalled -and $service.State -eq 'Stopped' -and (Test-ServicePath -Actual $service.PathName -Expected $layout.WrapperExecutable -ExpectedTail '')) {
                 Invoke-NativeProcess -FilePath $layout.WrapperExecutable -Arguments 'uninstall' -Deadline ([datetime]::UtcNow.AddSeconds(20))
                 $rollback = 'OWNED_SERVICE_UNREGISTERED'
             } elseif ($null -ne $service) {
@@ -1678,7 +1756,7 @@ function Uninstall-WangbinCollectorRedis {
     $listeners = @(Get-ListenerRecord -Port $Port)
     if ($listeners.Count -ne 0) { throw '卸载前目标端口仍有监听者；拒绝注销 SCM 服务。' }
     $service = Get-ServiceRecord $layout.ServiceName
-    if ($null -ne $service -and -not (Test-ServicePath -Actual $service.PathName -Expected $layout.WrapperExecutable -ExpectedTail ('//RS//' + $layout.ServiceName))) { throw '卸载前 SCM 路径发生变化，拒绝注销服务。' }
+    if ($null -ne $service -and -not (Test-ServicePath -Actual $service.PathName -Expected $layout.WrapperExecutable -ExpectedTail '')) { throw '卸载前 SCM 路径发生变化，拒绝注销服务。' }
     if ($null -ne $service) {
         Invoke-NativeProcess -FilePath $layout.WrapperExecutable -Arguments 'uninstall' -Deadline ([datetime]::UtcNow.AddSeconds(30))
         $deadline = [datetime]::UtcNow.AddSeconds(15)
