@@ -180,3 +180,40 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\windows-service-
 - 生产模块编译和阶段 06 已有回归。
 
 不能用模拟对象、Docker/WSL 或退出码替代真实 SCM 服务验收，也不能操作现役 `WangbinCollector-R2A2-*`、旧 `REISUN-*`、其 Redis/SQLite 数据或端口。阶段 07 的系统级门禁在缺少这些前置条件时必须保持 `BLOCKED`，不能报告 `PHASE_07 = PASS`。
+
+### TEST-07-02 / TEST-07-06 独立证据补采
+
+`Invoke-WangbinCollectorRedisPhase07Evidence.ps1` 是只读辅助脚本，不是新的服务管理器；不会安装、启动、停止、卸载服务，也不提供故障注入开关。JSON 只保存在本机 Hermes scratch，切勿提交原始回执、秘密文件或个人路径。
+
+```powershell
+# 提升权限终端中的无副作用故障恢复执行前检查清单；不能证明恢复成功
+pwsh -NoProfile -File .\tools\windows-service-management\Invoke-WangbinCollectorRedisPhase07Evidence.ps1 -Mode CRASH_RECOVERY
+
+# 仅当用户对本机重新授权 INSTALL/START，且管理员 PRECHECK 已通过、目标测试服务确实运行时，
+# 在提升权限的终端读回 SCM、安全描述符、磁盘 ACL、进程父子关系和目标监听者
+pwsh -NoProfile -File .\tools\windows-service-management\Invoke-WangbinCollectorRedisPhase07Evidence.ps1 -Mode AUDIT
+```
+
+`AUDIT` 只在完整 ownership、服务 SID 类型/DACL、目标目录及关键文件 ACL、受保护 R2-A2 前后状态核验通过时返回 `PASS`；缺失服务、普通用户令牌或状态不一致返回 `BLOCKED`。`CRASH_RECOVERY` 计划模式也要求管理员令牌：SCM 服务 DACL 可能让非管理员 CIM 查询返回空列表，不能将其解释为服务注销。脚本记录来自 `sc sdshow` 的目标服务完整 SDDL 及 SHA-256，目录/文件 ACL 的 SHA-256、ACE SID/权限掩码，不导出秘密内容或原始 Redis 命令行。安装、运行和卸载状态分别以真实生命周期回执、运行时读回、后续受控卸载回执关联；只读审计本身**不**执行卸载。
+
+`CRASH_RECOVERY` 仅输出 `PLAN_ONLY` / `NOT_RUN`，不能作为 TEST-07-06 的执行证据。真实故障注入需用户针对本机及已证明归属的当次 Redis PID **另行明确授权**，先重新执行提升权限的 PRECHECK，再用现有安装/启动入口建立隔离测试服务，核验 PID、父子关系、路径/哈希、创建时间、监听 PID、R2-A2 基线及认证测试数据。只允许对核验过的目标 Redis PID 做一次精确故障注入；随后观察真实 WinSW/SCM FailureActions、读回新 PID、认证 PING、持久化数据及保护基线。没有该授权或任何核验失败时不得注入、推测 `PASS` 或进入阶段 08。
+
+### 最后两项门禁一次安装合并验收（需单独授权）
+
+`Invoke-WangbinCollectorRedisPhase07FinalGates.ps1` 调用现有 `WangbinCollectorRedis.psm1` 完成受控生命周期，并复用既有真实 SCM PRECHECK 和上面的只读 ACL 证据脚本；它不是第二套服务管理器。先由用户在**管理员 Windows PowerShell 5.1**执行以下唯一的只读命令（从仓库根目录执行），无需配置构件路径：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\windows-service-management\Invoke-WangbinCollectorRedisPhase07FinalGates.ps1 -Mode PRECHECK
+```
+
+只读模式要求管理员令牌和完整 13/13 PRECHECK：比较两个 R2-A2 服务的 SCM/进程/端口/配置路径完整指纹及**九项**历史文件 ACL 哈希，验证目标 SCM 不存在、16379 空闲、专用目录安全、真实 ZIP/WinSW 及许可文件哈希。普通用户或任一失败均返回 `BLOCKED`；只有真实回执 `READY_FOR_AUTHORIZATION` 才可**请求用户针对本机本次安装、一次精确故障注入、停止和卸载的新一轮明确授权**。不得自动从源码读取固定授权短语代替人工确认。
+
+只有得到该授权后，才可在管理员窗口手工运行同一脚本的 `-Mode EXECUTE`；此模式会再次 PRECHECK，在本次窗口交互接收人工授权，随后再次 PRECHECK 才可能 INSTALL。INSTALL/START 只执行一次：独立读取 SCM DACL/Service SID 和受控目录、安装文件及生成的日志/数据文件 ACL，写入唯一 Cache/Stream 探针并持久化；再次验证 PID、可执行文件 SHA-256、配置参数、wrapper 父子关系和监听者后，只对该**单一进程句柄**故障注入一次。仅观察自动恢复，绝不以手工 START 代替；wrapper 不变时记录 WinSW 子进程恢复且 SCM 未触发，wrapper 更换时还要求真实 SCM 7031 事件证明服务故障恢复。成功认证 PING 与 Cache/Stream 回读、R2-A2 完整前后基线通过后，仅删除本次探针键并受控 STOP/UNINSTALL。任一异常返回 `BLOCKED`，保留现场供人工研判，不擅自清理或重复注入。UNINSTALL 按既有接口保留专用代码、配置、数据和秘密文件；回执只保存在本地 scratch，不得提交原始回执或敏感信息。
+
+若这次合并验收已经完成唯一的 INSTALL/START，却因只读证据采集错误停在故障注入前，不得重跑 `EXECUTE` 或再次安装。仅在原始中断回执的 SHA-256、同机管理员身份、未注入状态、唯一 INSTALL/START 和原 Redis PID 均经核验，且重新进行目标归属与 R2-A2 完整预检和独立 ACL 审计后，可由同一轮已授权的管理员手工确认 `-Mode RESUME`。此模式不调用 INSTALL/START；任一回执或实时 PID 不匹配时保持现场，不进行故障注入、STOP 或 UNINSTALL。
+
+### 本机阶段 07 最终回执
+
+本次经管理员手工授权的合并验收结果为 `PHASE_07 = PASS`、`REAL_SCM_ACCEPTANCE = PASS`，仅代表本次开发机真实 SCM/ACL/Redis 现场，不推断其他主机。最终原始回执仅保存在本地 scratch，其 SHA-256 为 `2552e2fa82a1576fc8697dc7e6d78c266f80a799b1d2bd5d5148f206b26beb5d`；首次执行在唯一 INSTALL/START 后因只读证据采集错误中断，原始中断回执 SHA-256 为 `dc3d32aa7db3eb7e97ee1724de2a1e4b3fec3a25cbddac63b67ac6411356de6a`。续验没有重复 INSTALL/START。
+
+`TEST-07-02 = PASS`：独立只读回执分别覆盖故障前、持久化写入后和恢复后的真实服务 DACL、Service SID、文件/目录 ACL 与进程归属（路径数分别为 36、37、37）。`TEST-07-06 = PASS`：单一受控 Redis 子进程异常退出后，观测到 wrapper 更换及真实 SCM 7031 事件，故归类为 **SCM 服务恢复**，不是将 WinSW 子进程恢复或手工 START 冒充 SCM 恢复；新进程通过认证 PING 与 Cache/Stream 数据回读。受控 STOP/UNINSTALL 后再次读回目标服务不存在、16379 无监听、R2-A2 历史指纹及九项 ACL 未变。运行中预检的总体 `BLOCKED` 是目标服务已注册、端口正在监听的预期结果；合并脚本逐项核验该边界，不能把运行中预检当作安装前的 13/13 空闲预检。
