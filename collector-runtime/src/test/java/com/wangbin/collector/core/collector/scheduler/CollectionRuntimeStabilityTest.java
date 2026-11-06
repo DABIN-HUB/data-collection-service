@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -172,11 +173,7 @@ class CollectionRuntimeStabilityTest {
         Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();
         when(collectionManager.getCollector(anyString()))
                 .thenAnswer(invocation -> collectors.get(invocation.getArgument(0)));
-        when(collectionManager.reconnectDeviceAutomatically(anyString(), anyLong(), any(ProtocolCollector.class)))
-                .thenAnswer(invocation -> {
-                    collectionManager.reconnectDevice(invocation.getArgument(0), invocation.getArgument(1));
-                    return true;
-                });
+
         CollectorProperties properties = collectorProperties();
         properties.getScheduler().setReconnectBaseDelayMs(500);
         properties.getScheduler().setReconnectMaxDelayMs(1000);
@@ -189,19 +186,25 @@ class CollectionRuntimeStabilityTest {
         int deviceCount = 50;
         List<String> deviceIds = new ArrayList<>(deviceCount);
         List<Long> generations = new ArrayList<>(deviceCount);
+        Map<String, Long> generationByDevice = new ConcurrentHashMap<>();
         AtomicBoolean failReconnect = new AtomicBoolean(true);
         AtomicInteger reconnectCalls = new AtomicInteger(0);
         CountDownLatch firstWaveEntered = new CountDownLatch(8);
         CountDownLatch releaseFirstWave = new CountDownLatch(1);
         doAnswer(invocation -> {
+            String deviceId = invocation.getArgument(0);
+            long generation = invocation.getArgument(1);
+            ProtocolCollector expectedCollector = invocation.getArgument(2);
+            assertEquals(generationByDevice.get(deviceId).longValue(), generation);
+            assertSame(collectors.get(deviceId), expectedCollector);
             reconnectCalls.incrementAndGet();
             firstWaveEntered.countDown();
             releaseFirstWave.await(2, TimeUnit.SECONDS);
             if (failReconnect.get()) {
                 throw new IllegalStateException("simulated disconnect");
             }
-            return null;
-        }).when(collectionManager).reconnectDevice(anyString(), anyLong());
+            return true;
+        }).when(collectionManager).reconnectDeviceAutomatically(anyString(), anyLong(), any(ProtocolCollector.class));
 
         for (int i = 0; i < deviceCount; i++) {
             String deviceId = "storm-" + i;
@@ -211,6 +214,7 @@ class CollectionRuntimeStabilityTest {
             collectors.put(deviceId, collector);
             long generation = guard.activateNextGeneration(deviceId);
             generations.add(generation);
+            generationByDevice.put(deviceId, generation);
             runtimeState.requestRunning(deviceId);
             runtimeState.markRunning(deviceId, generation);
         }

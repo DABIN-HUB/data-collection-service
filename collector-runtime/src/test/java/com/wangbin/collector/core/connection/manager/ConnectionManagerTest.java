@@ -85,13 +85,14 @@ class ConnectionManagerTest {
         verify(second).closeResources();
         assertEquals(0, fixture.manager.getAllConnections().size());
 
-        doNothing().when(first).closeResources();
         fixture.manager.closeAllConnections();
         assertEquals(0, fixture.manager.getAllConnections().size());
+        verify(first, times(3)).closeResources();
+        verify(second, times(1)).closeResources();
 
         fixture.manager.closeAllConnections();
         verify(second, times(1)).closeResources();
-        verify(first, atLeast(2)).closeResources();
+        verify(first, times(3)).closeResources();
     }
 
     @Test

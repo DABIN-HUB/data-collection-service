@@ -126,12 +126,22 @@ class RedisFailureIsolationTest {
         CollectorDataPostProcessor processor = processor(streamService);
         int deviceCount = 20;
         int pointsPerDevice = 1;
+        Map<String, List<DataPoint>> pointsByDevice = new HashMap<>();
+        Map<String, Long> generationsByDevice = new HashMap<>();
 
         for (int i = 0; i < deviceCount; i++) {
             String deviceId = "redis-storm-" + i;
             long generation = guard.activateNextGeneration(deviceId);
             List<DataPoint> points = points(deviceId, pointsPerDevice);
             registerPoints(deviceId, generation, points);
+            pointsByDevice.put(deviceId, points);
+            generationsByDevice.put(deviceId, generation);
+        }
+
+        for (Map.Entry<String, List<DataPoint>> entry : pointsByDevice.entrySet()) {
+            String deviceId = entry.getKey();
+            List<DataPoint> points = entry.getValue();
+            long generation = generationsByDevice.get(deviceId);
             guard.runWithContext(deviceId, generation,
                     () -> processor.saveBatchAsync(deviceId, points, values(points), null));
         }

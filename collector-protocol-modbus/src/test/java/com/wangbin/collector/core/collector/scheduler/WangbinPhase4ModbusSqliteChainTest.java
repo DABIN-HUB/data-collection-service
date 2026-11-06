@@ -142,16 +142,26 @@ class WangbinPhase4ModbusSqliteChainTest {
             var firstGeneration = new AtomicLong();
             var secondGeneration = new AtomicLong();
             var restarted = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                String deviceId = invocation.getArgument(0);
+                DeviceScheduleInfo scheduleInfo = state.getScheduleInfo(deviceId);
+                if (deviceA.equals(deviceId) && firstGeneration.get() > 0
+                        && scheduleInfo != null && scheduleInfo.getGeneration() > firstGeneration.get()) {
+                    DeviceBatchTask startedTask = tasks.get(deviceId);
+                    assertNotNull(startedTask);
+                    assertEquals(scheduleInfo.getGeneration(), startedTask.generation);
+                    secondGeneration.set(scheduleInfo.getGeneration());
+                    assertTrue(state.isRunning(deviceId));
+                    assertFalse(state.isStarting(deviceId));
+                    restarted.countDown();
+                }
+                return null;
+            }).when(health).markDeviceStarted(anyString());
             when(planner.plan(anyString(), anyList(), anyInt(), anyLong(), anyLong())).thenAnswer(call -> {
                 String id = call.getArgument(0);
                 var planned = new DeviceBatchTask(id, call.getArgument(1), 0,
                         call.getArgument(3), call.getArgument(4));
                 tasks.put(id, planned);
-                if (deviceA.equals(id) && firstGeneration.get() > 0
-                        && planned.generation > firstGeneration.get()) {
-                    secondGeneration.set(planned.generation);
-                    restarted.countDown();
-                }
                 return List.of(planned);
             });
             var strategy = mock(ProtocolBatchStrategy.class);
