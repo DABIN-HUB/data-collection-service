@@ -4,6 +4,9 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.utils.JsonDataPointLoader;
 import com.wangbin.collector.core.processor.ProcessResult;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import com.wangbin.collector.core.alarm.AlarmStateTracker;
+import com.wangbin.collector.core.alarm.InMemoryAlarmStateRepository;
 import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
 import com.wangbin.collector.core.connection.adapter.Iec104ConnectionAdapter;
 import com.wangbin.collector.core.collector.protocol.iec.base.Iec104IoaEncodingMode;
@@ -29,6 +32,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -58,24 +62,44 @@ class Iec104CollectorTest {
 
         collector.receiveThroughListener(sequence);
 
-        assertEquals(10.5d, collector.publishedValue(first));
-        assertEquals(20.5d, collector.publishedValue(second));
+        assertEquals(2, collector.publishedRecords().size());
+        collector.assertPublished(first, 10.5d);
+        collector.assertPublished(second, 20.5d);
     }
 
     @Test
     void interrogationMeasurementFulfillsPendingReadWithoutDuplicatePush() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         DataPoint point = createWritablePoint("M_ME_NC_1:4001");
         collector.buildReadPlans("device", List.of(point));
         CompletableFuture<Object> pending = collector.pending(1, 13, 4001);
+        CompletableFuture<Object> otherType = collector.pending(1, 3, 4001);
+        CompletableFuture<Object> otherCommonAddress = collector.pending(2, 13, 4001);
+        CompletableFuture<Object> otherIoa = collector.pending(1, 13, 4002);
 
-        collector.receive(measurements(false,
-                CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
+        try {
+            collector.receiveThroughListener(measurements(false,
+                    CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
+            assertEquals(17.25f, collector.pendingValue(pending));
+            assertEquals(13, collector.pendingRawTypeId(pending));
+            assertEquals(0, collector.pendingQualityBits(pending));
+            assertFalse(otherType.isDone());
+            assertFalse(otherCommonAddress.isDone());
+            assertFalse(otherIoa.isDone());
+            assertEquals(0, collector.publishedRecords().size());
 
-        assertEquals(17.25f, collector.pendingValue(pending));
-        assertEquals(13, collector.pendingRawTypeId(pending));
-        assertEquals(0, collector.pendingQualityBits(pending));
-        assertFalse(collector.published.containsKey(point.getPointId()));
+            collector.receiveThroughListener(measurements(false,
+                    CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 18.25f));
+
+            assertEquals(1, collector.publishedRecords().size());
+            collector.assertPublished(point, 18.25d);
+        } finally {
+            pending.cancel(false);
+            otherType.cancel(false);
+            otherCommonAddress.cancel(false);
+            otherIoa.cancel(false);
+        }
     }
 
     @Test
@@ -88,7 +112,8 @@ class Iec104CollectorTest {
         collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
 
-        assertEquals(17.25d, collector.publishedValue(point));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 17.25d);
     }
 
     @Test
@@ -102,7 +127,8 @@ class Iec104CollectorTest {
         collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
 
-        assertEquals(17.25d, collector.publishedValue(point));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 17.25d);
     }
 
     @Test
@@ -116,8 +142,9 @@ class Iec104CollectorTest {
 
         collector.receiveThroughListener(shiftedMeasurements(4001, 10.5f, 20.5f));
 
-        assertEquals(10.5d, collector.publishedValue(first));
-        assertEquals(20.5d, collector.publishedValue(second));
+        assertEquals(2, collector.publishedRecords().size());
+        collector.assertPublished(first, 10.5d);
+        collector.assertPublished(second, 20.5d);
     }
 
     @Test
@@ -128,7 +155,8 @@ class Iec104CollectorTest {
         collector.buildReadPlans("device", List.of(point));
         collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 10.0f));
-        assertEquals(10.0d, collector.publishedValue(point));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 10.0d);
 
         Iec104ConnectionAdapter replacement = mock(Iec104ConnectionAdapter.class);
         Connection replacementClient = mock(Connection.class);
@@ -141,7 +169,8 @@ class Iec104CollectorTest {
         collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 22.5f));
 
-        assertEquals(10.0d, collector.publishedValue(point));
+        assertEquals(1, collector.publishedRecords().size());
+        assertEquals(10.0d, collector.publishedRecords().get(0).result().getFinalValue());
     }
 
     private static ASdu measurements(boolean sequence, CauseOfTransmission cot,
@@ -173,8 +202,14 @@ class Iec104CollectorTest {
                 CauseOfTransmission.INTERROGATED_BY_STATION, false, false, 0, 1, objects);
     }
 
+    private record PublishedSample(String deviceId, String pointId, Long generation,
+                                   ProcessResult result) {
+    }
+
     private static final class RecordingCollector extends Iec104Collector {
-        private final Map<String, Object> published = new java.util.HashMap<>();
+        private final List<PublishedSample> published = new ArrayList<>();
+        private long receiveStartedAt;
+        private long receiveFinishedAt;
         private Connection client;
         private Iec104ConnectionAdapter adapter;
         private ConnectionEventListener listener;
@@ -184,11 +219,44 @@ class Iec104CollectorTest {
         }
 
         private void receiveThroughListener(ASdu asdu) {
-            listener.newASdu(client, asdu);
+            receiveStartedAt = System.currentTimeMillis();
+            try {
+                listener.newASdu(client, asdu);
+            } finally {
+                receiveFinishedAt = System.currentTimeMillis();
+            }
         }
 
-        private Object publishedValue(DataPoint point) {
-            return published.get(point.getPointId());
+        private List<PublishedSample> publishedRecords() {
+            return List.copyOf(published);
+        }
+
+        private void assertPublished(DataPoint point, Object expectedValue) {
+            PublishedSample sample = published.stream()
+                    .filter(record -> point.getPointId().equals(record.pointId()))
+                    .findFirst()
+                    .orElseThrow();
+            ProcessResult result = sample.result();
+            assertEquals("device", sample.deviceId());
+            assertEquals(7L, sample.generation());
+            assertEquals(point.getPointId(), sample.pointId());
+            assertEquals(expectedValue, result.getFinalValue());
+            assertTrue(result.isSuccess());
+            assertEquals("DataQualityProcessor", result.getProcessorName());
+            assertEquals(100, result.getQuality());
+            assertEquals("PUSH", result.getMetadata(ProcessResultMetadataKeys.SOURCE));
+            assertEquals(Long.valueOf(3L), result.getMetadata(ProcessResultMetadataKeys.CONFIG_VERSION));
+            assertEquals(expectedValue, result.getMetadata(ProcessResultMetadataKeys.PROCESSED_VALUE));
+            Long observedAt = result.getMetadata(ProcessResultMetadataKeys.COLLECT_TIME);
+            assertTrue(observedAt != null && observedAt >= receiveStartedAt && observedAt <= receiveFinishedAt);
+            Long sampleObservedAt = result.getMetadata("iec104ObservedAt");
+            assertTrue(sampleObservedAt != null && sampleObservedAt >= receiveStartedAt
+                    && sampleObservedAt <= receiveFinishedAt);
+            assertEquals(sampleObservedAt, observedAt);
+            assertEquals("LOCAL_RECEIVE", result.getMetadata("iec104TimeOrigin"));
+            assertFalse(result.getMetadata().containsKey("iec104SourceTime"));
+            assertEquals(Integer.valueOf(13), result.getMetadata("iec104TypeId"));
+            assertEquals(Integer.valueOf(0), result.getMetadata("iec104QualityBits"));
         }
 
         private void prepareSession() {
@@ -198,15 +266,15 @@ class Iec104CollectorTest {
             when(adapter.getClient()).thenReturn(client);
             when(client.isClosed()).thenReturn(false);
             when(client.isStopped()).thenReturn(false);
-            DataQualityProcessor processor = mock(DataQualityProcessor.class);
-            when(processor.process(any(), any(DataPoint.class), any()))
-                    .thenAnswer(invocation -> ProcessResult.success(
-                            invocation.getArgument(2), invocation.getArgument(2)));
+            DataQualityProcessor processor = new DataQualityProcessor(
+                    null, new AlarmStateTracker(new InMemoryAlarmStateRepository()));
             TelemetryIngressService ingress = mock(TelemetryIngressService.class);
             doAnswer(invocation -> {
+                String deviceId = invocation.getArgument(0);
                 ProcessResult result = invocation.getArgument(2);
                 DataPoint point = invocation.getArgument(1);
-                published.put(point.getPointId(), result.getFinalValue());
+                Long generation = invocation.getArgument(3);
+                published.add(new PublishedSample(deviceId, point.getPointId(), generation, result.snapshot()));
                 return null;
             }).when(ingress).append(any(), any(DataPoint.class), any(ProcessResult.class), any(Long.class));
             ReflectionTestUtils.setField(this, "dataQualityProcessor", processor);
@@ -245,11 +313,6 @@ class Iec104CollectorTest {
             return ((CacheEntry) future.getNow(null)).qualityBits();
         }
 
-        @Override
-        protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
-            published.put(point.getPointId(), rawValue);
-            return null;
-        }
     }
 
     @Test
