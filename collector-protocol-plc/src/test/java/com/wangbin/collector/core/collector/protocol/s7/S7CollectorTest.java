@@ -3,6 +3,7 @@ package com.wangbin.collector.core.collector.protocol.s7;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.exception.CollectorException;
 import com.wangbin.collector.core.collector.protocol.s7.domain.S7Address;
 import com.wangbin.collector.core.collector.protocol.s7.plan.S7ReadPlanBuilder;
 import com.wangbin.collector.core.collector.protocol.s7.plan.S7ReadPlanItem;
@@ -481,6 +482,23 @@ class S7CollectorTest {
     }
 
     @Test
+    void shouldRejectArrayReadFromReplacedPhysicalClient() throws Exception {
+        TestableS7Collector collector = new TestableS7Collector();
+        collector.readValue = List.of(1, 2);
+        prepareArrayCollector(collector);
+        S7ConnectionAdapter adapter = (S7ConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
+        PlcConnection replacement = mock(PlcConnection.class);
+        collector.beforeReadReturn = () -> when(adapter.getClient()).thenReturn(replacement);
+        DataPoint point = point("p1", "arr1", "DB1.DBW0", "R");
+        point.setAdditionalConfig(Map.of("arraySize", 2));
+
+        assertThrows(CollectorException.class, () -> collector.readPoint(point));
+        assertEquals(1, collector.readInvocationCount);
+        ProcessResult result = collector.getLatestProcessResult("p1");
+        assertTrue(result == null || !result.isSuccess());
+    }
+
+    @Test
     void shouldCoerceArrayWriteValuesThroughS7Codec() throws Exception {
         TestableS7Collector collector = new TestableS7Collector();
         prepareArrayCollector(collector);
@@ -504,10 +522,18 @@ class S7CollectorTest {
         point.setAdditionalConfig(Map.of("arraySize", 2));
         point.setScalingFactor(2.0d);
 
-        Exception exception = assertThrows(Exception.class, () -> collector.readPoint(point));
-
-        assertTrue(exception.getCause() != null);
-        assertTrue(exception.getCause().getMessage().contains("scalingFactor"));
+        CollectorException exception = assertThrows(CollectorException.class, () -> collector.readPoint(point));
+        Throwable cause = exception;
+        boolean scalingRejected = false;
+        for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
+            if (cause instanceof IllegalArgumentException && cause.getMessage() != null
+                    && cause.getMessage().contains("scalingFactor")) {
+                scalingRejected = true;
+                break;
+            }
+        }
+        assertTrue(scalingRejected, "Expected the array scaling configuration rejection in the cause chain");
+        assertEquals(0, collector.readInvocationCount);
     }
 
     @Test
@@ -781,9 +807,7 @@ class S7CollectorTest {
         ReflectionTestUtils.setField(collector, "configManager", configManager);
         ReflectionTestUtils.setField(collector, "devicePointResolver", new DevicePointResolver(configManager));
 
-        S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
-        when(connectionAdapter.isConnected()).thenReturn(true);
-        ReflectionTestUtils.setField(collector, "connectionAdapter", connectionAdapter);
+        prepareReadSession(collector);
     }
 
 
@@ -791,18 +815,24 @@ class S7CollectorTest {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
-        S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
-        when(connectionAdapter.isConnected()).thenReturn(true);
-        ReflectionTestUtils.setField(collector, "connectionAdapter", connectionAdapter);
+        prepareReadSession(collector);
     }
 
     private void preparePlannedReadCollector(PlannedReadS7Collector collector) throws Exception {
         collector.init(device());
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
 
-        S7ConnectionAdapter connectionAdapter = mock(S7ConnectionAdapter.class);
-        when(connectionAdapter.isConnected()).thenReturn(true);
-        ReflectionTestUtils.setField(collector, "connectionAdapter", connectionAdapter);
+        prepareReadSession(collector);
+    }
+
+    private void prepareReadSession(S7Collector collector) {
+        S7ConnectionAdapter adapter = mock(S7ConnectionAdapter.class);
+        PlcConnection client = mock(PlcConnection.class);
+        PlcConnectionMetadata metadata = mock(PlcConnectionMetadata.class);
+        when(adapter.isConnected()).thenReturn(true);
+        when(adapter.getClient()).thenReturn(client);
+        when(client.getMetadata()).thenReturn(metadata);
+        ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
     }
 
     private DeviceInfo device() {
@@ -830,11 +860,15 @@ class S7CollectorTest {
     private static final class TestableS7Collector extends S7Collector {
 
         private Object readValue;
+        private int readInvocationCount;
+        private Runnable beforeReadReturn;
         private Map<String, Object> batchReadValues = Map.of();
         private Object lastWriteValue;
 
         @Override
         protected Object doReadPoint(DataPoint point) {
+            readInvocationCount++;
+            if (beforeReadReturn != null) beforeReadReturn.run();
             return readValue;
         }
 
