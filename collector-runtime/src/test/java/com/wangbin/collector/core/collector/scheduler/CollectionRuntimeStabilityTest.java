@@ -4,6 +4,7 @@ import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.collector.runtime.PointRuntimeStateService;
 import com.wangbin.collector.core.collector.statistics.CollectionStatistics;
 import com.wangbin.collector.core.config.CollectorProperties;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -30,6 +32,7 @@ import java.util.concurrent.atomic.LongAdder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -166,6 +169,14 @@ class CollectionRuntimeStabilityTest {
     @Test
     void reconnectStormShouldDeduplicateBackoffAndRecover() throws Exception {
         CollectionManager collectionManager = mock(CollectionManager.class);
+        Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();
+        when(collectionManager.getCollector(anyString()))
+                .thenAnswer(invocation -> collectors.get(invocation.getArgument(0)));
+        when(collectionManager.reconnectDeviceAutomatically(anyString(), anyLong(), any(ProtocolCollector.class)))
+                .thenAnswer(invocation -> {
+                    collectionManager.reconnectDevice(invocation.getArgument(0), invocation.getArgument(1));
+                    return true;
+                });
         CollectorProperties properties = collectorProperties();
         properties.getScheduler().setReconnectBaseDelayMs(500);
         properties.getScheduler().setReconnectMaxDelayMs(1000);
@@ -195,6 +206,9 @@ class CollectionRuntimeStabilityTest {
         for (int i = 0; i < deviceCount; i++) {
             String deviceId = "storm-" + i;
             deviceIds.add(deviceId);
+            ProtocolCollector collector = mock(ProtocolCollector.class);
+            when(collector.isAutomaticReconnectAllowed()).thenReturn(true);
+            collectors.put(deviceId, collector);
             long generation = guard.activateNextGeneration(deviceId);
             generations.add(generation);
             runtimeState.requestRunning(deviceId);

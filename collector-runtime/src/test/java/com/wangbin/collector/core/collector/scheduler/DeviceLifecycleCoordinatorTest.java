@@ -965,6 +965,8 @@ class DeviceLifecycleCoordinatorTest {
         assertTrue(entered.await(1, TimeUnit.SECONDS));
         manager.cleanupDeviceIfGeneration(device.getDeviceId(), 1L);
         assertNull(manager.getCollector(device.getDeviceId()));
+        verify(oldCollector, never()).destroy();
+        verify(oldCollector, never()).releaseManagedConnection();
         org.junit.jupiter.api.Assertions.assertThrows(com.wangbin.collector.common.exception.CollectorException.class,
                 () -> manager.registerDevice(device));
         release.countDown();
@@ -974,9 +976,10 @@ class DeviceLifecycleCoordinatorTest {
         manager.cleanupDeviceIfGeneration(device.getDeviceId(), 1L);
         assertSame(newCollector, manager.getCollector(device.getDeviceId()));
         verify(oldCollector).destroy();
+        verify(oldCollector).releaseManagedConnection();
         verify(newCollector, never()).destroy();
         verify(newCollector, never()).disconnect();
-        verify(connections).removeConnection(device.getDeviceId());
+        verify(newCollector, never()).releaseManagedConnection();
     }
 
     @Test
