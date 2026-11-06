@@ -315,28 +315,22 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         BacnetObjectType objectType = BacnetObjectType.fromId((rawObjectIdentifier >>> 22) & 0x03FF);
         int instance = rawObjectIdentifier & 0x3FFFFF;
 
-        BacnetTagReader.TagHeader issueConfirmedTag = BacnetTagReader.readTag(buffer);
-        BacnetReadPropertyResponseDecoder.requireContextTag(issueConfirmedTag, 2);
-        boolean issueConfirmedNotifications = issueConfirmedTag.length() == 1;
-
-        Integer lifetime = null;
         BacnetTagReader.TagHeader nextTag = BacnetTagReader.readTag(buffer);
-        if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 3) {
-            lifetime = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
-            if (!propertyLevel && !buffer.hasRemaining()) {
-                return new SubscribeRequest(invokeId,
-                        processIdentifier,
-                        objectType,
-                        instance,
-                        BacnetPropertyIdentifier.PRESENT_VALUE,
-                        null,
-                        issueConfirmedNotifications,
-                        lifetime,
-                        null,
-                        false);
-            }
+        boolean issueConfirmedNotifications = false;
+        Integer lifetime = null;
+        if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 2) {
+            issueConfirmedNotifications = nextTag.length() == 1 && buffer.get(buffer.position()) != 0;
+            buffer.position(buffer.position() + nextTag.length());
             nextTag = BacnetTagReader.readTag(buffer);
-        } else if (!propertyLevel) {
+            if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 3) {
+                lifetime = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
+                nextTag = BacnetTagReader.readTag(buffer);
+            }
+        }
+        if (!propertyLevel) {
+            if (nextTag.contextSpecific() && nextTag.openingTag()) {
+                throw new IllegalArgumentException("SubscribeCOV unexpected property reference");
+            }
             return new SubscribeRequest(invokeId,
                     processIdentifier,
                     objectType,
@@ -653,6 +647,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             if (serverThread != null) {
                 serverThread.join(2000);
             }
+            verifyNoAsyncFailure();
         }
     }
 

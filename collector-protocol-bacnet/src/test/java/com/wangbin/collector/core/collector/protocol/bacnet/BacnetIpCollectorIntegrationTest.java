@@ -12,19 +12,25 @@ import com.wangbin.collector.core.collector.protocol.bacnet.codec.FeatureBacnetT
 import com.wangbin.collector.core.collector.protocol.bacnet.support.FakeBacnetIpServer;
 import com.wangbin.collector.core.collector.protocol.bacnet.support.FakeBbmdServer;
 import com.wangbin.collector.core.collector.protocol.bacnet.codec.SegmentedBacnetTestServer;
+import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
 import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
-import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -32,10 +38,37 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 
 class BacnetIpCollectorIntegrationTest {
+
+    private final List<BacnetIpCollector> ownedCollectors = new ArrayList<>();
+    private final List<ExecutorService> ownedExecutors = new ArrayList<>();
+
+    @AfterEach
+    void releaseOwnedResources() throws Exception {
+        for (BacnetIpCollector collector : ownedCollectors) {
+            try {
+                BacnetIpConnectionAdapter adapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
+                if (adapter != null) {
+                    adapter.disconnect();
+                }
+                collector.disconnect();
+            } catch (Exception ignored) {
+                // 清理阶段继续关闭本测试拥有的其他资源。
+            }
+        }
+        for (ExecutorService executor : ownedExecutors) {
+            executor.shutdownNow();
+            executor.awaitTermination(2, TimeUnit.SECONDS);
+        }
+        ownedCollectors.clear();
+        ownedExecutors.clear();
+    }
 
     @Test
     void shouldReadRealPresentValueThroughRealUdpAdapter() throws Exception {
@@ -340,7 +373,9 @@ class BacnetIpCollectorIntegrationTest {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 10.0f);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
             point.setCollectionMode("SUBSCRIPTION");
-            point.getAdditionalConfig().put("covPropertyEnabled", true);
+            Map<String, Object> pointConfig = point.getAdditionalConfig();
+            pointConfig.put("covPropertyEnabled", true);
+            point.setAdditionalConfig(pointConfig);
             BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 1000, Map.of(
                     "covEnabled", true,
                     "covPropertyEnabled", true,
@@ -370,7 +405,9 @@ class BacnetIpCollectorIntegrationTest {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 10.0f);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
             point.setCollectionMode("SUBSCRIPTION");
-            point.getAdditionalConfig().put("covPropertyEnabled", true);
+            Map<String, Object> pointConfig = point.getAdditionalConfig();
+            pointConfig.put("covPropertyEnabled", true);
+            point.setAdditionalConfig(pointConfig);
             BacnetIpCollector collector = prepareCollector(server.port(), List.of(point), 100, Map.of(
                     "covEnabled", true,
                     "covPropertyEnabled", true,
@@ -387,6 +424,16 @@ class BacnetIpCollectorIntegrationTest {
             ReflectionTestUtils.setField(collector, "connectionStatus", "DISCONNECTED");
             assertFalse(collector.isConnected());
 
+            brokenAdapter.connect();
+            ReflectionTestUtils.setField(collector, "connected", true);
+            ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
+
+            server.publishReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 10.0f);
+            long notificationDeadline = System.currentTimeMillis() + 3000;
+            while (System.currentTimeMillis() < notificationDeadline
+                    && collector.getLatestProcessResult("p1") == null) {
+                Thread.sleep(50);
+            }
             Object value = collector.readPoint(point);
 
             assertEquals(10.0d, ((Number) value).doubleValue(), 1.0E-6);
@@ -408,33 +455,40 @@ class BacnetIpCollectorIntegrationTest {
         DeviceInfo deviceInfo = device();
         DeviceConnection connection = connection("127.0.0.1", port, readTimeoutMs, false, extOverrides);
         ConfigManager configManager = mock(ConfigManager.class);
-        ConnectionManager connectionManager = mock(ConnectionManager.class);
         when(configManager.getDeviceContext("dev-bacnet")).thenReturn(DeviceContext.of(deviceInfo, connection, points));
         when(configManager.getDataPoints("dev-bacnet")).thenReturn(points);
+        AtomicLong currentConfigVersion = new AtomicLong(1L);
+        when(configManager.getDeviceConfigVersion("dev-bacnet")).thenAnswer(invocation -> currentConfigVersion.get());
+        doAnswer(invocation -> {
+            String deviceId = invocation.getArgument(0);
+            long expectedVersion = invocation.getArgument(1);
+            if (!"dev-bacnet".equals(deviceId) || expectedVersion != currentConfigVersion.get()) return false;
+            invocation.getArgument(2, Runnable.class).run();
+            return true;
+        }).when(configManager).runIfConfigurationCurrent(eq("dev-bacnet"), anyLong(), any(Runnable.class));
 
         BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
         adapter.connect();
-        BacnetIpConnectionAdapter recoveryAdapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
-        when(connectionManager.createConnection(deviceInfo, connection)).thenReturn(recoveryAdapter);
-        doAnswer(invocation -> {
-            recoveryAdapter.connect();
-            return null;
-        }).when(connectionManager).connect("dev-bacnet");
-        doAnswer(invocation -> {
-            recoveryAdapter.disconnect();
-            return null;
-        }).when(connectionManager).removeConnection("dev-bacnet");
 
-        BacnetIpCollector collector = new BacnetIpCollector();
+        CollectionTaskGuard covTaskGuard = new CollectionTaskGuard();
+        long generation = covTaskGuard.activateNextGeneration("dev-bacnet");
+        ScheduledExecutorService covScheduler = Executors.newSingleThreadScheduledExecutor();
+        ExecutorService covExecutor = Executors.newFixedThreadPool(2);
+        ownedExecutors.add(covScheduler);
+        ownedExecutors.add(covExecutor);
+
+        BacnetIpCollector collector = new BacnetIpCollector(covTaskGuard, covScheduler, covExecutor);
         collector.init(deviceInfo);
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
-        ReflectionTestUtils.setField(collector, "connectionManager", connectionManager);
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
+        collector.setRuntimeGeneration(generation);
+        collector.setRuntimeConfigurationVersion(1L);
         ReflectionTestUtils.setField(collector, "connected", true);
         ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
         ReflectionTestUtils.setField(collector, "requestTimeoutMs", readTimeoutMs);
         collector.rebuildReadPlans("dev-bacnet", points);
+        ownedCollectors.add(collector);
         return collector;
     }
 
