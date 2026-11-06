@@ -46,23 +46,47 @@ class BacnetIpCollectorFeatureTest {
 
     @AfterEach
     void releaseOwnedResources() throws Exception {
-        for (BacnetIpCollector collector : ownedCollectors) {
-            try {
-                BacnetIpConnectionAdapter adapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
-                if (adapter != null) {
-                    adapter.disconnect();
+        List<Throwable> cleanupFailures = new ArrayList<>();
+        try {
+            for (BacnetIpCollector collector : ownedCollectors) {
+                BacnetIpConnectionAdapter adapter = null;
+                try {
+                    adapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
                 }
-                collector.disconnect();
-            } catch (Exception ignored) {
-                // 清理阶段继续关闭本测试拥有的其他资源。
+                if (adapter != null) {
+                    try {
+                        adapter.disconnect();
+                    } catch (Exception ex) {
+                        cleanupFailures.add(ex);
+                    }
+                }
+                try {
+                    collector.disconnect();
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
+                }
             }
+            for (ExecutorService executor : ownedExecutors) {
+                try {
+                    executor.shutdownNow();
+                    if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                        cleanupFailures.add(new IllegalStateException("BACnet test executor did not terminate within 2 seconds"));
+                    }
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
+                }
+            }
+        } finally {
+            ownedCollectors.clear();
+            ownedExecutors.clear();
         }
-        for (ExecutorService executor : ownedExecutors) {
-            executor.shutdownNow();
-            executor.awaitTermination(2, TimeUnit.SECONDS);
+        if (!cleanupFailures.isEmpty()) {
+            AssertionError failure = new AssertionError("BACnet test resource cleanup failed: " + cleanupFailures.size());
+            cleanupFailures.forEach(failure::addSuppressed);
+            throw failure;
         }
-        ownedCollectors.clear();
-        ownedExecutors.clear();
     }
 
     @Test

@@ -48,7 +48,6 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         this.socket = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
         this.socket.setSoTimeout(250);
         this.serverThread = new Thread(this::runLoop, "feature-bacnet-test-server");
-        this.serverThread.setDaemon(true);
         this.serverThread.start();
         awaitStart();
     }
@@ -103,6 +102,14 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             }
         }
         return latest != null ? toSubscriptionMap(latest) : null;
+    }
+
+    SubscribeRequest parseSubscribeFrame(byte[] frame) {
+        RequestEnvelope request = parseRequest(frame);
+        if (request.subscribeRequest == null) {
+            throw new IllegalArgumentException("BACnet frame is not a SubscribeCOV request");
+        }
+        return request.subscribeRequest;
     }
 
     private Map<String, Object> toSubscriptionMap(Subscription subscription) {
@@ -307,40 +314,60 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
     private SubscribeRequest parseSubscribeRequest(ByteBuffer buffer, int invokeId, boolean propertyLevel) {
         BacnetTagReader.TagHeader processTag = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(processTag, 0);
+        requireRemaining(buffer, processTag.length(), "SubscribeCOV process identifier");
         int processIdentifier = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, processTag.length());
 
         BacnetTagReader.TagHeader objectTag = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(objectTag, 1);
+        if (objectTag.length() != 4) {
+            throw new IllegalArgumentException("SubscribeCOV object identifier length is invalid");
+        }
+        requireRemaining(buffer, objectTag.length(), "SubscribeCOV object identifier");
         int rawObjectIdentifier = buffer.getInt();
         BacnetObjectType objectType = BacnetObjectType.fromId((rawObjectIdentifier >>> 22) & 0x03FF);
         int instance = rawObjectIdentifier & 0x3FFFFF;
+
+        if (!buffer.hasRemaining()) {
+            if (propertyLevel) {
+                throw new IllegalArgumentException("SubscribeCOVProperty property reference is missing");
+            }
+            return new SubscribeRequest(invokeId, processIdentifier, objectType, instance,
+                    BacnetPropertyIdentifier.PRESENT_VALUE, null, false, null, null, false);
+        }
 
         BacnetTagReader.TagHeader nextTag = BacnetTagReader.readTag(buffer);
         boolean issueConfirmedNotifications = false;
         Integer lifetime = null;
         if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 2) {
-            issueConfirmedNotifications = nextTag.length() == 1 && buffer.get(buffer.position()) != 0;
-            buffer.position(buffer.position() + nextTag.length());
-            nextTag = BacnetTagReader.readTag(buffer);
-            if (nextTag.contextSpecific() && !nextTag.openingTag() && !nextTag.closingTag() && nextTag.tagNumber() == 3) {
-                lifetime = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
-                nextTag = BacnetTagReader.readTag(buffer);
+            if (nextTag.length() != 1) {
+                throw new IllegalArgumentException("SubscribeCOV confirmed-notification flag length is invalid");
             }
+            requireRemaining(buffer, nextTag.length(), "SubscribeCOV confirmed-notification flag");
+            issueConfirmedNotifications = buffer.get() != 0;
+            if (!buffer.hasRemaining()) {
+                throw new IllegalArgumentException("SubscribeCOV lifetime is missing");
+            }
+            nextTag = BacnetTagReader.readTag(buffer);
+            if (!nextTag.contextSpecific() || nextTag.openingTag() || nextTag.closingTag() || nextTag.tagNumber() != 3) {
+                throw new IllegalArgumentException("SubscribeCOV lifetime tag is missing");
+            }
+            requireRemaining(buffer, nextTag.length(), "SubscribeCOV lifetime");
+            lifetime = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, nextTag.length());
+            if (!propertyLevel) {
+                if (buffer.hasRemaining()) {
+                    throw new IllegalArgumentException("SubscribeCOV has trailing fields");
+                }
+                return new SubscribeRequest(invokeId, processIdentifier, objectType, instance,
+                        BacnetPropertyIdentifier.PRESENT_VALUE, null, issueConfirmedNotifications,
+                        lifetime, null, false);
+            }
+            if (!buffer.hasRemaining()) {
+                throw new IllegalArgumentException("SubscribeCOVProperty property reference is missing");
+            }
+            nextTag = BacnetTagReader.readTag(buffer);
         }
         if (!propertyLevel) {
-            if (nextTag.contextSpecific() && nextTag.openingTag()) {
-                throw new IllegalArgumentException("SubscribeCOV unexpected property reference");
-            }
-            return new SubscribeRequest(invokeId,
-                    processIdentifier,
-                    objectType,
-                    instance,
-                    BacnetPropertyIdentifier.PRESENT_VALUE,
-                    null,
-                    issueConfirmedNotifications,
-                    lifetime,
-                    null,
-                    false);
+            throw new IllegalArgumentException("SubscribeCOV has an unexpected field after object identifier");
         }
 
         if (!nextTag.contextSpecific() || !nextTag.openingTag() || nextTag.tagNumber() != 4) {
@@ -348,11 +375,13 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
         }
         BacnetTagReader.TagHeader propertyTag = BacnetTagReader.readTag(buffer);
         BacnetReadPropertyResponseDecoder.requireContextTag(propertyTag, 0);
+        requireRemaining(buffer, propertyTag.length(), "SubscribeCOVProperty property identifier");
         BacnetPropertyIdentifier propertyIdentifier = BacnetPropertyIdentifier.fromId(
                 BacnetReadPropertyResponseDecoder.readUnsigned(buffer, propertyTag.length()));
         Integer arrayIndex = null;
         BacnetTagReader.TagHeader propertyTail = BacnetTagReader.readTag(buffer);
         if (propertyTail.contextSpecific() && !propertyTail.openingTag() && !propertyTail.closingTag() && propertyTail.tagNumber() == 1) {
+            requireRemaining(buffer, propertyTail.length(), "SubscribeCOVProperty array index");
             arrayIndex = BacnetReadPropertyResponseDecoder.readUnsigned(buffer, propertyTail.length());
             propertyTail = BacnetTagReader.readTag(buffer);
         }
@@ -360,16 +389,19 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
             throw new IllegalArgumentException("SubscribeCOVProperty property reference closing tag is missing");
         }
 
-        return new SubscribeRequest(invokeId,
-                processIdentifier,
-                objectType,
-                instance,
-                propertyIdentifier,
-                arrayIndex,
-                issueConfirmedNotifications,
-                lifetime,
-                readCovIncrement(buffer),
-                true);
+        Double covIncrement = readCovIncrement(buffer);
+        if (buffer.hasRemaining()) {
+            throw new IllegalArgumentException("SubscribeCOVProperty has malformed trailing fields");
+        }
+        return new SubscribeRequest(invokeId, processIdentifier, objectType, instance,
+                propertyIdentifier, arrayIndex, issueConfirmedNotifications, lifetime,
+                covIncrement, true);
+    }
+
+    private void requireRemaining(ByteBuffer buffer, int length, String field) {
+        if (length < 0 || buffer.remaining() < length) {
+            throw new IllegalArgumentException(field + " is truncated");
+        }
     }
 
     private byte[] handleReadProperty(ReadRequest request) {
@@ -416,7 +448,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
     }
 
     private byte[] handleSubscribeCov(SubscribeRequest request, SocketAddress requester) {
-        if (request.lifetime != null && request.lifetime == 0) {
+        if (request.lifetime == null) {
             subscriptions.remove(request.processIdentifier);
         } else {
             subscriptions.put(request.processIdentifier, new Subscription((InetSocketAddress) requester,
@@ -435,7 +467,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
     }
 
     private byte[] handleSubscribeCovProperty(SubscribeRequest request, SocketAddress requester) {
-        if (request.lifetime != null && request.lifetime == 0) {
+        if (request.lifetime == null) {
             subscriptions.remove(request.processIdentifier);
         } else {
             subscriptions.put(request.processIdentifier, new Subscription((InetSocketAddress) requester,
@@ -707,7 +739,7 @@ public final class FeatureBacnetTestServer implements AutoCloseable {
     private record WriteMultipleRequest(int invokeId, java.util.List<WriteRequest> writeRequests) {
     }
 
-    private record SubscribeRequest(int invokeId,
+    record SubscribeRequest(int invokeId,
                                     int processIdentifier,
                                     BacnetObjectType objectType,
                                     int instance,

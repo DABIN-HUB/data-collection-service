@@ -15,12 +15,19 @@ import com.wangbin.collector.core.collector.protocol.bacnet.codec.SegmentedBacne
 import com.wangbin.collector.core.collector.scheduler.CollectionTaskGuard;
 import com.wangbin.collector.core.config.manager.ConfigManager;
 import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.protocol.BacnetProtocolDescriptorProvider;
+import com.wangbin.collector.core.config.protocol.ProtocolDescriptorRegistry;
+import com.wangbin.collector.core.config.validator.ProtocolConnectionValidator;
 import com.wangbin.collector.core.connection.adapter.BacnetIpConnectionAdapter;
+import com.wangbin.collector.core.connection.factory.ConnectionFactory;
+import com.wangbin.collector.core.connection.factory.provider.BacnetConnectionAdapterProvider;
+import com.wangbin.collector.core.connection.manager.ConnectionManager;
 import com.wangbin.collector.core.processor.DataQualityProcessor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -51,23 +58,47 @@ class BacnetIpCollectorIntegrationTest {
 
     @AfterEach
     void releaseOwnedResources() throws Exception {
-        for (BacnetIpCollector collector : ownedCollectors) {
-            try {
-                BacnetIpConnectionAdapter adapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
-                if (adapter != null) {
-                    adapter.disconnect();
+        List<Throwable> cleanupFailures = new ArrayList<>();
+        try {
+            for (BacnetIpCollector collector : ownedCollectors) {
+                BacnetIpConnectionAdapter adapter = null;
+                try {
+                    adapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
                 }
-                collector.disconnect();
-            } catch (Exception ignored) {
-                // 清理阶段继续关闭本测试拥有的其他资源。
+                if (adapter != null) {
+                    try {
+                        adapter.disconnect();
+                    } catch (Exception ex) {
+                        cleanupFailures.add(ex);
+                    }
+                }
+                try {
+                    collector.disconnect();
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
+                }
             }
+            for (ExecutorService executor : ownedExecutors) {
+                try {
+                    executor.shutdownNow();
+                    if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                        cleanupFailures.add(new IllegalStateException("BACnet test executor did not terminate within 2 seconds"));
+                    }
+                } catch (Exception ex) {
+                    cleanupFailures.add(ex);
+                }
+            }
+        } finally {
+            ownedCollectors.clear();
+            ownedExecutors.clear();
         }
-        for (ExecutorService executor : ownedExecutors) {
-            executor.shutdownNow();
-            executor.awaitTermination(2, TimeUnit.SECONDS);
+        if (!cleanupFailures.isEmpty()) {
+            AssertionError failure = new AssertionError("BACnet test resource cleanup failed: " + cleanupFailures.size());
+            cleanupFailures.forEach(failure::addSuppressed);
+            throw failure;
         }
-        ownedCollectors.clear();
-        ownedExecutors.clear();
     }
 
     @Test
@@ -400,7 +431,7 @@ class BacnetIpCollectorIntegrationTest {
     }
 
     @Test
-    void shouldRecoverConnectionAndResubscribeAfterTimeoutWhenCovEnabled() throws Exception {
+    void shouldRecoverConnectionAndResubscribeAfterDisconnectWhenCovEnabled() throws Exception {
         try (FeatureBacnetTestServer server = new FeatureBacnetTestServer()) {
             server.putReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 10.0f);
             DataPoint point = point("p1", "analogInput:1.presentValue", "FLOAT");
@@ -415,28 +446,51 @@ class BacnetIpCollectorIntegrationTest {
             ));
 
             collector.subscribe(List.of(point));
-            assertNotNull(server.latestSubscription());
-
-            BacnetIpConnectionAdapter brokenAdapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
-            assertNotNull(brokenAdapter);
-            brokenAdapter.disconnect();
-            ReflectionTestUtils.setField(collector, "connected", false);
-            ReflectionTestUtils.setField(collector, "connectionStatus", "DISCONNECTED");
-            assertFalse(collector.isConnected());
-
-            brokenAdapter.connect();
-            ReflectionTestUtils.setField(collector, "connected", true);
-            ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
-
+            Map<String, Object> firstSubscription = server.latestSubscription();
+            assertNotNull(firstSubscription);
             server.publishReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 10.0f);
-            long notificationDeadline = System.currentTimeMillis() + 3000;
-            while (System.currentTimeMillis() < notificationDeadline
-                    && collector.getLatestProcessResult("p1") == null) {
+            long initialNotificationDeadline = System.currentTimeMillis() + 3000;
+            while (System.currentTimeMillis() < initialNotificationDeadline
+                    && (collector.getLatestProcessResult("p1") == null
+                    || Math.abs(((Number) collector.getLatestProcessResult("p1").getFinalValue()).doubleValue() - 10.0d) > 1.0E-6)) {
                 Thread.sleep(50);
             }
+            assertNotNull(collector.getLatestProcessResult("p1"));
+            assertEquals(10.0d, ((Number) collector.getLatestProcessResult("p1").getFinalValue()).doubleValue(), 1.0E-6);
+
+            BacnetIpConnectionAdapter brokenAdapter = (BacnetIpConnectionAdapter) ReflectionTestUtils.getField(collector, "connectionAdapter");
+            ConnectionManager connectionManager = (ConnectionManager) ReflectionTestUtils.getField(collector, "connectionManager");
+            assertNotNull(brokenAdapter);
+            assertNotNull(connectionManager);
+            brokenAdapter.disconnect();
+            assertFalse(brokenAdapter.isConnected());
+            assertTrue(connectionManager.reconnectIfOwned("dev-bacnet", brokenAdapter));
+            assertTrue(brokenAdapter.isConnected());
+
+            Map<String, Object> recoveredSubscription = null;
+            long subscriptionDeadline = System.currentTimeMillis() + 3000;
+            while (System.currentTimeMillis() < subscriptionDeadline) {
+                recoveredSubscription = server.latestSubscription();
+                if (recoveredSubscription != null
+                        && !firstSubscription.get("processIdentifier").equals(recoveredSubscription.get("processIdentifier"))) {
+                    break;
+                }
+                Thread.sleep(50);
+            }
+            assertNotNull(recoveredSubscription);
+            assertFalse(firstSubscription.get("processIdentifier").equals(recoveredSubscription.get("processIdentifier")));
+
+            server.publishReal(BacnetObjectType.ANALOG_INPUT, 1, BacnetPropertyIdentifier.PRESENT_VALUE, 22.5f);
+            long notificationDeadline = System.currentTimeMillis() + 3000;
+            while (System.currentTimeMillis() < notificationDeadline
+                    && (collector.getLatestProcessResult("p1") == null
+                    || Math.abs(((Number) collector.getLatestProcessResult("p1").getFinalValue()).doubleValue() - 22.5d) > 1.0E-6)) {
+                Thread.sleep(50);
+            }
+            assertNotNull(collector.getLatestProcessResult("p1"));
             Object value = collector.readPoint(point);
 
-            assertEquals(10.0d, ((Number) value).doubleValue(), 1.0E-6);
+            assertEquals(22.5d, ((Number) value).doubleValue(), 1.0E-6);
             Map<String, Object> status = collector.getDeviceStatus();
             assertEquals(1L, ((Number) status.get("covResubscribeCount")).longValue());
         }
@@ -467,9 +521,6 @@ class BacnetIpCollectorIntegrationTest {
             return true;
         }).when(configManager).runIfConfigurationCurrent(eq("dev-bacnet"), anyLong(), any(Runnable.class));
 
-        BacnetIpConnectionAdapter adapter = new BacnetIpConnectionAdapter(deviceInfo, connection);
-        adapter.connect();
-
         CollectionTaskGuard covTaskGuard = new CollectionTaskGuard();
         long generation = covTaskGuard.activateNextGeneration("dev-bacnet");
         ScheduledExecutorService covScheduler = Executors.newSingleThreadScheduledExecutor();
@@ -478,16 +529,20 @@ class BacnetIpCollectorIntegrationTest {
         ownedExecutors.add(covExecutor);
 
         BacnetIpCollector collector = new BacnetIpCollector(covTaskGuard, covScheduler, covExecutor);
+        ConnectionFactory connectionFactory = new ConnectionFactory(
+                new ProtocolDescriptorRegistry(List.of(new BacnetProtocolDescriptorProvider())),
+                new ProtocolConnectionValidator(),
+                List.of(new BacnetConnectionAdapterProvider(null, covScheduler)));
+        ConnectionManager connectionManager = new ConnectionManager(connectionFactory, configManager, null, null);
         collector.init(deviceInfo);
         ReflectionTestUtils.setField(collector, "dataQualityProcessor", com.wangbin.collector.core.processor.DataQualityProcessorTestSupport.create());
         ReflectionTestUtils.setField(collector, "configManager", configManager);
-        ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
+        ReflectionTestUtils.setField(collector, "connectionManager", connectionManager);
         collector.setRuntimeGeneration(generation);
         collector.setRuntimeConfigurationVersion(1L);
-        ReflectionTestUtils.setField(collector, "connected", true);
-        ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
         ReflectionTestUtils.setField(collector, "requestTimeoutMs", readTimeoutMs);
         collector.rebuildReadPlans("dev-bacnet", points);
+        collector.connect();
         ownedCollectors.add(collector);
         return collector;
     }
@@ -518,11 +573,19 @@ class BacnetIpCollectorIntegrationTest {
         Map<String, Object> ext = new LinkedHashMap<>();
         ext.put("remoteDeviceInstance", 1001);
         ext.put("localBindHost", "127.0.0.1");
-        ext.put("localBindPort", 0);
+        ext.put("localBindPort", findFreeUdpPort());
         ext.put("useWhoIsDiscovery", useWhoIsDiscovery);
         ext.putAll(extra);
         connection.setExtJson(ext);
         return connection;
+    }
+
+    private int findFreeUdpPort() {
+        try (DatagramSocket socket = new DatagramSocket(0)) {
+            return socket.getLocalPort();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Unable to allocate a BACnet test UDP port", ex);
+        }
     }
 
     private DataPoint point(String pointId, String address, String dataType) {
