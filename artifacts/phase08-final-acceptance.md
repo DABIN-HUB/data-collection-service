@@ -75,7 +75,7 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 | WarningId | 实际对象 | 归类 | 只读依据 | 是否单项阻断 |
 |---|---|---|---|---|
 | W-01 | `ownership.json` marker | `EXPECTED_POST_UNINSTALL`；审计规则对象不适配 | marker 为 `RegistrationState=Uninstalled`；仓库 `Uninstall-WangbinCollectorRedis` 将状态写为 `Uninstalled` 并保留目录/marker；当前审计 `TargetServiceCount=0`、`TargetPortListeners=0`，16379 目标服务已不存在 | 否 |
-| W-02 | `redis.conf` marker hash | `HASH_MATCH`；审计比较对象错误 | ZIP `Redis-8.10.3-Windows-x64-msys2/redis.conf` 与 Program Files 发行文件均为 `d165f7eb...0b80d3ac`；ProgramData 生成配置是另一对象，回执中 `GeneratedConfig` 实际/预期均为 `920e2a3b...d7f2a3c`。发行包静态文件与生成配置不能互相比较 | 否 |
+| W-02 | `redis.conf` marker hash | `HASH_MATCH`；审计比较对象错误 | ZIP `Redis-8.10.3-Windows-x64-msys2/redis.conf` 与 Program Files 发行文件均为 `d165f7eb487871012f057297f921a150f92bf5e6025a7b33024070fd0b80d3ac`；ProgramData 生成配置是另一对象，回执中 `GeneratedConfig` 实际/预期均为 `920e2a3b88c76df1e15491da9dd70861c0a091b05a913e0c29090f8d9d7f2a3c`。发行包静态文件与生成配置不能互相比较 | 否 |
 | W-03 | `logs/WangbinCollector-Redis.err.log` | `EXPECTED_RUNTIME_ARTIFACT` | 位于专用 `DataRoot\logs`，Owner 为 `NT SERVICE\WangbinCollector-Redis`，无 `ReparsePoint` 属性；WinSW 生成配置声明 `logpath` 和 `roll-by-size`，既有阶段回执也记录过该文件 | 否 |
 | W-04 | `logs/WangbinCollector-Redis.out.log` | `EXPECTED_RUNTIME_ARTIFACT` | 与 W-03 相同；属于 WinSW 运行时 stdout 日志，不是 Redis ZIP 静态发行文件 | 否 |
 | W-05 | `data/dump.rdb` | `EXPECTED_RUNTIME_ARTIFACT` | 位于专用 `DataRoot\data`，Owner 为 Redis 服务账号；正式配置包含 `save 900 1`、`save 300 10`、`save 60 10000`，RDB 是预期运行产物 | 否 |
