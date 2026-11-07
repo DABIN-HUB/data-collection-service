@@ -70,10 +70,30 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。最新回执的 SHA-256 为 `bac52939dcc0f899b6094ac5cd448001b93283b1fe149aae11455388e55aa4a7`。
 
-最新回执的 9 项警告为：`Marker identity mismatch`；`redis.conf` 的 marker hash 与预期 artifact 不一致；日志目录存在未列入期望清单的 `WangbinCollector-Redis.err.log`、`WangbinCollector-Redis.out.log`；数据目录存在未列入期望清单的 `dump.rdb`、`appendonlydir` 及其中 3 个 AOF/manifest 文件。marker 当前显示 `RegistrationState=Uninstalled`、服务名 `WangbinCollector-Redis`、端口 `16379`，而脚本期望的 marker 身份是另一套安装状态；这些警告可能涉及历史安装清单与当前运行数据范围不一致，但在没有人工归因前不能忽略，也不能据此修改或清理现役资源。
+九项警告逐项归因如下（`NON-BLOCKING` 仅表示该警告本身已有充分证据解释，不代表 GATE-2 已通过）：
 
-脚本的业务审计逻辑仍为只读，且本次 ACL 阶段已经执行完成；不需要再次提权。GATE-2 需要先对上述 marker 身份、`redis.conf` 哈希和运行时日志/AOF 文件进行人工基线归因，再决定是否补充一份经过确认的只读基线证据。不得为了消除警告删除文件、清理数据、停止服务或修改服务/ACL。
+| WarningId | 实际对象 | 归类 | 只读依据 | 是否单项阻断 |
+|---|---|---|---|---|
+| W-01 | `ownership.json` marker | `EXPECTED_POST_UNINSTALL`；审计规则对象不适配 | marker 为 `RegistrationState=Uninstalled`；仓库 `Uninstall-WangbinCollectorRedis` 将状态写为 `Uninstalled` 并保留目录/marker；当前审计 `TargetServiceCount=0`、`TargetPortListeners=0`，16379 目标服务已不存在 | 否 |
+| W-02 | `redis.conf` marker hash | `HASH_MATCH`；审计比较对象错误 | ZIP `Redis-8.10.3-Windows-x64-msys2/redis.conf` 与 Program Files 发行文件均为 `d165f7eb...0b80d3ac`；ProgramData 生成配置是另一对象，回执中 `GeneratedConfig` 实际/预期均为 `920e2a3b...d7f2a3c`。发行包静态文件与生成配置不能互相比较 | 否 |
+| W-03 | `logs/WangbinCollector-Redis.err.log` | `EXPECTED_RUNTIME_ARTIFACT` | 位于专用 `DataRoot\logs`，Owner 为 `NT SERVICE\WangbinCollector-Redis`，无 `ReparsePoint` 属性；WinSW 生成配置声明 `logpath` 和 `roll-by-size`，既有阶段回执也记录过该文件 | 否 |
+| W-04 | `logs/WangbinCollector-Redis.out.log` | `EXPECTED_RUNTIME_ARTIFACT` | 与 W-03 相同；属于 WinSW 运行时 stdout 日志，不是 Redis ZIP 静态发行文件 | 否 |
+| W-05 | `data/dump.rdb` | `EXPECTED_RUNTIME_ARTIFACT` | 位于专用 `DataRoot\data`，Owner 为 Redis 服务账号；正式配置包含 `save 900 1`、`save 300 10`、`save 60 10000`，RDB 是预期运行产物 | 否 |
+| W-06 | `data/appendonlydir` | `EXPECTED_RUNTIME_ARTIFACT` | 位于专用 Redis data 目录，Owner 为 Redis 服务账号；正式配置包含 `appendonly yes` 和 `appendfsync everysec`，AOF 目录是预期运行产物 | 否 |
+| W-07 | `appendonly.aof.1.base.rdb` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF base 文件 | 否 |
+| W-08 | `appendonly.aof.1.incr.aof` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF 增量文件 | 否 |
+| W-09 | `appendonly.aof.1.manifest` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF manifest 文件 | 否 |
+
+W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinCollector\Redis` / `C:\ProgramData\WangbinCollector\Redis` 范围内，没有证据显示它们属于 R2-A2 的 `C:\Program Files\WangbinCollector-R2A2\20261027-083137` 目录。R2-A2 的两个服务、PID、父子关系、26379 listener 和历史服务指纹仍与基线匹配。
+
+九项警告已有逐项归因，当前未闭合的不是服务归属或 ACL，而是原始回执没有导出每个对象的 `LastWriteTimeUtc`，且没有单独导出 marker 中 `RedisConfigSha256` 与 `RedisDistributionFiles[redis.conf].Sha256` 两个字段。为满足可追溯性，最小补证只读命令如下；它只读取路径元数据、ACL、SHA-256 和 marker 选定字段，不读取配置/秘密内容，不修改任何资源：
+
+```powershell
+$root='C:\ProgramData\WangbinCollector\Redis'; $paths=@('C:\Program Files\WangbinCollector\Redis\bin\redis.conf', "$root\config\redis.conf", "$root\logs\WangbinCollector-Redis.err.log", "$root\logs\WangbinCollector-Redis.out.log", "$root\data\dump.rdb", "$root\data\appendonlydir", "$root\data\appendonlydir\appendonly.aof.1.base.rdb", "$root\data\appendonlydir\appendonly.aof.1.incr.aof", "$root\data\appendonlydir\appendonly.aof.manifest"); $m=Get-Content -LiteralPath "$root\state\ownership.json" -Raw | ConvertFrom-Json; [pscustomobject]@{MarkerState=$m.RegistrationState; MarkerServiceName=$m.ServiceName; MarkerPort=$m.Port; RedisConfigSha256=$m.RedisConfigSha256; DistributionRedisConfSha256=@($m.RedisDistributionFiles | Where-Object Name -eq 'redis.conf' | Select-Object -ExpandProperty Sha256); Items=@($paths | ForEach-Object { $i=Get-Item -LiteralPath $_ -Force -ErrorAction Stop; $a=Get-Acl -LiteralPath $_ -ErrorAction Stop; [pscustomobject]@{Path=$_.ToString(); Kind=if($i.PSIsContainer){'Directory'}else{'File'}; Reparse=[bool](($i.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0); Owner=[string]$a.Owner; Protected=[bool]$a.AreAccessRulesProtected; CreationUtc=$i.CreationTimeUtc.ToString('o'); LastWriteUtc=$i.LastWriteTimeUtc.ToString('o'); Sha256=if($i.PSIsContainer){$null}else{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()}} })} | ConvertTo-Json -Depth 8
+```
+
+在该补证回执取得前，GATE-2 继续保持 `BLOCKED`；不得为了让脚本返回 PASS 而更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，但脚本报告的 9 项 marker/运行时文件警告尚未完成基线归因，仍为 `BLOCKED`。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，九项警告已有逐项归因，但原始回执缺少 `LastWriteTimeUtc` 及两个 marker hash 字段的独立导出，待最小只读补证，仍为 `BLOCKED`。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
