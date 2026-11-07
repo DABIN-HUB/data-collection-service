@@ -82,7 +82,7 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 ## 4. 管理员只读基线与最终资源状态
 
-用户已在管理员 PowerShell 中重新执行候选脚本。最新脱敏回执为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-130323-005.json`，脚本报告 `Administrator=true`，ACL 与文件树读取本次已完成，但最终 `Status=BLOCKED`，共有 9 项警告。因此本轮不能将 GATE-2 标记 PASS。
+用户已在管理员 PowerShell 中重新执行候选脚本。原始脱敏回执仍为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-130323-005.json`，脚本报告 `Administrator=true`，最终 `Status=BLOCKED`，共有 9 项警告。本轮用户补充的只读摘要确认了 marker、两个 redis.conf 哈希及九项对象的时间/Owner/Protected/Reparse 元数据；但当前工作区和可读取附件中没有可核验的最新 JSON 文件路径或哈希，也没有逐条 DACL ACE 枚举。因此不能仅凭摘要将 GATE-2 标记 PASS。
 
 已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。父目录及安装文件 ACL 已读取，文件哈希项也已计算；但脚本自身报告的标识和运行时文件警告尚未解释。
 
@@ -92,7 +92,7 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。最新回执的 SHA-256 为 `bac52939dcc0f899b6094ac5cd448001b93283b1fe149aae11455388e55aa4a7`。
 
-九项警告逐项归因如下（`NON-BLOCKING` 仅表示该警告本身已有充分证据解释，不代表 GATE-2 已通过）：
+九项警告逐项归因如下（`NON-BLOCKING` 仅表示该警告本身已有充分证据解释，不代表 GATE-2 已通过）。用户补充的 marker/hash/time 元数据可支持 W-01～W-09 的对象归属和生命周期归因；DACL ACE allow-list 仍是独立的未闭合证据项：
 
 | WarningId | 实际对象 | 归类 | 只读依据 | 是否单项阻断 |
 |---|---|---|---|---|
@@ -106,16 +106,18 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 | W-08 | `appendonly.aof.1.incr.aof` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF 增量文件 | 否 |
 | W-09 | `appendonly.aof.1.manifest` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF manifest 文件 | 否 |
 
-W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinCollector\Redis` / `C:\ProgramData\WangbinCollector\Redis` 范围内，没有证据显示它们属于 R2-A2 的 `C:\Program Files\WangbinCollector-R2A2\20261027-083137` 目录。R2-A2 的两个服务、PID、父子关系、26379 listener 和历史服务指纹仍与基线匹配。
+W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinCollector\Redis` / `C:\ProgramData\WangbinCollector\Redis` 范围内，没有证据显示它们属于 R2-A2 的 `C:\Program Files\WangbinCollector-R2A2\20261027-083137` 目录。R2-A2 的两个服务、PID、父子关系、26379 listener 和历史服务指纹仍与基线匹配。补充摘要确认九项对象的 `LastWriteTimeUtc`、Owner、Protected 和 Reparse 字段已导出；但没有提供逐条 ACE 的身份、类型、继承标志、作用范围和权限集合，无法验证“仅 SYSTEM、Administrators 与 Redis Service SID”这一最小权限断言。
 
-九项警告已有逐项归因，当前未闭合的不是服务归属或 ACL，而是原始回执没有导出每个对象的 `LastWriteTimeUtc`，且没有单独导出 marker 中 `RedisConfigSha256` 与 `RedisDistributionFiles[redis.conf].Sha256` 两个字段。为满足可追溯性，最小补证只读命令如下；它只读取路径元数据、ACL、SHA-256 和 marker 选定字段，不读取配置/秘密内容，不修改任何资源：
+九项警告已有逐项归因。用户补充摘要确认：marker 为 `Uninstalled / WangbinCollector-Redis / 16379`；发行 `redis.conf` 的 marker 与实际 SHA-256 均为 `d165f7eb487871012f057297f921a150f92bf5e6025a7b33024070fd0b80d3ac`；生成 `redis.conf` 的 marker 与实际 SHA-256 均为 `920e2a3b88c76df1e15491da9dd70861c0a091b05a913e0c29090f8d9d7f2a3c`；九项对象的路径、Owner、创建时间、修改时间、Reparse 和 Protected 字段已补齐。当前仍缺少可核验的逐条 DACL ACE 证据（IdentityReference/SID、AccessControlType、FileSystemRights、继承标志和作用范围），以及该补充 JSON 的独立路径/SHA-256，故 GATE-2 继续为 `BLOCKED`。不以 marker/hash/time 元数据替代 ACE 核验，也不更新 marker、配置、ACL 或持久化文件。
+
+如需补齐该最后证据，最小只读命令必须在既有输出基础上仅增加 `Get-Acl.Access` 的脱敏 ACE 字段，并将 JSON 文件路径和 SHA-256 一并记录；不读取配置正文、secret、RDB 或 AOF 内容，不修改任何资源：
 
 ```powershell
 $root='C:\ProgramData\WangbinCollector\Redis'; $paths=@('C:\Program Files\WangbinCollector\Redis\bin\redis.conf', "$root\config\redis.conf", "$root\logs\WangbinCollector-Redis.err.log", "$root\logs\WangbinCollector-Redis.out.log", "$root\data\dump.rdb", "$root\data\appendonlydir", "$root\data\appendonlydir\appendonly.aof.1.base.rdb", "$root\data\appendonlydir\appendonly.aof.1.incr.aof", "$root\data\appendonlydir\appendonly.aof.manifest"); $m=Get-Content -LiteralPath "$root\state\ownership.json" -Raw | ConvertFrom-Json; [pscustomobject]@{MarkerState=$m.RegistrationState; MarkerServiceName=$m.ServiceName; MarkerPort=$m.Port; RedisConfigSha256=$m.RedisConfigSha256; DistributionRedisConfSha256=@($m.RedisDistributionFiles | Where-Object Name -eq 'redis.conf' | Select-Object -ExpandProperty Sha256); Items=@($paths | ForEach-Object { $i=Get-Item -LiteralPath $_ -Force -ErrorAction Stop; $a=Get-Acl -LiteralPath $_ -ErrorAction Stop; [pscustomobject]@{Path=$_.ToString(); Kind=if($i.PSIsContainer){'Directory'}else{'File'}; Reparse=[bool](($i.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0); Owner=[string]$a.Owner; Protected=[bool]$a.AreAccessRulesProtected; CreationUtc=$i.CreationTimeUtc.ToString('o'); LastWriteUtc=$i.LastWriteTimeUtc.ToString('o'); Sha256=if($i.PSIsContainer){$null}else{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()}} })} | ConvertTo-Json -Depth 8
 ```
 
-在该补证回执取得前，GATE-2 继续保持 `BLOCKED`；不得为了让脚本返回 PASS 而更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
+在逐条 ACE 回执及其文件身份取得前，GATE-2 继续保持 `BLOCKED`；不得为了让脚本返回 PASS 而更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 已通过“使用 Surefire 兼容参数的完整 Maven 测试”，原始无参数 `mvn.cmd -B -ntp test` 的 `BUILD FAILURE` 仍保留，不能改写为无参数通过。GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，九项警告已有逐项候选归因，但原始回执仍缺少九项对象的 `LastWriteTimeUtc` 及两个 marker hash 字段的独立导出，待最小只读补证，仍为 `BLOCKED`。两个门禁未同时 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**遗留与判定：** GATE-1 已通过“使用 Surefire 兼容参数的完整 Maven 测试”，原始无参数 `mvn.cmd -B -ntp test` 的 `BUILD FAILURE` 仍保留，不能改写为无参数通过。GATE-2 的 marker/hash/time/Owner/Protected/Reparse 补证已具备摘要，但当前缺少可核验的最新 JSON 文件身份及逐条 DACL ACE allow-list，无法证明运行时文件权限仅授予 SYSTEM、Administrators 和 Redis Service SID，因此继续为 `BLOCKED`。两个门禁未同时 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
