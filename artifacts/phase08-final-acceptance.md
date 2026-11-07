@@ -1,6 +1,6 @@
 # WangbinCollector 阶段 08 验收续跑主报告
 
-**判定：`PHASE_08 = PARTIAL`。** GATE-1 本轮标准 Maven 全量执行未通过（Surefire fork 启动环境错误），GATE-2 已取得管理员只读部分结果但因 `Get-Acl` 模块加载错误仍为 `BLOCKED`。已完成的 SQLite/Redis、协议契约和本次 TDengine/浏览器证据不因这些证据门禁缺项回退。本报告不是商业发布、硬件认证或 Redis 构件再分发许可。
+**判定：`PHASE_08 = PARTIAL`。** GATE-1 的原始无参数命令曾因 Surefire fork 启动环境错误失败，但本轮按要求使用 `-Dsurefire.useManifestOnlyJar=false` 的完整 Maven 测试已通过；GATE-2 仍等待管理员最小只读补证，继续为 `BLOCKED`。已完成的 SQLite/Redis、协议契约和本次 TDengine/浏览器证据不因 GATE-2 缺项回退。本报告不是商业发布、硬件认证或 Redis 构件再分发许可。
 
 - 分支 / 生产源码 HEAD：`feature_2.0` / `b24d6f870dd062844b901634a682531356811f88`。
 - 本轮实际执行 JAR SHA-256：`65088cebfee45a189de64d371dfb386f131dc1dc13b8488f5df73d166b4d3a4b`。本地已有受保护的 `application.yml` 工作区修改；构件属于该工作区打包产物，**不声称它是纯净 HEAD 的逐字节构建**。启动时使用 scratch 中的独立外部配置，而非用户配置。
@@ -16,7 +16,7 @@
 | 07 | Windows SCM 真实验收已关闭；本轮**没有**执行服务生命周期操作，新增管理员只读指纹门禁仍待核验。 |
 | 08 | Runtime、BACnet、S7、IEC104 的已关闭测试契约批次保留；本轮新增启用 TDengine 的 Boot 实写读回和真实浏览器 101→202 闭环，管理员门禁仍阻断整体 PASS。 |
 
-历史材料中未找到可独立复核完整命令及对应源码 SHA 的标准全量成功原始日志：`r2b-final-head-full-reactor.log` 为 2026-10-28 的旧基线，不可用它证明 `b24d6f8`。本轮因此按授权执行一次标准命令，结果如下。
+历史材料中未找到可独立复核完整命令及对应源码 SHA 的标准全量成功原始日志：`r2b-final-head-full-reactor.log` 为 2026-10-28 的旧基线，不可用它证明 `b24d6f8`。本轮先按授权执行无参数标准命令并保留其失败证据，随后按用户指定的临时 Surefire 兼容参数完成目标模块和完整 reactor 复核；两次运行均未跳过测试、未使用 `-fn` 或忽略错误。
 
 ### GATE-1：标准 Maven 全量测试与源码关联
 
@@ -32,9 +32,31 @@
 | Maven 最终退出码 | `1` |
 | 最终标记 | `BUILD FAILURE`，不是 `BUILD SUCCESS` |
 
-Reactor 在 `collector-protocol-iot` 失败并停止后续模块。已完成模块的 Surefire XML 汇总为：`collector-common` 20/0/0/0、`collector-protocol-spi` 5/0/0/0、`collector-runtime` 322/0/0/0、`collector-config-sqlite` 154/0/0/2、`collector-telemetry` 150/0/0/1（格式为 tests/failures/errors/skipped，合计 651/0/0/3）。`collector-protocol-iot` 未形成此次运行的测试汇总；其 fork dump 为 `collector-protocol-iot/target/surefire-reports/2026-11-07T20-43-14_759.dumpstream`，指出 Surefire Boot Manifest-JAR 含绝对 classpath 路径并报告 `'other' has different root`，随后 fork VM 未正常启动。`collector-protocol-bacnet` 至 `collector-boot` 因 reactor 停止而 `SKIPPED`。因此 GATE-1 当前为 **BLOCKED/FAIL（环境启动错误，未宣称测试通过）**；未使用 `-fn`、`-DskipTests` 或忽略错误。
+Reactor 在 `collector-protocol-iot` 失败并停止后续模块。已完成模块的 Surefire XML 汇总为：`collector-common` 20/0/0/0、`collector-protocol-spi` 5/0/0/0、`collector-runtime` 322/0/0/0、`collector-config-sqlite` 154/0/0/2、`collector-telemetry` 150/0/0/1（格式为 tests/failures/errors/skipped，合计 651/0/0/3）。`collector-protocol-iot` 未形成此次运行的测试汇总；其 fork dump 为 `collector-protocol-iot/target/surefire-reports/2026-11-07T20-43-14_759.dumpstream`，指出 Surefire Boot Manifest-JAR 含绝对 classpath 路径并报告 `'other' has different root`，随后 fork VM 未正常启动。`collector-protocol-bacnet` 至 `collector-boot` 因 reactor 停止而 `SKIPPED`。因此，**原始无参数命令**的结果为 **BUILD FAILURE（环境启动错误，未宣称测试通过）**；未使用 `-fn`、`-DskipTests` 或忽略错误。兼容参数复核及其独立完整结果见下节。
 
 此轮另有 `phase08-final-package.log` 的 `-DskipTests package` 成功记录，但它不是全量测试证据，不替代上述失败结果。
+
+### GATE-1 兼容参数复核结果
+
+本节是对上面原始无参数失败结果的补充，不改写其结论。目标模块命令先通过后，才执行完整 reactor：
+
+```text
+mvn.cmd -B -ntp -pl collector-protocol-iot -am test "-Dsurefire.useManifestOnlyJar=false"
+mvn.cmd -B -ntp test "-Dsurefire.useManifestOnlyJar=false"
+```
+
+| 项目 | 目标模块复核 | 完整 reactor 复核 |
+|---|---|---|
+| 执行前源码 HEAD / 分支 | `a5309cf860d999d1cdfc63377794d9a9bc1b2535` / `feature_2.0` | 同左；工作区仍仅有既有 `application.yml` 修改和未跟踪 `.hermes.md`，均未覆盖、清理或暂存 |
+| 执行时间 | `2026-11-07T21:40:40+08:00` ～ `2026-11-07T21:41:25+08:00` | `2026-11-07T21:42:47+08:00` ～ `2026-11-07T21:48:12+08:00` |
+| 原始日志及 SHA-256 | `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/phase08-gate1-iot-manifest-disabled-20261108.log`; `2006d669235b2df098806bec234dc78d58a752c538437f790921a2c9ad51ccf5` | `C:/Users/wangbin/AppData/Local/hermes/cache/scratch/phase08-gate1-full-manifest-disabled-20261108.log`; `66d539d1b35da3bc4b1e3aa59429976b605013066ac2fbe25447650a20ead201` |
+| 最终退出码 / 标记 | `0` / `BUILD SUCCESS` | `0` / `BUILD SUCCESS` |
+| Reactor 结果 | 目标模块及其依赖成功 | 17 个 reactor 项目全部 `SUCCESS`，无 `SKIPPED` 项目 |
+| 测试统计 | 目标模块汇总 `134/0/0/1` | 全 reactor 汇总 `1839/0/0/4`（tests/failures/errors/skipped） |
+
+Maven 3.6.3 使用 Java 17.0.15（`JAVA_HOME=D:\Program Files\Java\jdk-17`）；POM 实际 Surefire 版本为 `3.5.6`。本机当前 shell 的独立 `java -version` 为 21.0.7，但 Maven 日志和 Maven 自身版本信息确认本次测试 fork 使用的是 Java 17.0.15，不能把 shell 的 Java 21 当成本次测试运行时。Maven 本地仓库解析为 `D:\Program Files\Java\maven_jar`；工程、仓库、Java 临时目录 `C:\Users\wangbin\AppData\Local\Temp` 及 `collector-protocol-iot\target\surefire-reports` 的只读属性均为普通 `Directory`，未发现 `ReparsePoint`。本次兼容参数已绕过上轮 dumpstream 所示的 Manifest-JAR 绝对 classpath / `'other' has different root` fork 启动故障。
+
+因此，GATE-1 可记录为 **PASS（使用 Surefire 兼容参数的完整 Maven 测试通过）**；这不等价于“原始 `mvn.cmd -B -ntp test` 无参数运行通过”，后者仍准确保留为 `BUILD FAILURE`。兼容测试日志只保存在仓库外 scratch，未将旧 XML 或 `-DskipTests package` 结果冒充本次全量结果。
 
 ## 2. 隔离资源、Mapper 装配与旧异常归因
 
@@ -96,4 +118,4 @@ $root='C:\ProgramData\WangbinCollector\Redis'; $paths=@('C:\Program Files\Wangbi
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，九项警告已有逐项归因，但原始回执缺少 `LastWriteTimeUtc` 及两个 marker hash 字段的独立导出，待最小只读补证，仍为 `BLOCKED`。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**遗留与判定：** GATE-1 已通过“使用 Surefire 兼容参数的完整 Maven 测试”，原始无参数 `mvn.cmd -B -ntp test` 的 `BUILD FAILURE` 仍保留，不能改写为无参数通过。GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，九项警告已有逐项候选归因，但原始回执仍缺少九项对象的 `LastWriteTimeUtc` 及两个 marker hash 字段的独立导出，待最小只读补证，仍为 `BLOCKED`。两个门禁未同时 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
