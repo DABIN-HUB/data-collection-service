@@ -60,23 +60,20 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 ## 4. 管理员只读基线与最终资源状态
 
-用户已在管理员 PowerShell 中执行候选脚本。最新脱敏回执为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-125707-547.json`，脚本报告 `Administrator=true`，但最终 `Status=BLOCKED`：加载 `Microsoft.PowerShell.Security` 模块时 `Get-Acl` 不可用，审计在 ACL/文件树阶段中止。因此本轮取得了管理员下的服务、进程、端口和历史指纹结果，但**没有完成服务 DACL、父目录/文件 ACL 和完整安装文件指纹复核**，不能将 GATE-2 标记 PASS。
+用户已在管理员 PowerShell 中重新执行候选脚本。最新脱敏回执为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-130323-005.json`，脚本报告 `Administrator=true`，ACL 与文件树读取本次已完成，但最终 `Status=BLOCKED`，共有 9 项警告。因此本轮不能将 GATE-2 标记 PASS。
 
-已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。该结果不等价于 ACL 完整一致；`FullFingerprintRecomputed=false`。
+已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。父目录及安装文件 ACL 已读取，文件哈希项也已计算；但脚本自身报告的标识和运行时文件警告尚未解释。
 
-当前进程权限未再用于推断服务不存在；本次管理员执行已确认目标服务实际存在。GATE-2 当前状态为 **BLOCKED（ACL cmdlet/module load error）**，不是 `ADMINISTRATOR_REQUIRED`。
+当前进程权限未再用于推断服务不存在；本次管理员执行已确认目标服务实际存在。GATE-2 当前状态为 **BLOCKED（审计警告未闭合）**，不是 `ADMINISTRATOR_REQUIRED`。
 
 已确认候选脚本存在，完整读取 151 行；SHA-256 为 `1b274eb8e320fdcbb951f1967e64a358f76c07399f1325ba27dcba6001ded93c`。脚本只调用 Windows 身份、CIM、TCP listener、文件读取、SHA-256、ACL 读取和 scratch 报告写入；未发现 `Start-Service`、`Stop-Service`、`Restart-Service`、`Remove-Service`、`sc.exe`、`Stop-Process`、`taskkill`、`Set-Acl`、Docker 命令、下载/远程执行或删除文件操作。它的唯一写操作是将 JSON 结果写入 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\`，不是现役服务、配置、ACL 或数据库。脚本管理员不足时会在读取目标资源前抛出 `Administrator read-only access required`，不会自动提权。
 
-本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。
+本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。最新回执的 SHA-256 为 `bac52939dcc0f899b6094ac5cd448001b93283b1fe149aae11455388e55aa4a7`。
 
-脚本的业务审计逻辑本身已核对为只读，但由于 `Get-Acl` 模块加载错误未完成。请在同一个管理员 PowerShell 中先显式加载模块，再重新执行同一只读脚本，以补齐 ACL 门禁：
+最新回执的 9 项警告为：`Marker identity mismatch`；`redis.conf` 的 marker hash 与预期 artifact 不一致；日志目录存在未列入期望清单的 `WangbinCollector-Redis.err.log`、`WangbinCollector-Redis.out.log`；数据目录存在未列入期望清单的 `dump.rdb`、`appendonlydir` 及其中 3 个 AOF/manifest 文件。marker 当前显示 `RegistrationState=Uninstalled`、服务名 `WangbinCollector-Redis`、端口 `16379`，而脚本期望的 marker 身份是另一套安装状态；这些警告可能涉及历史安装清单与当前运行数据范围不一致，但在没有人工归因前不能忽略，也不能据此修改或清理现役资源。
 
-```powershell
-Import-Module Microsoft.PowerShell.Security -Force -ErrorAction Stop
-& 'C:\Users\wangbin\AppData\Local\hermes\cache\scratch\phase07-ownership-readonly-audit.ps1'
-```
+脚本的业务审计逻辑仍为只读，且本次 ACL 阶段已经执行完成；不需要再次提权。GATE-2 需要先对上述 marker 身份、`redis.conf` 哈希和运行时日志/AOF 文件进行人工基线归因，再决定是否补充一份经过确认的只读基线证据。不得为了消除警告删除文件、清理数据、停止服务或修改服务/ACL。
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已获得管理员服务/进程/端口证据，但因 `Get-Acl` 模块加载错误仍为 `BLOCKED`，待补齐 ACL 与完整文件指纹复核。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已完成管理员服务、进程、端口、ACL 和文件读取，但脚本报告的 9 项 marker/运行时文件警告尚未完成基线归因，仍为 `BLOCKED`。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
