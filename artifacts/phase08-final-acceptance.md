@@ -1,6 +1,6 @@
 # WangbinCollector 阶段 08 验收续跑主报告
 
-**判定：`PHASE_08 = PARTIAL`。** GATE-1 本轮标准 Maven 全量执行未通过（Surefire fork 启动环境错误），GATE-2 仍需管理员只读核验（`ADMINISTRATOR_REQUIRED`）。已完成的 SQLite/Redis、协议契约和本次 TDengine/浏览器证据不因这些证据门禁缺项回退。本报告不是商业发布、硬件认证或 Redis 构件再分发许可。
+**判定：`PHASE_08 = PARTIAL`。** GATE-1 本轮标准 Maven 全量执行未通过（Surefire fork 启动环境错误），GATE-2 已取得管理员只读部分结果但因 `Get-Acl` 模块加载错误仍为 `BLOCKED`。已完成的 SQLite/Redis、协议契约和本次 TDengine/浏览器证据不因这些证据门禁缺项回退。本报告不是商业发布、硬件认证或 Redis 构件再分发许可。
 
 - 分支 / 生产源码 HEAD：`feature_2.0` / `b24d6f870dd062844b901634a682531356811f88`。
 - 本轮实际执行 JAR SHA-256：`65088cebfee45a189de64d371dfb386f131dc1dc13b8488f5df73d166b4d3a4b`。本地已有受保护的 `application.yml` 工作区修改；构件属于该工作区打包产物，**不声称它是纯净 HEAD 的逐字节构建**。启动时使用 scratch 中的独立外部配置，而非用户配置。
@@ -60,16 +60,23 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 ## 4. 管理员只读基线与最终资源状态
 
-当前进程权限只读检查为 `False`（`DESKTOP-IKHU04D\wangbin`），所以 R2-A2/REISUN 服务注册身份、服务 DACL、当前进程创建时间/父子关系、监听端口和历史文件目录 ACL 的**管理员完整比对未执行**，状态 `ADMINISTRATOR_REQUIRED`，不能从普通权限下的空结果推断服务不存在。
+用户已在管理员 PowerShell 中执行候选脚本。最新脱敏回执为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-125707-547.json`，脚本报告 `Administrator=true`，但最终 `Status=BLOCKED`：加载 `Microsoft.PowerShell.Security` 模块时 `Get-Acl` 不可用，审计在 ACL/文件树阶段中止。因此本轮取得了管理员下的服务、进程、端口和历史指纹结果，但**没有完成服务 DACL、父目录/文件 ACL 和完整安装文件指纹复核**，不能将 GATE-2 标记 PASS。
+
+已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。该结果不等价于 ACL 完整一致；`FullFingerprintRecomputed=false`。
+
+当前进程权限未再用于推断服务不存在；本次管理员执行已确认目标服务实际存在。GATE-2 当前状态为 **BLOCKED（ACL cmdlet/module load error）**，不是 `ADMINISTRATOR_REQUIRED`。
 
 已确认候选脚本存在，完整读取 151 行；SHA-256 为 `1b274eb8e320fdcbb951f1967e64a358f76c07399f1325ba27dcba6001ded93c`。脚本只调用 Windows 身份、CIM、TCP listener、文件读取、SHA-256、ACL 读取和 scratch 报告写入；未发现 `Start-Service`、`Stop-Service`、`Restart-Service`、`Remove-Service`、`sc.exe`、`Stop-Process`、`taskkill`、`Set-Acl`、Docker 命令、下载/远程执行或删除文件操作。它的唯一写操作是将 JSON 结果写入 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\`，不是现役服务、配置、ACL 或数据库。脚本管理员不足时会在读取目标资源前抛出 `Administrator read-only access required`，不会自动提权。
 
-在用户自行批准 UAC 后，仅执行以下唯一管理员只读命令（本轮未自动执行，也未尝试绕过 UAC；脚本 SHA 已在执行前核对）：
+本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。
+
+脚本的业务审计逻辑本身已核对为只读，但由于 `Get-Acl` 模块加载错误未完成。请在同一个管理员 PowerShell 中先显式加载模块，再重新执行同一只读脚本，以补齐 ACL 门禁：
 
 ```powershell
-Start-Process powershell.exe -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\wangbin\AppData\Local\hermes\cache\scratch\phase07-ownership-readonly-audit.ps1"'
+Import-Module Microsoft.PowerShell.Security -Force -ErrorAction Stop
+& 'C:\Users\wangbin\AppData\Local\hermes\cache\scratch\phase07-ownership-readonly-audit.ps1'
 ```
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 仍为 `ADMINISTRATOR_REQUIRED`，等待用户自行批准上述只读命令并提供脱敏摘要。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**遗留与判定：** GATE-1 本轮实际执行为 `BUILD FAILURE`，原因是 `collector-protocol-iot` 的 Surefire fork 启动环境错误；GATE-2 已获得管理员服务/进程/端口证据，但因 `Get-Acl` 模块加载错误仍为 `BLOCKED`，待补齐 ACL 与完整文件指纹复核。两个证据门禁均未 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
