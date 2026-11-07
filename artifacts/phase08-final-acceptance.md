@@ -1,6 +1,6 @@
 # WangbinCollector 阶段 08 验收续跑主报告
 
-**判定：`PHASE_08 = PARTIAL`。** GATE-1 的原始无参数命令曾因 Surefire fork 启动环境错误失败，但本轮按要求使用 `-Dsurefire.useManifestOnlyJar=false` 的完整 Maven 测试已通过；GATE-2 仍等待管理员最小只读补证，继续为 `BLOCKED`。已完成的 SQLite/Redis、协议契约和本次 TDengine/浏览器证据不因 GATE-2 缺项回退。本报告不是商业发布、硬件认证或 Redis 构件再分发许可。
+**判定：`PHASE_08 = PASS`。** GATE-1 使用 Surefire 兼容参数完成完整 Maven reactor 测试并通过；原始无参数测试的 Surefire fork 启动失败历史记录完整保留。GATE-2 的 marker/hash/time/Owner/Protected/Reparse 及最终 DACL ACE 补证已与阶段 07 契约、R2-A2 管理员保护基线和九项警告逐项对齐。本报告不是商业发布批准、全部硬件认证或 Redis 构件再分发许可。
 
 - 分支 / 生产源码 HEAD：`feature_2.0` / `b24d6f870dd062844b901634a682531356811f88`。
 - 本轮实际执行 JAR SHA-256：`65088cebfee45a189de64d371dfb386f131dc1dc13b8488f5df73d166b4d3a4b`。本地已有受保护的 `application.yml` 工作区修改；构件属于该工作区打包产物，**不声称它是纯净 HEAD 的逐字节构建**。启动时使用 scratch 中的独立外部配置，而非用户配置。
@@ -82,17 +82,17 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 
 ## 4. 管理员只读基线与最终资源状态
 
-用户已在管理员 PowerShell 中重新执行候选脚本。原始脱敏回执仍为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-130323-005.json`，脚本报告 `Administrator=true`，最终 `Status=BLOCKED`，共有 9 项警告。本轮用户补充的只读摘要确认了 marker、两个 redis.conf 哈希及九项对象的时间/Owner/Protected/Reparse 元数据；但当前工作区和可读取附件中没有可核验的最新 JSON 文件路径或哈希，也没有逐条 DACL ACE 枚举。因此不能仅凭摘要将 GATE-2 标记 PASS。
+用户已在管理员 PowerShell 中重新执行候选脚本。原始脱敏回执仍为 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\ownership-readonly-audit-20261107-130323-005.json`，其原始 `Status=BLOCKED`、9 项警告和文件内容均保留、不删除、不改写。用户另提供最终 ACE 补证 `phase08-gate2-ace-20261107-233009.json`，SHA-256 为 `1566701FB726FC37DD5ACE4B0B6B6C1C70BFA3941DFA62DCF63483A7FEFCB9DA`；该补证包含九个对象共 27 条 ACE，已按阶段 07 权限契约核验。
 
-已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。父目录及安装文件 ACL 已读取，文件哈希项也已计算；但脚本自身报告的标识和运行时文件警告尚未解释。
+已取得的管理员只读结果：`WangbinCollector-R2A2-Redis` 与 `WangbinCollector-R2A2-Collector` 均为 `Running`，服务账号分别为 `NT SERVICE\WangbinCollector-R2A2-Redis` 与 `NT SERVICE\WangbinCollector-R2A2-Collector`，注册路径均指向 `C:\Program Files\WangbinCollector-R2A2\20261027-083137\code\...`；Redis 进程 PID `56800`、父进程为 `55424`，监听 `127.0.0.1:26379`。与历史基线的服务 PID、状态、路径均匹配，PID `56800` 可见且可执行文件路径匹配，历史受保护监听存在。父目录及安装文件 ACL 已读取，文件哈希项也已计算；原始回执中的标识和运行时文件警告已由最终 ACE、哈希、时间和对象归属补证逐项解释。
 
-当前进程权限未再用于推断服务不存在；本次管理员执行已确认目标服务实际存在。GATE-2 当前状态为 **BLOCKED（审计警告未闭合）**，不是 `ADMINISTRATOR_REQUIRED`。
+当前进程权限未再用于推断服务不存在；管理员回执已确认目标服务实际存在。R2-A2 两个服务、注册路径、服务账号、进程父子关系、26379 listener 及九项历史 ACL 指纹与保护基线一致。最终 ACE 补证确认九个对象共 27 条 ACE，未发现多余 ACE、Deny ACE 或 ReparsePoint；GATE-2 状态为 **PASS**。
 
 已确认候选脚本存在，完整读取 151 行；SHA-256 为 `1b274eb8e320fdcbb951f1967e64a358f76c07399f1325ba27dcba6001ded93c`。脚本只调用 Windows 身份、CIM、TCP listener、文件读取、SHA-256、ACL 读取和 scratch 报告写入；未发现 `Start-Service`、`Stop-Service`、`Restart-Service`、`Remove-Service`、`sc.exe`、`Stop-Process`、`taskkill`、`Set-Acl`、Docker 命令、下载/远程执行或删除文件操作。它的唯一写操作是将 JSON 结果写入 `C:\Users\wangbin\AppData\Local\hermes\cache\scratch\wangbin-redis-phase07-real-20261103\`，不是现役服务、配置、ACL 或数据库。脚本管理员不足时会在读取目标资源前抛出 `Administrator read-only access required`，不会自动提权。
 
 本次管理员执行仍只写入 scratch JSON；未执行服务生命周期、进程操作、ACL 修改、Docker 操作或数据库修改。原始回执未入仓库。最新回执的 SHA-256 为 `bac52939dcc0f899b6094ac5cd448001b93283b1fe149aae11455388e55aa4a7`。
 
-九项警告逐项归因如下（`NON-BLOCKING` 仅表示该警告本身已有充分证据解释，不代表 GATE-2 已通过）。用户补充的 marker/hash/time 元数据可支持 W-01～W-09 的对象归属和生命周期归因；DACL ACE allow-list 仍是独立的未闭合证据项：
+九项警告逐项归因如下。最终 ACE 补证已闭合 DACL 最小权限和继承关系证据：SYSTEM、Administrators 为 FullControl；Redis Service SID 在发行配置上为 `ReadAndExecute, Synchronize`，在运行配置上为 `Read, Synchronize`，在运行时文件上为 `Modify, Synchronize`；继承与目录继承标志符合阶段 07 契约。
 
 | WarningId | 实际对象 | 归类 | 只读依据 | 是否单项阻断 |
 |---|---|---|---|---|
@@ -106,11 +106,11 @@ SQL 为只读查询 `SELECT event_ts, device_id, point_id, point_code, value_tex
 | W-08 | `appendonly.aof.1.incr.aof` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF 增量文件 | 否 |
 | W-09 | `appendonly.aof.1.manifest` | `EXPECTED_RUNTIME_ARTIFACT` | 位于 W-06 目录，Owner/ACL 与 data 目录一致，非重解析路径；属于 Redis AOF manifest 文件 | 否 |
 
-W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinCollector\Redis` / `C:\ProgramData\WangbinCollector\Redis` 范围内，没有证据显示它们属于 R2-A2 的 `C:\Program Files\WangbinCollector-R2A2\20261027-083137` 目录。R2-A2 的两个服务、PID、父子关系、26379 listener 和历史服务指纹仍与基线匹配。补充摘要确认九项对象的 `LastWriteTimeUtc`、Owner、Protected 和 Reparse 字段已导出；但没有提供逐条 ACE 的身份、类型、继承标志、作用范围和权限集合，无法验证“仅 SYSTEM、Administrators 与 Redis Service SID”这一最小权限断言。
+W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinCollector\Redis` / `C:\ProgramData\WangbinCollector\Redis` 范围内，没有证据显示它们属于 R2-A2 的 `C:\Program Files\WangbinCollector-R2A2\20261027-083137` 目录。R2-A2 的两个服务、PID、父子关系、26379 listener 和历史服务指纹仍与基线匹配。最终 ACE 补证确认九项对象的路径、Owner、创建/修改时间、Protected、Reparse 和逐条 ACE 均符合阶段 07 权限契约，没有额外 Deny ACE 或重解析点。
 
-九项警告已有逐项归因。用户补充摘要确认：marker 为 `Uninstalled / WangbinCollector-Redis / 16379`；发行 `redis.conf` 的 marker 与实际 SHA-256 均为 `d165f7eb487871012f057297f921a150f92bf5e6025a7b33024070fd0b80d3ac`；生成 `redis.conf` 的 marker 与实际 SHA-256 均为 `920e2a3b88c76df1e15491da9dd70861c0a091b05a913e0c29090f8d9d7f2a3c`；九项对象的路径、Owner、创建时间、修改时间、Reparse 和 Protected 字段已补齐。当前仍缺少可核验的逐条 DACL ACE 证据（IdentityReference/SID、AccessControlType、FileSystemRights、继承标志和作用范围），以及该补充 JSON 的独立路径/SHA-256，故 GATE-2 继续为 `BLOCKED`。不以 marker/hash/time 元数据替代 ACE 核验，也不更新 marker、配置、ACL 或持久化文件。
+九项警告已有逐项归因并已闭合。最终补证确认：marker 为 `Uninstalled / WangbinCollector-Redis / 16379`；发行 `redis.conf` 的 marker 与实际 SHA-256 均为 `d165f7eb487871012f057297f921a150f92bf5e6025a7b33024070fd0b80d3ac`；生成 `redis.conf` 的 marker 与实际 SHA-256 均为 `920e2a3b88c76df1e15491da9dd70861c0a091b05a913e0c29090f8d9d7f2a3c`；九项对象共 27 条 ACE，权限、继承、Owner、时间、Protected 和 Reparse 均符合阶段 07 契约。最终 ACE 文件 SHA-256 为 `1566701FB726FC37DD5ACE4B0B6B6C1C70BFA3941DFA62DCF63483A7FEFCB9DA`。原始 `Status=BLOCKED` 回执仅作为历史审计证据保留，未被改写或删除。
 
-如需补齐该最后证据，最小只读命令必须在既有输出基础上仅增加 `Get-Acl.Access` 的脱敏 ACE 字段，并将 JSON 文件路径和 SHA-256 一并记录；不读取配置正文、secret、RDB 或 AOF 内容，不修改任何资源：
+为保留可重复核验路径，最小只读命令在既有输出基础上增加 `Get-Acl.Access` 的脱敏 ACE 字段，并将 JSON 文件路径和 SHA-256 一并记录；该命令不读取配置正文、secret、RDB 或 AOF 内容，不修改任何资源：
 
 ```powershell
 $root = 'C:\ProgramData\WangbinCollector\Redis'
@@ -163,8 +163,8 @@ $items = @(
 } | ConvertTo-Json -Depth 10
 ```
 
-在逐条 ACE 回执及其文件身份取得前，GATE-2 继续保持 `BLOCKED`；不得为了让脚本返回 PASS 而更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
+上述只读 ACE 探针作为可重复核验命令保留；本次最终 ACE 补证已提供决定性逐条权限结果，因此不再重新执行探针。整个核验过程中未更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
 
 最终经正式页面 STOP 后 API 核实 `running=false`、`connected=false`、`phase=STOPPED`；已按进程 PID、创建时间与 scratch 配置/脚本路径精确核对并终止本轮 Boot、模拟器及独立 Chrome。39095、36512、9337 均已无监听。旧 Redis/TDengine 容器保持原 ID 与运行状态，不执行 `FLUSHALL`/`FLUSHDB`、prune 或清库，scratch 原始日志/口令/SQLite 数据库未入仓库。`collector-boot/src/main/resources/application.yml` 保留既有工作区修改、`.hermes.md` 保留未跟踪状态；二者均未修改、暂存或提交。
 
-**遗留与判定：** GATE-1 已通过“使用 Surefire 兼容参数的完整 Maven 测试”，原始无参数 `mvn.cmd -B -ntp test` 的 `BUILD FAILURE` 仍保留，不能改写为无参数通过。GATE-2 的 marker/hash/time/Owner/Protected/Reparse 补证已具备摘要，但当前缺少可核验的最新 JSON 文件身份及逐条 DACL ACE allow-list，无法证明运行时文件权限仅授予 SYSTEM、Administrators 和 Redis Service SID，因此继续为 `BLOCKED`。两个门禁未同时 PASS，因此 `PHASE_08 = PARTIAL`；已完成业务链路保持 `SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`，但不能据此宣布商业发布或真实硬件认证。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与源码复核另行进行。
+**最终判定：** `GATE-1 = PASS`（使用 Surefire 兼容参数的完整 Maven 测试通过；原始无参数 `mvn.cmd -B -ntp test` 的 Surefire fork `BUILD FAILURE` 历史记录保留，不能改写为无参数通过）；`GATE-2 = PASS`（原始 BLOCKED 回执保留，最终 ACE 补证、R2-A2 保护基线、九项对象归属、哈希、时间、Owner、DACL、继承和 Reparse 核验一致）；`SQLITE_REDIS_INTEGRATION_ACCEPTANCE = PASS`；`PHASE_08 = PASS`。该结论不代表商业发布批准、全部硬件认证或 Redis 构件再分发许可。浏览器和 TDengine 的本次真实闭环保持已通过结论；后续人工 push 与 GitHub 源码复核另行进行。
