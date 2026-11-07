@@ -113,7 +113,54 @@ W-01～W-09 均位于阶段 07 测试服务 A 的 `C:\Program Files\WangbinColle
 如需补齐该最后证据，最小只读命令必须在既有输出基础上仅增加 `Get-Acl.Access` 的脱敏 ACE 字段，并将 JSON 文件路径和 SHA-256 一并记录；不读取配置正文、secret、RDB 或 AOF 内容，不修改任何资源：
 
 ```powershell
-$root='C:\ProgramData\WangbinCollector\Redis'; $paths=@('C:\Program Files\WangbinCollector\Redis\bin\redis.conf', "$root\config\redis.conf", "$root\logs\WangbinCollector-Redis.err.log", "$root\logs\WangbinCollector-Redis.out.log", "$root\data\dump.rdb", "$root\data\appendonlydir", "$root\data\appendonlydir\appendonly.aof.1.base.rdb", "$root\data\appendonlydir\appendonly.aof.1.incr.aof", "$root\data\appendonlydir\appendonly.aof.manifest"); $m=Get-Content -LiteralPath "$root\state\ownership.json" -Raw | ConvertFrom-Json; [pscustomobject]@{MarkerState=$m.RegistrationState; MarkerServiceName=$m.ServiceName; MarkerPort=$m.Port; RedisConfigSha256=$m.RedisConfigSha256; DistributionRedisConfSha256=@($m.RedisDistributionFiles | Where-Object Name -eq 'redis.conf' | Select-Object -ExpandProperty Sha256); Items=@($paths | ForEach-Object { $i=Get-Item -LiteralPath $_ -Force -ErrorAction Stop; $a=Get-Acl -LiteralPath $_ -ErrorAction Stop; [pscustomobject]@{Path=$_.ToString(); Kind=if($i.PSIsContainer){'Directory'}else{'File'}; Reparse=[bool](($i.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0); Owner=[string]$a.Owner; Protected=[bool]$a.AreAccessRulesProtected; CreationUtc=$i.CreationTimeUtc.ToString('o'); LastWriteUtc=$i.LastWriteTimeUtc.ToString('o'); Sha256=if($i.PSIsContainer){$null}else{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()}} })} | ConvertTo-Json -Depth 8
+$root = 'C:\ProgramData\WangbinCollector\Redis'
+$paths = @(
+  'C:\Program Files\WangbinCollector\Redis\bin\redis.conf',
+  "$root\config\redis.conf",
+  "$root\logs\WangbinCollector-Redis.err.log",
+  "$root\logs\WangbinCollector-Redis.out.log",
+  "$root\data\dump.rdb",
+  "$root\data\appendonlydir",
+  "$root\data\appendonlydir\appendonly.aof.1.base.rdb",
+  "$root\data\appendonlydir\appendonly.aof.1.incr.aof",
+  "$root\data\appendonlydir\appendonly.aof.manifest"
+)
+$m = Get-Content -LiteralPath "$root\state\ownership.json" -Raw | ConvertFrom-Json
+$items = @(
+  foreach ($path in $paths) {
+    $i = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+    $a = Get-Acl -LiteralPath $path -ErrorAction Stop
+    $aces = @($a.Access | ForEach-Object {
+      [pscustomobject]@{
+        Identity = [string]$_.IdentityReference
+        Type = [string]$_.AccessControlType
+        Rights = [string]$_.FileSystemRights
+        Inherited = [bool]$_.IsInherited
+        Inheritance = [string]$_.InheritanceFlags
+        Propagation = [string]$_.PropagationFlags
+      }
+    })
+    [pscustomobject]@{
+      Path = $path
+      Kind = if ($i.PSIsContainer) { 'Directory' } else { 'File' }
+      Reparse = [bool](($i.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+      Owner = [string]$a.Owner
+      Protected = [bool]$a.AreAccessRulesProtected
+      CreationUtc = $i.CreationTimeUtc.ToString('o')
+      LastWriteUtc = $i.LastWriteTimeUtc.ToString('o')
+      Sha256 = if ($i.PSIsContainer) { $null } else { (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+      Aces = $aces
+    }
+  }
+)
+[pscustomobject]@{
+  MarkerState = $m.RegistrationState
+  MarkerServiceName = $m.ServiceName
+  MarkerPort = $m.Port
+  RedisConfigSha256 = $m.RedisConfigSha256
+  DistributionRedisConfSha256 = @($m.RedisDistributionFiles | Where-Object Name -eq 'redis.conf' | Select-Object -ExpandProperty Sha256)
+  Items = $items
+} | ConvertTo-Json -Depth 10
 ```
 
 在逐条 ACE 回执及其文件身份取得前，GATE-2 继续保持 `BLOCKED`；不得为了让脚本返回 PASS 而更新 marker、改写哈希、删除运行时文件、清理数据、停止服务或修改 ACL。
