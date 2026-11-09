@@ -1,0 +1,31 @@
+# 首次 deploy.sh 生成 config/application-release.yml，模板中的占位符不能直接用于启动。
+# 使用 spring.config.additional-location 叠加内部资源，保留 MyBatis Mapper 配置。
+spring:
+  data:
+    redis:
+      host: redis
+      port: 6379
+      database: 0
+      password: ""
+wangbin:
+  config:
+    persistence:
+      mode: sqlite
+    sqlite:
+      enabled: true
+      database-path: /var/lib/wangbin-collector/data/collector.db
+telemetry:
+  tdengine:
+    enabled: false
+collector:
+  auth:
+    enabled: true
+    allow-ip-authentication: false
+    ops-tokens:
+      # 覆盖内置开发键的描述；空描述无法通过 AuthFilter 的令牌验证。
+      ops-token: ""
+      "__OPS_TOKEN__": "Linux 运维"
+  report:
+    enabled: false
+    mqtt:
+      enabled: false

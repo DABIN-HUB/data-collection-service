@@ -1,0 +1,11 @@
+# 本地部署状态和凭据不得进入源码仓库。
+.env
+config/application-release.yml
+config/ops-token
+config/passwd
+data/
+logs/
+BUILD-MANIFEST
+SHA256SUMS
+*.tar.gz
+*.tar.gz.sha256
