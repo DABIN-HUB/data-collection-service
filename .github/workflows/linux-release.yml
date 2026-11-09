@@ -1,7 +1,7 @@
 name: Linux 0.1.0 发行工程
 on:
   push:
-    branches: [feature_2.0]
+    branches: [master]
     tags: [v0.1.0]
 permissions:
   contents: read
@@ -9,6 +9,7 @@ jobs:
   linux-amd64:
     runs-on: ubuntu-22.04
     permissions:
+      actions: read
       contents: write
       packages: write
     steps:
@@ -24,13 +25,42 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             [[ "$GITHUB_REF_NAME" == v0.1.0 ]]
             [[ "$(git rev-parse 'refs/tags/v0.1.0^{commit}')" == "$source_sha" ]]
-            git fetch --no-tags origin +refs/heads/feature_2.0:refs/remotes/origin/feature_2.0
-            git merge-base --is-ancestor "$source_sha" refs/remotes/origin/feature_2.0
+            git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+            git merge-base --is-ancestor "$source_sha" refs/remotes/origin/master
           else
-            [[ "$GITHUB_REF" == refs/heads/feature_2.0 ]]
+            [[ "$GITHUB_REF" == refs/heads/master ]]
           fi
           git diff --quiet && git diff --cached --quiet
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+      - name: 校验标签提交的 master CI 已成功
+        if: github.ref_type == 'tag'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: context.sha,
+                event: 'push',
+                per_page: 100
+              }
+            );
+            const successful = runs.filter((run) =>
+              run.name === 'CI' &&
+              run.path === '.github/workflows/ci.yml' &&
+              run.head_branch === 'master' &&
+              run.head_sha === context.sha &&
+              run.event === 'push' &&
+              run.status === 'completed' &&
+              run.conclusion === 'success'
+            );
+            if (successful.length === 0) {
+              core.setFailed(`提交 ${context.sha} 没有已成功完成的 master CI`);
+            } else {
+              core.info(`已确认 master CI：${successful.map((run) => run.html_url).join(', ')}`);
+            }
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -118,6 +148,7 @@ jobs:
           image="ghcr.io/dabin-hub/data-collection-service@${{ steps.image.outputs.digest }}"
           [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
           docker logout ghcr.io
+          docker image rm "$image" >/dev/null 2>&1 || true
           docker pull --platform linux/amd64 "$image"
           [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/amd64 ]]
           bash linux/package.sh "$RUNNER_TEMP/release" "$SOURCE_SHA" "$JAR_SHA256" "$image"
