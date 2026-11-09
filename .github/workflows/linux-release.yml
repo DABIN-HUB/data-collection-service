@@ -76,8 +76,7 @@ jobs:
           npm ci --prefix collector-desktop
           npm --prefix collector-desktop run typecheck
           npm --prefix collector-desktop run build:web
-          diff -qr collector-desktop/dist/renderer collector-boot/src/main/resources/static/desktop
-          # 工作台构建可更新已追踪的静态资源；其它源码与配置必须保持检出时状态。
+          # 工作台构建只生成被忽略的静态资源；其它源码与配置必须保持检出时状态。
           other_changes="$(git diff --name-only -- . ':(exclude)collector-boot/src/main/resources/static/desktop')"
           [[ -z "$other_changes" ]]
       - name: 构建完整 Spring Boot JAR
