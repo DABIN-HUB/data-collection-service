@@ -1,0 +1,181 @@
+name: Linux 0.1.0 发行工程
+on:
+  push:
+    branches: [feature_2.0]
+    tags: [v0.1.0]
+permissions:
+  contents: read
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 校验分支与标签来源
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$(< linux/VERSION)" == '0.1.0' ]]
+          source_sha="$(git rev-parse HEAD)"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            [[ "$GITHUB_REF_NAME" == v0.1.0 ]]
+            [[ "$(git rev-parse 'refs/tags/v0.1.0^{commit}')" == "$source_sha" ]]
+            git fetch --no-tags origin +refs/heads/feature_2.0:refs/remotes/origin/feature_2.0
+            git merge-base --is-ancestor "$source_sha" refs/remotes/origin/feature_2.0
+          else
+            [[ "$GITHUB_REF" == refs/heads/feature_2.0 ]]
+          fi
+          git diff --quiet && git diff --cached --quiet
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: collector-desktop/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: 构建浏览器工作台
+        run: |
+          npm ci --prefix collector-desktop
+          npm --prefix collector-desktop run typecheck
+          npm --prefix collector-desktop run build:web
+          diff -qr collector-desktop/dist/renderer collector-boot/src/main/resources/static/desktop
+          # 工作台构建可更新已追踪的静态资源；其它源码与配置必须保持检出时状态。
+          other_changes="$(git diff --name-only -- . ':(exclude)collector-boot/src/main/resources/static/desktop')"
+          [[ -z "$other_changes" ]]
+      - name: 构建完整 Spring Boot JAR
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mvn -B -ntp -pl collector-boot -am package -Dmaven.test.skip=true
+          jar_file="$(find collector-boot/target -maxdepth 1 -type f -name 'data-collection-service-*.jar' ! -name '*.original' ! -name 'original-*.jar' -print -quit)"
+          [[ -n "$jar_file" ]]
+          mkdir -p "$RUNNER_TEMP/linux-image"
+          cp "$jar_file" "$RUNNER_TEMP/linux-image/app.jar"
+          cp linux/Dockerfile "$RUNNER_TEMP/linux-image/Dockerfile"
+          jar tf "$RUNNER_TEMP/linux-image/app.jar" > "$RUNNER_TEMP/jar-entries.txt"
+          grep -qx 'BOOT-INF/classes/static/desktop/index.html' "$RUNNER_TEMP/jar-entries.txt"
+          grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.js$' "$RUNNER_TEMP/jar-entries.txt"
+          grep -q '^BOOT-INF/classes/static/desktop/assets/.*\.css$' "$RUNNER_TEMP/jar-entries.txt"
+          grep -q '^BOOT-INF/lib/collector-config-sqlite-.*\.jar$' "$RUNNER_TEMP/jar-entries.txt"
+          grep -q '^BOOT-INF/lib/collector-storage-.*\.jar$' "$RUNNER_TEMP/jar-entries.txt"
+          unzip -p "$RUNNER_TEMP/linux-image/app.jar" 'BOOT-INF/lib/collector-config-sqlite-*.jar' > "$RUNNER_TEMP/sqlite.jar"
+          jar tf "$RUNNER_TEMP/sqlite.jar" | grep -qx 'mybatis/sqlite/SqliteConfigMapper.xml'
+          jar tf "$RUNNER_TEMP/sqlite.jar" | grep -qx 'db/migration/V001__wangbin_configuration.sql'
+          unzip -p "$RUNNER_TEMP/linux-image/app.jar" 'BOOT-INF/lib/collector-storage-*.jar' > "$RUNNER_TEMP/storage.jar"
+          jar tf "$RUNNER_TEMP/storage.jar" | grep -qx 'mapper/storage/DataRepository.xml'
+          echo "JAR_SHA256=$(sha256sum "$RUNNER_TEMP/linux-image/app.jar" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - name: 构建 AMD64 镜像（普通提交不推送）
+        if: github.ref_type == 'branch'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          docker buildx build --platform linux/amd64 --load \
+            --build-arg SOURCE_SHA="$SOURCE_SHA" --build-arg JAR_SHA256="$JAR_SHA256" \
+            -t wangbincollector:0.1.0-candidate -f "$RUNNER_TEMP/linux-image/Dockerfile" "$RUNNER_TEMP/linux-image"
+          [[ "$(docker image inspect wangbincollector:0.1.0-candidate --format '{{.Os}}/{{.Architecture}}')" == linux/amd64 ]]
+          bash linux/package.sh "$RUNNER_TEMP/release" "$SOURCE_SHA" "$JAR_SHA256" '__APP_IMAGE__'
+          tar -tzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256)
+      - name: 上传候选包（不能直接部署）
+        if: github.ref_type == 'branch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WangbinCollector-0.1.0-linux-amd64-candidate
+          path: ${{ runner.temp }}/release/*
+      - uses: docker/login-action@v3
+        if: github.ref_type == 'tag'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 构建并发布 GHCR 镜像
+        if: github.ref_type == 'tag'
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ runner.temp }}/linux-image
+          file: ${{ runner.temp }}/linux-image/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/dabin-hub/data-collection-service:0.1.0
+          build-args: |
+            SOURCE_SHA=${{ env.SOURCE_SHA }}
+            JAR_SHA256=${{ env.JAR_SHA256 }}
+      - name: 验证匿名可拉取镜像及架构并封装正式包
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          image="ghcr.io/dabin-hub/data-collection-service@${{ steps.image.outputs.digest }}"
+          [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
+          docker logout ghcr.io
+          docker pull --platform linux/amd64 "$image"
+          [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/amd64 ]]
+          bash linux/package.sh "$RUNNER_TEMP/release" "$SOURCE_SHA" "$JAR_SHA256" "$image"
+          tar -tzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256)
+      - name: Ubuntu 隔离首装、重启与鉴权验收
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/linux-acceptance"
+          tar -xzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" -C "$RUNNER_TEMP/linux-acceptance"
+          cd "$RUNNER_TEMP/linux-acceptance/WangbinCollector"
+          bash deploy.sh
+          test -f data/data/collector.db
+          test -d data/data.wangbin-installation
+          test "$(stat -c %u data/data/collector.db)" = "$(id -u)"
+          test "$(stat -c %a data/data/collector.db)" = 600
+          unauth="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9090/collector/api/config/devices)"
+          dev="$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Collector-Token: ops-token' http://127.0.0.1:9090/collector/api/config/devices)"
+          token="$(< config/ops-token)"
+          auth="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Collector-Token: $token" http://127.0.0.1:9090/collector/api/config/devices)"
+          [[ "$unauth" == 401 && "$dev" == 401 && "$auth" == 200 ]]
+          curl -fsS -H "X-Collector-Token: $token" http://127.0.0.1:9090/collector/api/cache/health | \
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("overallStatus")=="HEALTHY" and any(x.get("type")=="REDIS" and x.get("status")=="HEALTHY" for x in d.get("levels",[]))'
+          unset token
+          stream_id="$(docker compose -p wangbincollector-010 exec -T redis redis-cli XADD wangbin-release-acceptance '*' value 1)"
+          [[ "$stream_id" =~ ^[0-9]+-[0-9]+$ ]]
+          [[ "$(docker compose -p wangbincollector-010 exec -T redis redis-cli XLEN wangbin-release-acceptance | tr -d '\r')" == 1 ]]
+          before="$(sha256sum data/data/collector.db | cut -d' ' -f1)"
+          docker compose -p wangbincollector-010 restart app
+          ready=0
+          for _ in {1..60}; do
+            if curl -fsS http://127.0.0.1:9090/collector/actuator/health/readiness | grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"'; then ready=1; break; fi
+            sleep 2
+          done
+          [[ "$ready" == 1 ]]
+          [[ "$(sha256sum data/data/collector.db | cut -d' ' -f1)" == "$before" ]]
+          docker compose -p wangbincollector-010 stop
+          # 在另一个全新发行目录仅创建安装保护证据，验证缺库时脚本拒绝重建。
+          mkdir -p "$RUNNER_TEMP/linux-guard"
+          tar -xzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" -C "$RUNNER_TEMP/linux-guard"
+          cd "$RUNNER_TEMP/linux-guard/WangbinCollector"
+          mkdir -m 700 data
+          mkdir -m 700 data/data.wangbin-installation
+          if bash deploy.sh; then
+            echo '已有保护证据时错误地允许重新初始化' >&2
+            exit 1
+          fi
+          test ! -e data/data/collector.db
+      - name: 创建 GitHub Release（仅全部门禁通过后）
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh release create v0.1.0 \
+            "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" \
+            "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256" \
+            --title 'WangbinCollector 0.1.0 Linux AMD64' --generate-notes --verify-tag

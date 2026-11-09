@@ -1,0 +1,35 @@
+services:
+  app:
+    image: __APP_IMAGE__
+    user: "${COLLECTOR_UID:?请先运行 deploy.sh}:${COLLECTOR_GID:?请先运行 deploy.sh}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${COLLECTOR_PORT:-9090}:9090"
+    environment:
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/opt/wangbin-collector/config/application-release.yml
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=70.0
+    volumes:
+      - ./data:/var/lib/wangbin-collector
+      - ./logs:/opt/wangbin-collector/logs
+      - ./config/application-release.yml:/opt/wangbin-collector/config/application-release.yml:ro
+      - ./config/passwd:/etc/passwd:ro
+    security_opt:
+      - no-new-privileges:true
+  redis:
+    image: redis:7-alpine@sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  redis-data:
