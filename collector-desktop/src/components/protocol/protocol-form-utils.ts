@@ -36,6 +36,12 @@ export function validateProtocolModel(fields: ProtocolFieldConfig[], model: Prot
     if (!isBlank(value) && (field.type === "number" || field.type === "integer") && !Number.isFinite(Number(value))) {
       errors.push(`${label}必须是数字`);
     }
+    if (!isBlank(value) && field.type === "integer" && Number.isFinite(Number(value)) && !Number.isInteger(Number(value))) {
+      errors.push(`${label}必须是整数`);
+    }
+    if (field.type === "object") {
+      try { parseObjectField(field, value); } catch (caught) { errors.push((caught as Error).message); }
+    }
     if (!isBlank(value) && field.options && field.options.length > 0 && !field.options.includes(String(value))) {
       errors.push(`${label}必须是允许的选项`);
     }
@@ -215,7 +221,7 @@ function normalizeDefaultValue(field: ProtocolFieldConfig): string | number | bo
   if (field.type === "boolean") {
     return rawValue === "true" || rawValue === "1";
   }
-  if (field.type === "number") {
+  if (field.type === "number" || field.type === "integer") {
     if (rawValue === undefined || rawValue === null || rawValue === "") {
       return null;
     }
@@ -229,17 +235,34 @@ function readFieldValue(connection: ConnectionPayload, field: ProtocolFieldConfi
   if (field.storage === "extJson") {
     return getPathValue(connection.extJson, field.name);
   }
-  return getPathValue(connection, field.name);
+  const externalName = TOP_LEVEL_TIMEOUT_NAMES[field.name];
+  const value = getPathValue(connection, externalName || field.name);
+  return value === undefined && externalName ? getPathValue(connection, field.name) : value;
+}
+
+// 只在顶层转换外部字段名，协议 extJson 中的同名字段保持原语义。
+const TOP_LEVEL_TIMEOUT_NAMES: Record<string, string> = { connectTimeout: "connectTimeoutMs", readTimeout: "readTimeoutMs", writeTimeout: "writeTimeoutMs" };
+
+function parseObjectField(field: ProtocolFieldConfig, value: unknown): Record<string, unknown> | null {
+  if (isBlank(value)) return null;
+  try {
+    const parsed: unknown = typeof value === "string" ? JSON.parse(value) : value;
+    if (parsed === null || isPlainObject(parsed)) return parsed;
+  } catch { /* 统一返回字段级错误，不输出配置内容。 */ }
+  throw new Error(`${field.label || field.name}必须是 JSON 对象`);
 }
 
 function writeFieldValue(payload: ConnectionPayload, field: ProtocolFieldConfig, value: unknown): void {
+  if (field.type === "object") value = parseObjectField(field, value);
   if (field.storage === "extJson") {
     const extJson = isPlainObject(payload.extJson) ? payload.extJson : {};
     payload.extJson = extJson;
     setPathValue(extJson, field.name, value);
     return;
   }
-  setPathValue(payload, field.name, value);
+  const externalName = TOP_LEVEL_TIMEOUT_NAMES[field.name];
+  if (externalName) delete payload[field.name];
+  setPathValue(payload, externalName || field.name, value);
 }
 
 function normalizeFormValue(field: ProtocolFieldConfig, value: unknown): string | number | boolean | null {
@@ -256,6 +279,7 @@ function normalizeFormValue(field: ProtocolFieldConfig, value: unknown): string 
   if (typeof value === "number" || typeof value === "boolean") {
     return value;
   }
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
   return typeof value === "string" ? value : String(value);
 }
 

@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wangbin.collector.config.sqlite.mapper.SqliteConfigMapper">
+    <resultMap id="deviceRow" type="com.wangbin.collector.config.sqlite.mapper.DeviceRow">
+        <constructor>
+            <idArg column="device_id" javaType="string"/>
+            <arg column="device_json" javaType="string"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="deviceSummary" type="com.wangbin.collector.core.config.persistence.StoredDeviceSummary">
+        <constructor>
+            <idArg column="device_id" javaType="string"/>
+            <arg column="device_json" javaType="string"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="connection" type="com.wangbin.collector.core.config.persistence.ConnectionConfiguration">
+        <constructor>
+            <idArg column="device_id" javaType="string"/>
+            <arg column="connection_json" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="point" type="com.wangbin.collector.core.config.persistence.PointConfiguration">
+        <constructor>
+            <idArg column="device_id" javaType="string"/>
+            <idArg column="point_id" javaType="string"/>
+            <arg column="sort_order" javaType="_int"/>
+            <arg column="status" javaType="java.lang.Integer" jdbcType="INTEGER"/>
+            <arg column="point_json" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="pointOwner" type="com.wangbin.collector.config.sqlite.mapper.PointOwner">
+        <constructor>
+            <idArg column="point_id" javaType="string"/>
+            <arg column="device_id" javaType="string"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="protocolProfile" type="com.wangbin.collector.core.config.persistence.ProtocolProfile">
+        <constructor>
+            <idArg column="profile_id" javaType="string"/>
+            <arg column="protocol_type" javaType="string"/>
+            <arg column="connection_json" javaType="string"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="gatewaySetting" type="com.wangbin.collector.core.config.persistence.GatewaySetting">
+        <constructor>
+            <idArg column="setting_key" javaType="string"/>
+            <arg column="config_json" javaType="string"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="remoteSnapshot" type="com.wangbin.collector.core.config.persistence.RemoteSnapshot">
+        <constructor>
+            <idArg column="source" javaType="string"/>
+            <idArg column="snapshot_id" javaType="string"/>
+            <idArg column="source_version" javaType="string"/>
+            <arg column="config_json" javaType="string"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="configurationRevision" type="com.wangbin.collector.core.config.persistence.ConfigurationRevision">
+        <constructor>
+            <idArg column="revision" javaType="_long"/>
+            <arg column="entity_type" javaType="string"/>
+            <arg column="entity_id" javaType="string"/>
+            <arg column="operation" javaType="string"/>
+            <arg column="created_at" javaType="java.time.Instant"
+                 typeHandler="com.wangbin.collector.config.sqlite.mapper.InstantTypeHandler"/>
+        </constructor>
+    </resultMap>
+    <resultMap id="migration" type="com.wangbin.collector.core.config.persistence.MigrationRecord">
+        <constructor>
+            <idArg column="migration_id" javaType="string"/>
+            <arg column="source_path" javaType="string"/>
+            <arg column="source_sha256" javaType="string"/>
+            <arg column="device_count" javaType="_int"/>
+            <arg column="connection_count" javaType="_int"/>
+            <arg column="point_count" javaType="_int"/>
+            <arg column="completed_at" javaType="java.time.Instant"
+                 typeHandler="com.wangbin.collector.config.sqlite.mapper.InstantTypeHandler"/>
+        </constructor>
+    </resultMap>
+
+    <select id="deviceRevision" resultType="long">SELECT COALESCE((SELECT revision FROM dc_device WHERE device_id = #{id}), 0)</select>
+    <select id="profileRevision" resultType="long">SELECT COALESCE((SELECT revision FROM dc_protocol_profile WHERE profile_id = #{id}), 0)</select>
+    <select id="settingRevision" resultType="long">SELECT COALESCE((SELECT revision FROM dc_gateway_setting WHERE setting_key = #{key}), 0)</select>
+    <select id="snapshotRevision" resultType="long">SELECT COALESCE((SELECT revision FROM dc_remote_snapshot WHERE source = #{source} AND snapshot_id = #{id} AND source_version = #{version}), 0)</select>
+    <insert id="insertRevision">
+        INSERT INTO dc_config_revision(entity_type, entity_id, operation, created_at)
+        VALUES (#{type}, #{id}, #{operation}, #{createdAt, typeHandler=com.wangbin.collector.config.sqlite.mapper.InstantTypeHandler})
+    </insert>
+    <select id="lastInsertRevision" resultType="long">SELECT last_insert_rowid()</select>
+
+    <select id="findDevice" resultMap="deviceRow">SELECT device_id, device_json, revision FROM dc_device WHERE device_id = #{id}</select>
+    <select id="listDevices" resultMap="deviceRow">SELECT device_id, device_json, revision FROM dc_device ORDER BY device_id</select>
+    <select id="findDeviceSummary" resultMap="deviceSummary">SELECT device_id, device_json, revision FROM dc_device WHERE device_id = #{id}</select>
+    <select id="listDeviceSummaries" resultMap="deviceSummary">SELECT device_id, device_json, revision FROM dc_device ORDER BY device_id</select>
+    <select id="findDeviceConnection" resultMap="connection">SELECT device_id, connection_json FROM dc_device_connection WHERE device_id = #{id}</select>
+    <select id="listDevicePoints" resultMap="point">SELECT device_id, point_id, sort_order, status, point_json FROM dc_device_point WHERE device_id = #{id} ORDER BY sort_order</select>
+    <select id="findPointOwners" resultMap="pointOwner">
+        SELECT point_id, device_id FROM dc_device_point WHERE point_id IN
+        <foreach collection="pointIds" item="pointId" open="(" separator="," close=")">#{pointId}</foreach>
+    </select>
+
+    <select id="findProtocolProfile" resultMap="protocolProfile">SELECT profile_id, protocol_type, connection_json, revision FROM dc_protocol_profile WHERE profile_id = #{id}</select>
+    <select id="listProtocolProfiles" resultMap="protocolProfile">SELECT profile_id, protocol_type, connection_json, revision FROM dc_protocol_profile ORDER BY profile_id</select>
+    <select id="findGatewaySetting" resultMap="gatewaySetting">SELECT setting_key, config_json, revision FROM dc_gateway_setting WHERE setting_key = #{key}</select>
+    <select id="listGatewaySettings" resultMap="gatewaySetting">SELECT setting_key, config_json, revision FROM dc_gateway_setting ORDER BY setting_key</select>
+    <select id="findRemoteSnapshot" resultMap="remoteSnapshot">SELECT source, snapshot_id, source_version, config_json, revision FROM dc_remote_snapshot WHERE source = #{source} AND snapshot_id = #{id} AND source_version = #{version}</select>
+    <select id="listRemoteSnapshots" resultMap="remoteSnapshot">SELECT source, snapshot_id, source_version, config_json, revision FROM dc_remote_snapshot WHERE source = #{source} ORDER BY snapshot_id, source_version</select>
+    <select id="currentRevision" resultType="long">SELECT COALESCE(MAX(revision), 0) FROM dc_config_revision</select>
+    <select id="listRevisions" resultMap="configurationRevision">SELECT revision, entity_type, entity_id, operation, created_at FROM dc_config_revision WHERE revision &gt; #{after} ORDER BY revision LIMIT #{limit}</select>
+    <select id="findMigration" resultMap="migration">SELECT migration_id, source_path, source_sha256, device_count, connection_count, point_count, completed_at FROM dc_json_migration WHERE migration_id = #{id}</select>
+    <select id="listMigrations" resultMap="migration">SELECT migration_id, source_path, source_sha256, device_count, connection_count, point_count, completed_at FROM dc_json_migration ORDER BY migration_id</select>
+
+    <insert id="insertDevice">INSERT INTO dc_device(device_id, device_json, revision) VALUES (#{config.deviceId}, #{config.deviceJson}, #{revision})</insert>
+    <update id="updateDevice">UPDATE dc_device SET device_json = #{config.deviceJson}, revision = #{revision} WHERE device_id = #{config.deviceId}</update>
+    <delete id="deleteConnections">DELETE FROM dc_device_connection WHERE device_id = #{id}</delete>
+    <delete id="deletePoints">DELETE FROM dc_device_point WHERE device_id = #{id}</delete>
+    <insert id="insertConnection">INSERT INTO dc_device_connection(device_id, connection_json) VALUES (#{config.deviceId}, #{config.configJson})</insert>
+    <insert id="insertPoint">INSERT INTO dc_device_point(point_id, device_id, sort_order, status, point_code, point_json) VALUES (#{point.pointId}, #{point.deviceId}, #{point.sortOrder}, #{point.status}, #{code}, #{point.configJson})</insert>
+    <delete id="deleteDevice">DELETE FROM dc_device WHERE device_id = #{id}</delete>
+    <insert id="insertProtocolProfile">INSERT INTO dc_protocol_profile(profile_id, protocol_type, connection_json, revision) VALUES (#{id}, #{protocol}, #{json}, #{revision})</insert>
+    <update id="updateProtocolProfile">UPDATE dc_protocol_profile SET protocol_type = #{protocol}, connection_json = #{json}, revision = #{revision} WHERE profile_id = #{id}</update>
+    <delete id="deleteProtocolProfile">DELETE FROM dc_protocol_profile WHERE profile_id = #{id}</delete>
+    <insert id="insertGatewaySetting">INSERT INTO dc_gateway_setting(setting_key, config_json, revision) VALUES (#{key}, #{json}, #{revision})</insert>
+    <update id="updateGatewaySetting">UPDATE dc_gateway_setting SET config_json = #{json}, revision = #{revision} WHERE setting_key = #{key}</update>
+    <delete id="deleteGatewaySetting">DELETE FROM dc_gateway_setting WHERE setting_key = #{key}</delete>
+    <insert id="insertRemoteSnapshot">INSERT INTO dc_remote_snapshot(source, snapshot_id, source_version, config_json, revision) VALUES (#{source}, #{id}, #{version}, #{json}, #{revision})</insert>
+    <update id="updateRemoteSnapshot">UPDATE dc_remote_snapshot SET config_json = #{json}, revision = #{revision} WHERE source = #{source} AND snapshot_id = #{id} AND source_version = #{version}</update>
+    <delete id="deleteRemoteSnapshot">DELETE FROM dc_remote_snapshot WHERE source = #{source} AND snapshot_id = #{id} AND source_version = #{version}</delete>
+    <insert id="insertMigration">INSERT INTO dc_json_migration(migration_id, source_path, source_sha256, device_count, connection_count, point_count, completed_at) VALUES (#{record.migrationId}, #{record.sourcePath}, #{record.sourceSha256}, #{record.deviceCount}, #{record.connectionCount}, #{record.pointCount}, #{record.completedAt, typeHandler=com.wangbin.collector.config.sqlite.mapper.InstantTypeHandler})</insert>
+</mapper>

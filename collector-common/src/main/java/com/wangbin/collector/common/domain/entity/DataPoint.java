@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 import java.io.IOException;
 import java.util.*;
@@ -18,6 +19,8 @@ import java.util.*;
  * 描述：数据采集系统中的数据点配置信息，对应设备或传感器上的一个可采集变量
  */
 @Data
+// 配置相等及哈希只比较原始字段，不能触发告警解析或附加配置 getter 归一化。
+@EqualsAndHashCode(doNotUseGetters = true)
 public class DataPoint {
 
     /**

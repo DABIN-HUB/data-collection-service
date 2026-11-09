@@ -3,6 +3,12 @@ package com.wangbin.collector.core.collector.protocol.iec;
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.utils.JsonDataPointLoader;
 import com.wangbin.collector.core.processor.ProcessResult;
+import com.wangbin.collector.core.processor.DataQualityProcessor;
+import com.wangbin.collector.core.processor.ProcessResultMetadataKeys;
+import com.wangbin.collector.core.alarm.AlarmStateTracker;
+import com.wangbin.collector.core.alarm.InMemoryAlarmStateRepository;
+import com.wangbin.collector.core.collector.ingress.TelemetryIngressService;
+import com.wangbin.collector.core.connection.adapter.Iec104ConnectionAdapter;
 import com.wangbin.collector.core.collector.protocol.iec.base.Iec104IoaEncodingMode;
 import org.openmuc.j60870.ASdu;
 import org.openmuc.j60870.ASduType;
@@ -13,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.openmuc.j60870.CauseOfTransmission;
 import org.openmuc.j60870.Connection;
+import org.openmuc.j60870.ConnectionEventListener;
 import org.openmuc.j60870.ie.IeBinaryStateInformation;
 import org.openmuc.j60870.ie.IeDoubleCommand;
 import org.openmuc.j60870.ie.IeQualifierOfSetPointCommand;
@@ -25,6 +32,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -35,79 +43,134 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class Iec104CollectorTest {
 
     @Test
     void sequenceMeasurementDeliversEveryConsecutiveIoa() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         DataPoint first = createWritablePoint("M_ME_NC_1:4001");
         DataPoint second = createWritablePoint("M_ME_NC_1:4002");
         collector.buildReadPlans("device", List.of(first, second));
         ASdu sequence = measurements(true, CauseOfTransmission.INTERROGATED_BY_STATION,
                 4001, 10.5f, 20.5f);
 
-        Map<String, Object> result = collector.receive(sequence);
+        collector.receiveThroughListener(sequence);
 
-        assertEquals(10.5f, result.get("4001"));
-        assertEquals(20.5f, result.get("4002"));
-        assertEquals(10.5f, collector.published.get(first.getPointId()));
-        assertEquals(20.5f, collector.published.get(second.getPointId()));
+        assertEquals(2, collector.publishedRecords().size());
+        collector.assertPublished(first, 10.5d);
+        collector.assertPublished(second, 20.5d);
     }
 
     @Test
     void interrogationMeasurementFulfillsPendingReadWithoutDuplicatePush() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         DataPoint point = createWritablePoint("M_ME_NC_1:4001");
         collector.buildReadPlans("device", List.of(point));
         CompletableFuture<Object> pending = collector.pending(1, 13, 4001);
+        CompletableFuture<Object> otherType = collector.pending(1, 3, 4001);
+        CompletableFuture<Object> otherCommonAddress = collector.pending(2, 13, 4001);
+        CompletableFuture<Object> otherIoa = collector.pending(1, 13, 4002);
 
-        collector.receive(measurements(false,
-                CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
+        try {
+            collector.receiveThroughListener(measurements(false,
+                    CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
+            assertEquals(17.25f, collector.pendingValue(pending));
+            assertEquals(13, collector.pendingRawTypeId(pending));
+            assertEquals(0, collector.pendingQualityBits(pending));
+            assertFalse(otherType.isDone());
+            assertFalse(otherCommonAddress.isDone());
+            assertFalse(otherIoa.isDone());
+            assertEquals(0, collector.publishedRecords().size());
 
-        assertEquals(17.25f, pending.getNow(null));
-        assertFalse(collector.published.containsKey(point.getPointId()));
+            collector.receiveThroughListener(measurements(false,
+                    CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 18.25f));
+
+            assertEquals(1, collector.publishedRecords().size());
+            collector.assertPublished(point, 18.25d);
+        } finally {
+            pending.cancel(false);
+            otherType.cancel(false);
+            otherCommonAddress.cancel(false);
+            otherIoa.cancel(false);
+        }
     }
 
     @Test
     void interrogationMeasurementWithoutPendingReadEntersTelemetry() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         DataPoint point = createWritablePoint("M_ME_NC_1:4001");
         collector.buildReadPlans("device", List.of(point));
 
-        collector.receive(measurements(false,
+        collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
 
-        assertEquals(17.25f, collector.published.get(point.getPointId()));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 17.25d);
     }
 
     @Test
     void pollingInterrogationWithoutPendingReadEntersTelemetry() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         DataPoint point = createWritablePoint("M_ME_NC_1:4001");
         point.setCollectionMode("POLLING");
         collector.buildReadPlans("device", List.of(point));
 
-        collector.receive(measurements(false,
+        collector.receiveThroughListener(measurements(false,
                 CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 17.25f));
 
-        assertEquals(17.25f, collector.published.get(point.getPointId()));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 17.25d);
     }
 
     @Test
     void shift8SequenceUsesWireAddressStrideBeforeLogicalDecode() {
         RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
         DataPoint first = createWritablePoint("M_ME_NC_1:4001");
         DataPoint second = createWritablePoint("M_ME_NC_1:4002");
         collector.buildReadPlans("device", List.of(first, second));
 
-        Map<String, Object> result = collector.receive(shiftedMeasurements(4001, 10.5f, 20.5f));
+        collector.receiveThroughListener(shiftedMeasurements(4001, 10.5f, 20.5f));
 
-        assertEquals(10.5f, result.get("4001"));
-        assertEquals(20.5f, result.get("4002"));
+        assertEquals(2, collector.publishedRecords().size());
+        collector.assertPublished(first, 10.5d);
+        collector.assertPublished(second, 20.5d);
+    }
+
+    @Test
+    void staleListenerFromReplacedSessionCannotPublishMeasurement() {
+        RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
+        DataPoint point = createWritablePoint("M_ME_NC_1:4001");
+        collector.buildReadPlans("device", List.of(point));
+        collector.receiveThroughListener(measurements(false,
+                CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 10.0f));
+        assertEquals(1, collector.publishedRecords().size());
+        collector.assertPublished(point, 10.0d);
+
+        Iec104ConnectionAdapter replacement = mock(Iec104ConnectionAdapter.class);
+        Connection replacementClient = mock(Connection.class);
+        when(replacement.getClient()).thenReturn(replacementClient);
+        when(replacementClient.isClosed()).thenReturn(false);
+        when(replacementClient.isStopped()).thenReturn(false);
+        ReflectionTestUtils.setField(collector, "currentAdapter", replacement);
+        ReflectionTestUtils.setField(collector, "connection", replacementClient);
+
+        collector.receiveThroughListener(measurements(false,
+                CauseOfTransmission.INTERROGATED_BY_STATION, 4001, 22.5f));
+
+        assertEquals(1, collector.publishedRecords().size());
+        assertEquals(10.0d, collector.publishedRecords().get(0).result().getFinalValue());
     }
 
     private static ASdu measurements(boolean sequence, CauseOfTransmission cot,
@@ -139,22 +202,117 @@ class Iec104CollectorTest {
                 CauseOfTransmission.INTERROGATED_BY_STATION, false, false, 0, 1, objects);
     }
 
-    private static final class RecordingCollector extends Iec104Collector {
-        private final Map<String, Object> published = new java.util.HashMap<>();
+    private record PublishedSample(String deviceId, String pointId, Long generation,
+                                   ProcessResult result) {
+    }
 
-        private Map<String, Object> receive(ASdu asdu) {
-            return handleResponse(null, asdu);
+    private static final class RecordingCollector extends Iec104Collector {
+        private final List<PublishedSample> published = new ArrayList<>();
+        private long receiveStartedAt;
+        private long receiveFinishedAt;
+        private Connection client;
+        private Iec104ConnectionAdapter adapter;
+        private ConnectionEventListener listener;
+
+        private void receive(ASdu asdu) {
+            handleResponse(null, asdu);
+        }
+
+        private void receiveThroughListener(ASdu asdu) {
+            receiveStartedAt = System.currentTimeMillis();
+            try {
+                listener.newASdu(client, asdu);
+            } finally {
+                receiveFinishedAt = System.currentTimeMillis();
+            }
+        }
+
+        private List<PublishedSample> publishedRecords() {
+            return List.copyOf(published);
+        }
+
+        private void assertPublished(DataPoint point, Object expectedValue) {
+            PublishedSample sample = published.stream()
+                    .filter(record -> point.getPointId().equals(record.pointId()))
+                    .findFirst()
+                    .orElseThrow();
+            ProcessResult result = sample.result();
+            assertEquals("device", sample.deviceId());
+            assertEquals(7L, sample.generation());
+            assertEquals(point.getPointId(), sample.pointId());
+            assertEquals(expectedValue, result.getFinalValue());
+            assertTrue(result.isSuccess());
+            assertEquals("DataQualityProcessor", result.getProcessorName());
+            assertEquals(100, result.getQuality());
+            assertEquals("PUSH", result.getMetadata(ProcessResultMetadataKeys.SOURCE));
+            assertEquals(Long.valueOf(3L), result.getMetadata(ProcessResultMetadataKeys.CONFIG_VERSION));
+            assertEquals(expectedValue, result.getMetadata(ProcessResultMetadataKeys.PROCESSED_VALUE));
+            Long observedAt = result.getMetadata(ProcessResultMetadataKeys.COLLECT_TIME);
+            assertTrue(observedAt != null && observedAt >= receiveStartedAt && observedAt <= receiveFinishedAt);
+            Long sampleObservedAt = result.getMetadata("iec104ObservedAt");
+            assertTrue(sampleObservedAt != null && sampleObservedAt >= receiveStartedAt
+                    && sampleObservedAt <= receiveFinishedAt);
+            assertEquals(sampleObservedAt, observedAt);
+            assertEquals("LOCAL_RECEIVE", result.getMetadata("iec104TimeOrigin"));
+            assertFalse(result.getMetadata().containsKey("iec104SourceTime"));
+            assertEquals(Integer.valueOf(13), result.getMetadata("iec104TypeId"));
+            assertEquals(Integer.valueOf(0), result.getMetadata("iec104QualityBits"));
+        }
+
+        private void prepareSession() {
+            init(deviceInfo());
+            client = mock(Connection.class);
+            adapter = mock(Iec104ConnectionAdapter.class);
+            when(adapter.getClient()).thenReturn(client);
+            when(client.isClosed()).thenReturn(false);
+            when(client.isStopped()).thenReturn(false);
+            DataQualityProcessor processor = new DataQualityProcessor(
+                    null, new AlarmStateTracker(new InMemoryAlarmStateRepository()));
+            TelemetryIngressService ingress = mock(TelemetryIngressService.class);
+            doAnswer(invocation -> {
+                String deviceId = invocation.getArgument(0);
+                ProcessResult result = invocation.getArgument(2);
+                DataPoint point = invocation.getArgument(1);
+                Long generation = invocation.getArgument(3);
+                published.add(new PublishedSample(deviceId, point.getPointId(), generation, result.snapshot()));
+                return null;
+            }).when(ingress).append(any(), any(DataPoint.class), any(ProcessResult.class), any(Long.class));
+            ReflectionTestUtils.setField(this, "dataQualityProcessor", processor);
+            ReflectionTestUtils.setField(this, "telemetryIngressService", ingress);
+            ReflectionTestUtils.setField(this, "currentAdapter", adapter);
+            ReflectionTestUtils.setField(this, "connection", client);
+            ReflectionTestUtils.setField(this, "connected", true);
+            ReflectionTestUtils.setField(this, "dataTransferStopped", false);
+            setRuntimeGeneration(7L);
+            setRuntimeConfigurationVersion(3L);
+            listener = ReflectionTestUtils.invokeMethod(this, "createConnectionEventListener", adapter);
+        }
+
+        private com.wangbin.collector.common.domain.entity.DeviceInfo deviceInfo() {
+            com.wangbin.collector.common.domain.entity.DeviceInfo info =
+                    new com.wangbin.collector.common.domain.entity.DeviceInfo();
+            info.setDeviceId("device");
+            info.setDeviceName("iec-test");
+            info.setProtocolType("IEC104");
+            return info;
         }
 
         private CompletableFuture<Object> pending(int ca, int type, int ioa) {
             return registerPendingRequest(ca, type, ioa);
         }
 
-        @Override
-        protected ProcessResult ingestPushedValue(DataPoint point, Object rawValue) {
-            published.put(point.getPointId(), rawValue);
-            return null;
+        private Object pendingValue(CompletableFuture<Object> future) {
+            return ((CacheEntry) future.getNow(null)).value();
         }
+
+        private Integer pendingRawTypeId(CompletableFuture<Object> future) {
+            return ((CacheEntry) future.getNow(null)).rawTypeId();
+        }
+
+        private int pendingQualityBits(CompletableFuture<Object> future) {
+            return ((CacheEntry) future.getNow(null)).qualityBits();
+        }
+
     }
 
     @Test
@@ -379,19 +537,19 @@ class Iec104CollectorTest {
 
     @Test
     void shouldEncodeShift8ForBatchReadLogicalKey() throws Exception {
-        Connection connection = mock(Connection.class);
-        Iec104Collector collector = createCollector(connection);
+        RecordingCollector collector = new RecordingCollector();
+        collector.prepareSession();
         ReflectionTestUtils.setField(collector, "ioaEncodingMode", Iec104IoaEncodingMode.SHIFT8_COMPAT);
         ReflectionTestUtils.setField(collector, "ioaFieldLength", 3);
-        DataPoint point = createWritablePoint("100");
+        DataPoint point = createWritablePoint("M_ME_NC_1:100");
 
-        org.mockito.Mockito.doAnswer(invocation -> {
-            ReflectionTestUtils.invokeMethod(collector, "completeRequest", 1, null, 100, 42);
+        doAnswer(invocation -> {
+            collector.receive(shiftedMeasurements(100, 42.0f));
             return null;
-        }).when(connection).readCommand(eq(1), eq(25600));
+        }).when(collector.client).readCommand(eq(1), eq(25600));
 
-        assertEquals(42, collector.doReadPoints(List.of(point)).get(point.getPointId()));
-        verify(connection).readCommand(eq(1), eq(25600));
+        assertEquals(42.0d, collector.readPoints(List.of(point)).get(point.getPointId()));
+        verify(collector.client).readCommand(eq(1), eq(25600));
     }
 
     @Test
@@ -426,6 +584,8 @@ class Iec104CollectorTest {
         point.setPointName(address);
         point.setAddress(address);
         point.setReadWrite("RW");
+        point.setDeviceId("device");
+        point.setStatus(1);
         return point;
     }
 }

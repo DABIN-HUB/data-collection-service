@@ -61,6 +61,8 @@ public class HistoryWriteBufferTest {
         properties.setProcessingKey("history:processing");
         properties.setDeadLetterKey("history:dead");
         properties.setReplayBatchSize(2);
+        properties.setRedisQueueCapacity(0);
+        properties.setDeadLetterCapacity(0);
         properties.setReplayMaxBatchesPerCycle(1);
         return properties;
     }

@@ -160,8 +160,7 @@ public abstract class AbstractModbusCollector extends ConnectionBackedCollector 
             return point.getUnitId();
         }
         DeviceConnection connection = getCurrentConnectionConfig();
-        Integer slaveId = connection != null ? (Integer) connection.getProperty("slaveId") : null;
-        return slaveId != null ? slaveId : 1;
+        return connection != null ? connection.getInt("slaveId", 1) : 1;
     }
 
     /**

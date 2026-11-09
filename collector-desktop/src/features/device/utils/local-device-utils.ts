@@ -20,6 +20,9 @@ export interface LocalDeviceDraft {
   deviceName: string;
   protocol: string;
   adaptive?: AdaptiveConfig;
+  deviceBase?: Record<string, unknown>;
+  baseVersion?: number;
+  baseRevision?: number;
   connection?: Record<string, unknown>;
   points: DataPoint[];
   cloudTarget?: CloudTargetConfig;
@@ -28,6 +31,8 @@ export interface LocalDeviceDraft {
 }
 
 export interface LocalDevicePayload {
+  baseVersion?: number;
+  baseRevision?: number;
   device: Record<string, unknown>;
   connection: Record<string, unknown>;
   points: DataPoint[];
@@ -36,6 +41,8 @@ export interface LocalDevicePayload {
 }
 
 export interface LocalDeviceBundle {
+  configVersion?: number;
+  persistedRevision?: number;
   device?: Record<string, unknown>;
   connection?: Record<string, unknown>;
   points?: DataPoint[];
@@ -58,9 +65,11 @@ export const DEFAULT_ADAPTIVE_CONFIG: AdaptiveConfig = {
 export function extractLocalDeviceBundle(response: unknown): LocalDeviceBundle | null {
   const root = cloneRecord(response);
   const data = cloneRecord(root.data);
-  const candidates = [root.bundle, data.bundle, root, data];
-  for (const candidate of candidates) {
+  const candidates = [[root.bundle, root.configVersion, root.persistedRevision], [data.bundle, data.configVersion, data.persistedRevision], [root, root.configVersion, root.persistedRevision], [data, data.configVersion, data.persistedRevision]];
+  for (const [candidate, version, revision] of candidates) {
     const record = cloneRecord(candidate);
+    if (version !== undefined) record.configVersion = version;
+    if (revision !== undefined) record.persistedRevision = revision;
     if (record.device || record.connection || Array.isArray(record.points)) {
       return record as LocalDeviceBundle;
     }
@@ -72,26 +81,33 @@ export function buildLocalDevicePayload(draft: LocalDeviceDraft): LocalDevicePay
   const adaptive = normalizeAdaptive(draft.adaptive);
   const connection = cloneRecord(draft.connection);
   const extJson = cloneRecord(connection.extJson);
-  const cloudTarget = normalizeCloudTarget(draft.cloudTarget);
+  const deviceBase = cloneRecord(draft.deviceBase);
+  const cloudTarget = normalizeCloudTarget({ ...cloneRecord(deviceBase.cloudTarget), ...draft.cloudTarget } as CloudTargetConfig);
   const deviceId = draft.deviceId;
   const protocol = draft.protocol.trim() || "MODBUS_TCP";
-  const points = normalizeLocalPoints(draft.points, deviceId, protocol, adaptive);
+  const points = normalizeLocalPoints(draft.points, deviceId, protocol, adaptive).map((point) => {
+    delete point.currentCollectionInterval;
+    return point;
+  });
   const host = connection.host;
   const port = connection.port;
 
   return {
+    ...(draft.baseVersion !== undefined ? { baseVersion: draft.baseVersion } : {}),
+    ...(draft.baseRevision !== undefined ? { baseRevision: draft.baseRevision } : {}),
     device: {
+      ...deviceBase,
       id: deviceId,
       deviceId,
       deviceName: draft.deviceName.trim(),
       protocolType: protocol,
       connectionType: protocol,
-      ipAddress: typeof host === "string" && host ? host : undefined,
-      port: typeof port === "number" ? port : Number.isFinite(Number(port)) ? Number(port) : undefined,
+      ipAddress: typeof host === "string" ? host : deviceBase.ipAddress,
+      port: port !== undefined && port !== null && Number.isFinite(Number(port)) ? Number(port) : deviceBase.port,
       collectionInterval: adaptive.baseCollectionInterval,
       configSource: "local",
       temporaryConfig: true,
-      status: "OFFLINE",
+      status: deviceBase.status ?? "OFFLINE",
       cloudTarget
     },
     connection: {
@@ -209,11 +225,11 @@ export function normalizeLocalPoints(points: DataPoint[], deviceId: string, prot
       address,
       dataType: point.dataType || defaultPointDataType(normalizedProtocol),
       alarmRule: normalizeAlarmRule(point.alarmRule),
-      baseCollectionInterval: adaptive.baseCollectionInterval,
-      currentCollectionInterval: adaptive.baseCollectionInterval,
-      minCollectionInterval: adaptive.minCollectionInterval,
-      maxCollectionInterval: adaptive.maxCollectionInterval,
-      pointChangeThreshold: adaptive.pointChangeThreshold,
+      baseCollectionInterval: point.baseCollectionInterval ?? adaptive.baseCollectionInterval,
+      currentCollectionInterval: point.currentCollectionInterval ?? point.baseCollectionInterval ?? adaptive.baseCollectionInterval,
+      minCollectionInterval: point.minCollectionInterval ?? adaptive.minCollectionInterval,
+      maxCollectionInterval: point.maxCollectionInterval ?? adaptive.maxCollectionInterval,
+      pointChangeThreshold: point.pointChangeThreshold ?? adaptive.pointChangeThreshold,
       additionalConfig: {
         ...additionalConfig,
         configSource: "local",
@@ -248,12 +264,13 @@ export function normalizeAdaptive(value?: AdaptiveConfig): AdaptiveConfig {
     baseCollectionInterval: Math.max(normalizedMin, Math.min(configuredBase, normalizedMax)),
     minCollectionInterval: normalizedMin,
     maxCollectionInterval: normalizedMax,
-    pointChangeThreshold: positiveNumber(base.pointChangeThreshold) || DEFAULT_ADAPTIVE_CONFIG.pointChangeThreshold
+    pointChangeThreshold: base.pointChangeThreshold != null && Number.isFinite(Number(base.pointChangeThreshold)) && Number(base.pointChangeThreshold) >= 0 ? Number(base.pointChangeThreshold) : DEFAULT_ADAPTIVE_CONFIG.pointChangeThreshold
   };
 }
 
 function normalizeCloudTarget(value?: CloudTargetConfig): CloudTargetConfig {
   return {
+    ...cloneRecord(value),
     enabled: Boolean(value?.enabled),
     deviceType: value?.deviceType || "SUB_DEVICE",
     productKey: value?.productKey?.trim() || undefined,

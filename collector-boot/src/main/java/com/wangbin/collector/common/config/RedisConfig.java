@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -97,20 +98,28 @@ public class RedisConfig {
      */
     @Bean
     public RedisMessageListenerContainer redisMessageListenerContainer(
-            RedisConnectionFactory connectionFactory) {
+            RedisConnectionFactory connectionFactory,
+            @Qualifier("redisListenerTaskExecutor") ThreadPoolTaskExecutor taskExecutor) {
 
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
+        container.setTaskExecutor(taskExecutor);
+        return container;
+    }
 
+    /**
+     * 监听容器使用的执行器由 Spring 管理，确保 Web Context 关闭时不遗留后台线程。
+     */
+    @Bean("redisListenerTaskExecutor")
+    public ThreadPoolTaskExecutor redisListenerTaskExecutor() {
         ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
         taskExecutor.setCorePoolSize(5);
         taskExecutor.setMaxPoolSize(10);
         taskExecutor.setQueueCapacity(100);
         taskExecutor.setThreadNamePrefix("redis-listener-");
-        taskExecutor.initialize();
-
-        container.setTaskExecutor(taskExecutor);
-        return container;
+        taskExecutor.setWaitForTasksToCompleteOnShutdown(true);
+        taskExecutor.setAwaitTerminationSeconds(5);
+        return taskExecutor;
     }
 
     /**
@@ -145,6 +154,7 @@ public class RedisConfig {
     private ObjectMapper createRestrictedObjectMapper(ObjectMapper objectMapper) {
         PolymorphicTypeValidator typeValidator = BasicPolymorphicTypeValidator.builder()
                 .allowIfSubType("com.wangbin.collector.")
+                .allowIfSubType("java.lang.")
                 .allowIfSubType("java.util.")
                 .allowIfSubType("java.time.")
                 .build();

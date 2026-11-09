@@ -242,7 +242,10 @@ export function normalizeDeviceViewModelWithRuntimeStatus(device: DeviceInfo, ru
 
 export function resolveDeviceStatus(device: DeviceViewModel): "ONLINE" | "CONNECTING" | "ERROR" | "OFFLINE" | "DISABLED" | "UNKNOWN" | "STALE" {
   const runtime = device.runtime;
-  if (device.runtimeStale) return runtime ? "STALE" : "UNKNOWN";
+  if (device.runtimeStale) {
+    if (runtime) return "STALE";
+    return device.runtimeError === "运行快照缺失" ? "OFFLINE" : "UNKNOWN";
+  }
   switch (runtime?.phase) {
     case "ONLINE": return "ONLINE";
     case "DEGRADED":

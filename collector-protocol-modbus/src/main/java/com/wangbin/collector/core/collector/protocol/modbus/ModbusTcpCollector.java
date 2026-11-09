@@ -528,7 +528,7 @@ public class ModbusTcpCollector extends AbstractModbusCollector {
 
     private Integer getConfiguredSlaveId() {
         DeviceConnection connection = getCurrentConnectionConfig();
-        return connection != null ? (Integer) connection.getProperty("slaveId") : null;
+        return connection != null ? connection.getInt("slaveId", 1) : null;
     }
 
     /**

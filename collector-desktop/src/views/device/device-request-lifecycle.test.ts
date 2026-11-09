@@ -26,7 +26,11 @@ vi.mock("@/api/data.api", () => ({ getDeviceRealtimeData: uiMocks.realtime }));
 vi.mock("@/stores/app.store", () => ({ useAppStore: () => ({ initialize: vi.fn().mockResolvedValue(undefined) }) }));
 vi.mock("@/stores/protocol.store", () => ({ useProtocolStore: () => ({ protocols: [], refresh: vi.fn().mockResolvedValue(undefined) }) }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ push: vi.fn().mockResolvedValue(undefined) }) }));
-vi.mock("element-plus", () => ({ ElMessage: { success: uiMocks.success, error: uiMocks.error, warning: vi.fn(), info: vi.fn() }, ElMessageBox: { confirm: uiMocks.confirm } }));
+vi.mock("element-plus", () => ({
+  ElMessage: { success: uiMocks.success, error: uiMocks.error, warning: vi.fn(), info: vi.fn() },
+  ElMessageBox: { confirm: uiMocks.confirm },
+  ElPopover: defineComponent({ props: ["visible"], setup: (props, { slots }) => () => h("div", [slots.reference?.(), props.visible ? slots.default?.() : null]) })
+}));
 vi.mock("@/features/device/components/LocalDeviceEditor.vue", () => ({ default: defineComponent({ props: ["modelValue", "editingBundle"], setup: (props) => () => props.modelValue ? h("div", { class: "test-editor" }, JSON.stringify(props.editingBundle)) : null }) }));
 vi.mock("@/features/point/components/PointEditor.vue", () => ({ default: defineComponent({ render: () => null }) }));
 vi.mock("@/components/realtime/RealtimeDataPanel.vue", () => ({ default: defineComponent({ render: () => null }) }));
@@ -58,7 +62,7 @@ beforeEach(() => {
   uiMocks.status.mockResolvedValue({ deviceId: "a", isRunning: true });
   uiMocks.running.mockResolvedValue(true);
   uiMocks.runningIds.mockResolvedValue(["a"]);
-  uiMocks.protocol.mockResolvedValue({ connectionFields: [] });
+  uiMocks.protocol.mockResolvedValue({ protocol: "MODBUS_TCP", connectionFields: [] });
   uiMocks.realtime.mockResolvedValue([]);
   uiMocks.bundle.mockImplementation((id: string) => Promise.resolve({ configVersion: 1, device: { deviceId: id }, connection: {}, points: [] }));
   uiMocks.validate.mockResolvedValue({ valid: true });
@@ -334,7 +338,10 @@ describe("设备页面真实交错回归", () => {
     const state = reactive({ device: { normalizedId: "a", deviceId: "a", displayName: "A", displayGroup: "", displayProtocol: "MODBUS_TCP", protocolType: "MODBUS_TCP" } });
     const page = mountUi(defineComponent({ setup: () => () => h(DeviceConfigPanel, { device: state.device }) }));
     await settleUi();
-    [...page.root.querySelectorAll("button")].find(b => b.textContent === "保存协议配置")?.click();
+    const saveButton = [...page.root.querySelectorAll("button")].find(b => b.textContent === "保存协议配置");
+    if (!saveButton) throw new Error("未找到保存协议配置按钮");
+    expect(saveButton.disabled).toBe(false);
+    saveButton.click();
     await settleUi();
     expect(useDeviceStore().isDeviceOperating("a")).toBe(true);
     state.device = { ...state.device, normalizedId: "b", deviceId: "b" };

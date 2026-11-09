@@ -195,7 +195,8 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
      */
     private void configureWillMessageV5() {
         String willTopic = config.getStringConfig("willTopic", null);
-        if (willTopic == null) {
+        // 与配置校验一致：空值或纯空白表示未启用遗嘱，不改写非空主题。
+        if (willTopic == null || willTopic.isBlank()) {
             return;
         }
         willTopic = resolveConnectionTopic(willTopic);
@@ -214,7 +215,8 @@ public class MqttConnectionAdapter extends AbstractConnectionAdapter<Object>
      */
     private void configureWillMessageV3() {
         String willTopic = config.getStringConfig("willTopic", null);
-        if (willTopic == null) {
+        // 与配置校验一致：空值或纯空白表示未启用遗嘱，不改写非空主题。
+        if (willTopic == null || willTopic.isBlank()) {
             return;
         }
         willTopic = resolveConnectionTopic(willTopic);

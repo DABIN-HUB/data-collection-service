@@ -74,13 +74,25 @@ class ConnectionManagerTest {
         Fixture fixture = new Fixture(null);
         ConnectionAdapter<?> first = fixture.add("dev-1", false, false);
         ConnectionAdapter<?> second = fixture.add("dev-2", false, false);
-        doThrow(new IllegalStateException("close failed")).when(first).closeResources();
+        doThrow(new IllegalStateException("close failed"))
+                .doThrow(new IllegalStateException("close failed"))
+                .doNothing()
+                .when(first).closeResources();
 
-        fixture.manager.closeAllConnections();
+        assertThrows(CollectorException.class, fixture.manager::closeAllConnections);
 
-        verify(first).closeResources();
+        verify(first, times(2)).closeResources();
         verify(second).closeResources();
         assertEquals(0, fixture.manager.getAllConnections().size());
+
+        fixture.manager.closeAllConnections();
+        assertEquals(0, fixture.manager.getAllConnections().size());
+        verify(first, times(3)).closeResources();
+        verify(second, times(1)).closeResources();
+
+        fixture.manager.closeAllConnections();
+        verify(second, times(1)).closeResources();
+        verify(first, times(3)).closeResources();
     }
 
     @Test

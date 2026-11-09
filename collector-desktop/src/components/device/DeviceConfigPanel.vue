@@ -41,7 +41,7 @@
           <div class="schema-actions">
             <div class="schema-message"><span>保存更新协议连接配置；点位修改请在点位编辑中保存。</span><span v-if="connectionMessage" role="status">{{ connectionMessage }}</span></div>
             <div class="schema-toolbar">
-              <el-button :loading="protocolLoading" :disabled="savingConnection" @click="loadProtocolConfig">读取连接配置</el-button>
+              <el-button :loading="protocolLoading" :disabled="savingConnection" @click="loadProtocolConfig(true)">读取连接配置</el-button>
               <el-button @click="showDiff">查看配置差异</el-button>
               <el-button type="primary" :loading="savingConnection" :disabled="protocolLoading || !configBundle || !protocolSchema" @click="saveProtocolConfig">保存协议配置</el-button>
             </div>
@@ -176,7 +176,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
-import { getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
+import { classifyConfigCommitResponse, getDeviceConfigBundle, getDeviceDiff, validateDeviceConfigBundle, commitDeviceConfigBundle } from "@/api/config.api";
 import { ApiRequestError } from "@/api/http";
 import { getDeviceRealtimeData } from "@/api/data.api";
 
@@ -232,6 +232,7 @@ const connectionConfig = ref<ConnectionPayload>({});
 const protocolLoading = ref(false);
 const savingConnection = computed(() => deviceStore.isDeviceOperating(props.device?.normalizedId || ""));
 const protocolError = ref("");
+const protocolConflict = ref(false);
 const connectionMessage = ref("");
 const configBundle = ref<DeviceConfigBundleResponse | null>(null);
 const diffVisible = ref(false);
@@ -285,7 +286,8 @@ const protocolValidationText = computed(() => {
 });
 const protocolValidationTone = computed(() => protocolError.value || currentProtocolErrors.value.length ? "is-warning" : protocolSchema.value && configBundle.value && !protocolLoading.value && protocolFields.value.length ? "is-success" : "is-muted");
 
-async function loadProtocolConfig() {
+async function loadProtocolConfig(explicit = false) {
+  if (protocolConflict.value && !explicit) return;
   const requestContext = currentProtocolConfigContext();
   if (!requestContext.deviceId || !requestContext.protocolKey) {
     return;
@@ -294,7 +296,7 @@ async function loadProtocolConfig() {
   const epoch = deviceStore.deviceEpochs[requestContext.deviceId] || 0;
   ++configSession;
   protocolLoading.value = true;
-  protocolError.value = "";
+  if (!protocolConflict.value) protocolError.value = "";
   connectionMessage.value = "";
   try {
     const [schema, bundle] = await Promise.all([
@@ -308,6 +310,8 @@ async function loadProtocolConfig() {
     }
     protocolSchema.value = schema;
     configBundle.value = bundle;
+    protocolConflict.value = false;
+    protocolError.value = "";
     connectionConfig.value = nextConnectionConfig;
     protocolModel.value = nextProtocolModel;
     connectionMessage.value = "连接配置已读取";
@@ -315,7 +319,9 @@ async function loadProtocolConfig() {
     if (!protocolConfigOwner.canCommit(ticket, currentProtocolConfigContext()) || epoch !== (deviceStore.deviceEpochs[requestContext.deviceId] || 0) || deviceStore.isDeviceOperating(requestContext.deviceId)) {
       return;
     }
-    protocolError.value = error instanceof Error ? error.message : "协议连接配置加载失败";
+    protocolError.value = protocolConflict.value
+      ? "草稿已保留；重新加载连接配置失败，请检查服务后再次显式重新加载"
+      : error instanceof Error ? error.message : "协议连接配置加载失败";
   } finally {
     if (protocolConfigOwner.isLatest(ticket)) {
       protocolLoading.value = false;
@@ -389,6 +395,10 @@ async function saveProtocolConfig() {
   if (!targetContext.deviceId || !targetContext.protocolKey || !props.device) {
     return;
   }
+  if (protocolConflict.value) {
+    protocolError.value = "草稿已保留；请显式重新加载连接配置并核对修改后再保存";
+    return;
+  }
   if (deviceStore.isDeviceOperating(targetContext.deviceId)) return;
   const session = configSession;
   const targetFields = [...protocolFields.value];
@@ -403,6 +413,7 @@ async function saveProtocolConfig() {
   }
 
   protocolError.value = "";
+  let revisionConflict = false;
   try {
     const payload = buildConnectionPayload(targetFields, targetModel, {
       ...targetConnectionConfig,
@@ -416,35 +427,65 @@ async function saveProtocolConfig() {
     }
     const bundlePayload = {
       baseVersion: currentBundle.configVersion,
+      ...(currentBundle.persistedRevision !== undefined ? { baseRevision: currentBundle.persistedRevision } : {}),
       device: { ...currentBundle.device, deviceId: targetContext.deviceId },
       connection: payload,
       points: currentBundle.points || []
     };
     const operation = await deviceStore.operate(async () => {
-      const validation = await validateDeviceConfigBundle(targetContext.deviceId, bundlePayload);
-      if (!validation.valid) throw new Error(validation.errors?.join("；") || "设备配置校验失败");
       try {
+        const validation = await validateDeviceConfigBundle(targetContext.deviceId, bundlePayload);
+        if (!validation.valid) throw new Error(validation.errors?.join("；") || "设备配置校验失败");
         return await commitDeviceConfigBundle(targetContext.deviceId, bundlePayload);
       } catch (error) {
-        if (error instanceof ApiRequestError && error.httpStatus === 409) throw new Error("设备配置已经发生变化，请重新读取配置后确认当前修改", { cause: error });
+        if (error instanceof ApiRequestError && (error.httpStatus === 409 || error.machineCode === "CONFIG_VERSION_CONFLICT")) {
+          revisionConflict = true;
+          throw new Error("设备持久配置已变化，草稿已保留；请显式重新加载连接配置并核对修改后再保存", { cause: error });
+        }
+        if (error instanceof ApiRequestError && error.machineCode === "CONFIG_COMMIT_UNCONFIRMED") {
+          revisionConflict = true;
+          throw new Error("数据库提交结果待核对，草稿已保留；请勿重复提交，显式重新加载连接配置后核对", { cause: error });
+        }
         throw error;
       }
     }, targetContext.deviceId);
     if (!operation.ok || !operation.result) throw new Error(operation.error || "协议连接配置保存失败");
     const result = operation.result;
+    let outcome: ReturnType<typeof classifyConfigCommitResponse>;
+    try { outcome = classifyConfigCommitResponse(result, targetContext.deviceId); }
+    catch (invalid) { revisionConflict = true; throw invalid; }
+    const requiresRecovery = outcome !== "normal";
+    const recoveryMessage = outcome === "reconciled"
+      ? "配置已提交，已完成权威对账；草稿已保留，请显式重新加载连接配置核对，勿重复提交"
+      : "配置已提交，运行态待恢复；草稿已保留，请显式重新加载连接配置并检查服务恢复状态，勿重复提交";
     if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+      if (requiresRecovery) {
+        protocolConflict.value = true;
+        protocolError.value = recoveryMessage;
+        protocolConfigOwner.invalidate();
+        protocolLoading.value = false;
+        ElMessage.warning(recoveryMessage);
+        return;
+      }
       connectionConfig.value = payload;
-      configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion };
+      configBundle.value = { ...currentBundle, connection: payload, configVersion: result.configVersion!,
+        ...(result.persistedRevision !== undefined ? { persistedRevision: result.persistedRevision } : {}) };
       connectionMessage.value = `完整设备配置已保存，配置版本 v${result.configVersion}`;
       ElMessage.success("协议连接配置已保存");
       return;
     }
-    ElMessage.success(`设备 ${targetDeviceName} 协议连接配置已保存`);
+    if (requiresRecovery) ElMessage.warning(`设备 ${targetDeviceName} ${recoveryMessage}`);
+    else ElMessage.success(`设备 ${targetDeviceName} 协议连接配置已保存`);
   } catch (error) {
-    const message = error instanceof ApiRequestError && error.httpStatus === 409
-      ? "设备配置已经发生变化，请重新读取配置后确认当前修改"
+    const message = error instanceof ApiRequestError && (error.httpStatus === 409 || error.machineCode === "CONFIG_VERSION_CONFLICT")
+      ? "设备持久配置已变化，草稿已保留；请显式重新加载连接配置并核对修改后再保存"
       : error instanceof Error ? error.message : "协议连接配置保存失败";
     if (session === configSession && shouldCommitDeviceProtocolSave(targetContext, currentProtocolConfigContext())) {
+      if (revisionConflict) {
+        protocolConflict.value = true;
+        protocolConfigOwner.invalidate();
+        protocolLoading.value = false;
+      }
       protocolError.value = message;
       return;
     }
@@ -491,6 +532,7 @@ function resetProtocolReadState() {
   protocolSchema.value = null;
   connectionConfig.value = {};
   protocolError.value = "";
+  protocolConflict.value = false;
   connectionMessage.value = "";
 }
 

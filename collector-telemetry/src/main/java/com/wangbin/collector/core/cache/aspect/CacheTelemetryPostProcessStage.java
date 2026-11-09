@@ -89,7 +89,12 @@ class CacheTelemetryPostProcessStage implements TelemetryPostProcessStage {
         identity.put(ProcessResultMetadataKeys.POINT_DATA_TYPE, point.getDataType());
         cachedResult.addMetadata(ProcessResultMetadataKeys.POINT_IDENTITY, identity);
         CacheKey cacheKey = CacheKey.dataKey(context.deviceId(), point.getPointId());
-        if (point.needCache() && !multiLevelCacheManager.put(cacheKey, cachedResult, getCacheExpireTime(point))) {
+        boolean cacheWriteCompleted = !point.needCache()
+                || multiLevelCacheManager.put(cacheKey, cachedResult, getCacheExpireTime(point));
+        boolean cacheWriteDegraded = point.needCache()
+                && !cacheWriteCompleted
+                && multiLevelCacheManager.consumeLastWriteFallbackSuccess();
+        if (point.needCache() && !cacheWriteCompleted && !cacheWriteDegraded) {
             if (acquisitionRuntimeTracker != null) acquisitionRuntimeTracker.recordPointFailure(
                     context.deviceId(), context.generation(), point.getPointId(), "CACHE_ERROR", context.sampleAt());
             throw new IllegalStateException("实时缓存写入未完成");

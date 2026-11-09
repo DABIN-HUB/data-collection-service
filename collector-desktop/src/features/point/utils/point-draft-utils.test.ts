@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   alarmRules,
+  supportsAlarmRuleEditing,
   buildReadonlyItems,
   createUniqueCode,
   findDuplicatePointCode,
@@ -21,8 +22,17 @@ describe("point-draft-utils", () => {
     };
 
     expect(alarmRules(point)).toEqual([{ ruleId: "r1", operator: ">=", threshold: 80, enabled: true }, { ruleId: "" }]);
-    expect(serializeAlarmRules(alarmRules(point))).toBe(JSON.stringify([{ ruleId: "r1", operator: ">=", threshold: 80, enabled: true }]));
-    expect(serializeAlarmRules([{ ruleId: "", operator: "", threshold: undefined }])).toBe("");
+    expect(serializeAlarmRules(alarmRules(point))).toBe(point.alarmRule);
+    expect(serializeAlarmRules([])).toBe("");
+  });
+
+  it("对象或混合数组告警不能被当成可编辑空规则，数组未知字段不裁剪", () => {
+    expect(supportsAlarmRuleEditing({ alarmRule: '{"unknown":{"value":1}}' })).toBe(false);
+    expect(supportsAlarmRuleEditing({ alarmRule: '[{"ruleId":"r"},null]' })).toBe(false);
+    expect(supportsAlarmRuleEditing({ alarmRule: "invalid" })).toBe(false);
+    expect(supportsAlarmRuleEditing({ alarmRule: "[]" })).toBe(true);
+    expect(supportsAlarmRuleEditing({})).toBe(true);
+    expect(JSON.parse(serializeAlarmRules([{ ruleId: "r", unknown: null, nested: { empty: "", items: [] } }]))).toEqual([{ ruleId: "r", unknown: null, nested: { empty: "", items: [] } }]);
   });
 
   it("检测重复 pointCode 并生成唯一副本编码", () => {

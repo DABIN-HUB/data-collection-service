@@ -2,6 +2,9 @@ package com.wangbin.collector.core.collector.protocol.opc;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
+import com.wangbin.collector.common.domain.enums.DataQuality;
+import com.wangbin.collector.common.exception.CollectorException;
+import com.wangbin.collector.core.processor.DataQualityProcessorTestSupport;
 import com.wangbin.collector.core.processor.ProcessResult;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
@@ -17,20 +20,52 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class OpcUaCollectorReadStatusTest {
     private static final StatusCode BAD_NODE_ID_UNKNOWN = new StatusCode(0x80340000L);
 
     @Test
-    void singleReadRejectsBadStatusEvenWhenPayloadExists() {
+    void singleReadRejectsBadStatusEvenWhenPayloadExists() throws Exception {
         TestCollector collector = new TestCollector(List.of(new DataValue(new Variant(17), BAD_NODE_ID_UNKNOWN)));
-        assertThrows(IllegalStateException.class, () -> collector.readRaw(point("p1", "ns=2;s=Joint1")));
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> collector.readRaw(point("p1", "ns=2;s=Joint1")));
+        assertTrue(failure.getMessage().contains("Bad_NodeIdUnknown"));
+        verify(collector.client).readValue(0.0, TimestampsToReturn.Both, NodeId.parse("ns=2;s=Joint1"));
+    }
+
+    @Test
+    void singleReadUsesCurrentClientAndProducesGoodQuality() throws Exception {
+        TestCollector collector = new TestCollector(List.of(new DataValue(new Variant(17))));
+        DataPoint point = point("p1", "ns=2;s=Joint1");
+        assertEquals(17.0, ((Number) collector.readPoint(point)).doubleValue());
+        ProcessResult result = collector.getLatestProcessResult("p1");
+        assertTrue(result.isSuccess());
+        assertEquals(100, result.getQuality());
+        verify(collector.client).readValue(0.0, TimestampsToReturn.Both, NodeId.parse(point.getAddress()));
+    }
+
+    @Test
+    void clientFailureIsActuallyReachedAndNeverReportedAsGoodRead() throws Exception {
+        TestCollector collector = new TestCollector(List.of(new DataValue(new Variant(17))));
+        DataPoint point = point("p1", "ns=2;s=Joint1");
+        IllegalStateException clientFailure = new IllegalStateException("wangbin-client-read-failed");
+        when(collector.client.readValue(0.0, TimestampsToReturn.Both, NodeId.parse(point.getAddress())))
+                .thenThrow(clientFailure);
+        assertSame(clientFailure, assertThrows(IllegalStateException.class, () -> collector.readRaw(point)));
+        CollectorException failure = assertThrows(CollectorException.class, () -> collector.readPoint(point));
+        assertEquals(DataQuality.DEVICE_ERROR, failure.getDataQuality());
+        assertEquals("p1", failure.getPointId());
+        assertEquals(null, collector.getLatestProcessResult("p1"));
+        verify(collector.client, org.mockito.Mockito.times(2))
+                .readValue(0.0, TimestampsToReturn.Both, NodeId.parse(point.getAddress()));
     }
 
     @Test
@@ -48,21 +83,26 @@ class OpcUaCollectorReadStatusTest {
         assertEquals(11, result.get("p1"));
         assertFalse(result.containsKey("p2"));
         assertEquals(33, result.get("p3"));
+        verify(collector.client).readValues(0.0, TimestampsToReturn.Both, collector.requestedNodeIds);
     }
 
     @Test
-    void batchRejectsResponseWithDifferentLengthInsteadOfAssociatingWrongPoint() {
+    void batchRejectsResponseWithDifferentLengthInsteadOfAssociatingWrongPoint() throws Exception {
         TestCollector collector = new TestCollector(List.of(new DataValue(new Variant(11))));
-        assertThrows(IllegalStateException.class, () -> collector.readRawBatch(List.of(
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> collector.readRawBatch(List.of(
                 point("p1", "ns=2;s=Joint1"), point("p2", "ns=2;s=Joint2"))));
+        assertTrue(failure.getMessage().contains("requested=2, received=1"));
+        verify(collector.client).readValues(0.0, TimestampsToReturn.Both, collector.requestedNodeIds);
     }
 
     @Test
-    void batchAllBadDoesNotPretendToBeEmptySuccess() {
+    void batchAllBadDoesNotPretendToBeEmptySuccess() throws Exception {
         TestCollector collector = new TestCollector(List.of(new DataValue(new Variant(null), BAD_NODE_ID_UNKNOWN)));
         IllegalStateException failure = assertThrows(IllegalStateException.class,
                 () -> collector.readRawBatch(List.of(point("p1", "ns=2;s=Joint1"))));
         assertTrue(failure.getMessage().contains("p1"));
+        assertTrue(failure.getMessage().contains("Bad_NodeIdUnknown"));
+        verify(collector.client).readValues(0.0, TimestampsToReturn.Both, collector.requestedNodeIds);
     }
 
     @Test
@@ -72,6 +112,7 @@ class OpcUaCollectorReadStatusTest {
         Map<?, ?> item = (Map<?, ?>) result.get(0);
         assertEquals(null, item.get("value"));
         assertTrue(item.get("status").toString().contains("Bad_NodeIdUnknown"));
+        verify(collector.client).readValues(0.0, TimestampsToReturn.Both, List.of(NodeId.parse("ns=2;s=Joint1")));
     }
 
     @Test
@@ -92,7 +133,7 @@ class OpcUaCollectorReadStatusTest {
     }
 
     private static class TestCollector extends OpcUaCollector {
-        private final List<DataValue> response;
+        private final OpcUaClient client = mock(OpcUaClient.class);
         private List<NodeId> requestedNodeIds;
         private boolean notificationPublished;
 
@@ -103,11 +144,11 @@ class OpcUaCollectorReadStatusTest {
         }
 
         TestCollector(List<DataValue> response) {
-            this.response = response;
             DeviceInfo device = new DeviceInfo();
             device.setDeviceId("test-opc-device");
             deviceInfo = device;
-            client = mock(OpcUaClient.class);
+            connected = true;
+            dataQualityProcessor = DataQualityProcessorTestSupport.create();
             try {
                 when(client.readValue(eq(0.0), eq(TimestampsToReturn.Both), any(NodeId.class)))
                         .thenReturn(response.get(0));
@@ -119,14 +160,19 @@ class OpcUaCollectorReadStatusTest {
         }
 
         @Override
+        protected OpcUaClient requireCurrentClient() {
+            return client;
+        }
+
+        @Override
         protected NodeId resolveNodeId(DataPoint point) {
             return NodeId.parse(point.getAddress());
         }
 
         @Override
-        protected List<DataValue> readValues(List<NodeId> nodeIds) {
+        protected List<DataValue> readValues(List<NodeId> nodeIds) throws Exception {
             requestedNodeIds = List.copyOf(nodeIds);
-            return response;
+            return super.readValues(nodeIds);
         }
 
         @Override

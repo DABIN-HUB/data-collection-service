@@ -86,13 +86,18 @@ public class CollectionScheduler {
 
     @PreDestroy
     public void destroy() {
-        deviceLifecycleCoordinator.beginShutdown();
-        configRestartCoordinator.cancelAll();
+        beginGracefulShutdown();
         schedulerMaintenanceCoordinator.cancel();
         timeSliceSchedulingCoordinator.cancelTimeSliceScheduling();
         stopAllDevices();
         reconnectCoordinator.clearAll();
         runtimeState.clear();
+    }
+
+    /** Reject pending starts before the context-close listener stops individual devices. */
+    public void beginGracefulShutdown() {
+        deviceLifecycleCoordinator.beginShutdown();
+        configRestartCoordinator.cancelAll();
     }
 
     public PerformanceStatsSnapshot getPerformanceSnapshot() {

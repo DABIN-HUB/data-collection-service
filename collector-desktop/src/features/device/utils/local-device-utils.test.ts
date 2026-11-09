@@ -38,7 +38,6 @@ describe("local-device-utils", () => {
     expect(payload.points[0]).toMatchObject({
       deviceId: "local-1",
       baseCollectionInterval: 1000,
-      currentCollectionInterval: 1000,
       minCollectionInterval: 500,
       maxCollectionInterval: 5000,
       pointChangeThreshold: 0.01,
@@ -46,6 +45,44 @@ describe("local-device-utils", () => {
     });
     expect(payload.overwrite).toBe(true);
     expect(payload.startAfterSave).toBe(true);
+  });
+
+  it("完整设备 base、连接及云配置未知字段保留，并携带读取版本", () => {
+    const deviceBase = { id: "dev", deviceAlias: "别名", productId: 7, remark: "保留", maxRetryCount: 9, authConfig: { extra: [null, "x"] }, cloudTarget: { enabled: false, unknown: null } };
+    const connection = { host: "127.0.0.1", authParams: { token: "masked" }, extJson: { unknown: [1, null] } };
+    const payload = buildLocalDevicePayload({ deviceId: "dev", deviceName: "改名", protocol: "HTTP", deviceBase, baseVersion: 12, connection, points: [{ pointId: "p1", pointCode: "p1" }] });
+    expect(payload.device).toMatchObject({ ...deviceBase, deviceName: "改名", protocolType: "HTTP", cloudTarget: { enabled: false, unknown: null } });
+    expect(payload.connection).toMatchObject(connection);
+    expect(payload.baseVersion).toBe(12);
+    expect(deviceBase).not.toHaveProperty("deviceName");
+    expect(extractLocalDeviceBundle({ configVersion: 12, bundle: { device: deviceBase } })?.configVersion).toBe(12);
+    expect(extractLocalDeviceBundle({ data: { configVersion: 13, bundle: { device: deviceBase } } })?.configVersion).toBe(13);
+  });
+
+  it("本地详情只从真实持久修订提取 baseRevision，不把 JVM 配置版本当作 SQLite 修订", () => {
+    const device = { deviceId: "dev" };
+    const fromRoot = extractLocalDeviceBundle({ configVersion: 10, persistedRevision: 0, bundle: { device } });
+    expect(fromRoot).toMatchObject({ device, configVersion: 10, persistedRevision: 0 });
+    const fromData = extractLocalDeviceBundle({ data: { configVersion: 11, persistedRevision: 5, bundle: { device } } });
+    expect(fromData).toMatchObject({ device, configVersion: 11, persistedRevision: 5 });
+    const withoutRevision = extractLocalDeviceBundle({ configVersion: 12, bundle: { device } });
+    expect(withoutRevision?.persistedRevision).toBeUndefined();
+
+    const draft = { deviceId: "dev", deviceName: "设备", protocol: "MODBUS_TCP", points: [{ pointCode: "p1" }], baseVersion: fromRoot?.configVersion, baseRevision: fromRoot?.persistedRevision };
+    expect(buildLocalDevicePayload(draft)).toMatchObject({ baseVersion: 10, baseRevision: 0 });
+    expect(buildLocalDevicePayload({ ...draft, baseVersion: withoutRevision?.configVersion, baseRevision: withoutRevision?.persistedRevision })).not.toHaveProperty("baseRevision");
+  });
+
+  it("普通保存保留每点显式 adaptive 和零阈值，仅缺失补默认，不提交当前运行周期", () => {
+    const payload = buildLocalDevicePayload({ deviceId: "dev", deviceName: "设备", protocol: "MODBUS_TCP", adaptive: { baseCollectionInterval: 1000, minCollectionInterval: 500, maxCollectionInterval: 5000, pointChangeThreshold: 0 }, points: [
+      { pointId: "p1", baseCollectionInterval: 2500, minCollectionInterval: 1250, maxCollectionInterval: 9000, pointChangeThreshold: 0, currentCollectionInterval: 7777 },
+      { pointId: "p2", baseCollectionInterval: 3500, pointChangeThreshold: 0.25 },
+      { pointId: "p3" }
+    ] });
+    expect(payload.points[0]).toMatchObject({ baseCollectionInterval: 2500, minCollectionInterval: 1250, maxCollectionInterval: 9000, pointChangeThreshold: 0 });
+    expect(payload.points[1]).toMatchObject({ baseCollectionInterval: 3500, minCollectionInterval: 500, maxCollectionInterval: 5000, pointChangeThreshold: 0.25 });
+    expect(payload.points[2].pointChangeThreshold).toBe(0);
+    expect(payload.points[0]).not.toHaveProperty("currentCollectionInterval");
   });
 
   it("保存时原样保留历史设备身份及 pointId，不通过 trim 改名", () => {
@@ -142,7 +179,6 @@ describe("local-device-utils", () => {
       dataType: "STRING",
       collectionMode: "SUBSCRIPTION",
       baseCollectionInterval: 3000,
-      currentCollectionInterval: 3000,
       minCollectionInterval: 1000,
       maxCollectionInterval: 6000,
       pointChangeThreshold: 0.05,

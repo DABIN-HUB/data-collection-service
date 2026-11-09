@@ -1,6 +1,12 @@
 package com.wangbin.collector.core.collector.protocol.iec.base;
 
 import com.wangbin.collector.common.domain.entity.DataPoint;
+import org.openmuc.j60870.ASdu;
+import org.openmuc.j60870.ASduType;
+import org.openmuc.j60870.CauseOfTransmission;
+import org.openmuc.j60870.ie.IeQuality;
+import org.openmuc.j60870.ie.IeShortFloat;
+import org.openmuc.j60870.ie.InformationObject;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -23,11 +29,17 @@ class AbstractIce104CollectorTest {
     void shouldKeepTypedCacheSeparateFromOtherTypes() {
         TestIec104Collector collector = new TestIec104Collector();
 
-        ReflectionTestUtils.invokeMethod(collector, "cacheValue", 1, Integer.valueOf(13), 100, 12.5d);
+        collector.receive(measurement(1, 100, 12.5f));
 
-        assertEquals(12.5d, collector.cachedValue(1, 13, 100));
-        assertEquals(12.5d, collector.cachedValue(1, null, 100));
+        AbstractIce104Collector.CacheEntry sample = collector.cachedSample(1, 13, 100);
+        assertEquals(12.5f, sample.value());
+        assertEquals(13, sample.rawTypeId());
+        assertEquals(0, sample.qualityBits());
+        assertTrue(sample.observedAt() > 0);
+        assertEquals(12.5f, collector.cachedValue(1, 13, 100));
+        assertEquals(12.5f, collector.cachedValue(1, null, 100));
         assertEquals(null, collector.cachedValue(1, 3, 100));
+        assertEquals(null, collector.cachedValue(2, 13, 100));
     }
 
     @Test
@@ -115,12 +127,20 @@ class AbstractIce104CollectorTest {
 
     private static final class TestIec104Collector extends AbstractIce104Collector {
 
+        private void receive(ASdu asdu) {
+            handleResponse(null, asdu);
+        }
+
         private CompletableFuture<Object> pending(int commonAddress, Integer typeId, int ioa) {
             return registerPendingRequest(commonAddress, typeId, ioa);
         }
 
         private Object cachedValue(int commonAddress, Integer typeId, int ioa) {
             return getCachedValue(commonAddress, typeId, ioa);
+        }
+
+        private CacheEntry cachedSample(int commonAddress, Integer typeId, int ioa) {
+            return getCachedSample(commonAddress, typeId, ioa);
         }
 
         private void resetProtocolState() {
@@ -198,5 +218,13 @@ class AbstractIce104CollectorTest {
         public String getProtocolType() {
             return "IEC104";
         }
+    }
+
+    private static ASdu measurement(int commonAddress, int ioa, float value) {
+        InformationObject object = new InformationObject(ioa,
+                new IeShortFloat(value), new IeQuality(false, false, false, false, false));
+        return new ASdu(ASduType.M_ME_NC_1, false,
+                CauseOfTransmission.INTERROGATED_BY_STATION, false, false, 0,
+                commonAddress, new InformationObject[]{object});
     }
 }

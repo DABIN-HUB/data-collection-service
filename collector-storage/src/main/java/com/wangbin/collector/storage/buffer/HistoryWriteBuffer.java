@@ -12,17 +12,22 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Supplier;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 /**
  * 历史数据写入缓冲器，Redis 队列承担写失败恢复，本地有界队列承担 Redis 故障降级。
@@ -31,6 +36,18 @@ import java.util.function.Supplier;
 @Component
 @ConditionalOnProperty(prefix = "telemetry.tdengine", name = "enabled", havingValue = "true")
 public class HistoryWriteBuffer {
+
+    /** 原子检查待写与处理中消息总量，批量请求必须全部准入或全部拒绝。 */
+    private static final DefaultRedisScript<Long> BOUNDED_PENDING_PUSH = new DefaultRedisScript<>(
+            "local capacity=tonumber(ARGV[1]); "
+                    + "if redis.call('LLEN',KEYS[1])+redis.call('LLEN',KEYS[2])+#ARGV-1>capacity then return 0 end; "
+                    + "for i=2,#ARGV do redis.call('LPUSH',KEYS[1],ARGV[i]) end; return #ARGV-1",
+            Long.class);
+    /** 隔离队列达到上限时不确认 processing，避免静默丢失原消息。 */
+    private static final DefaultRedisScript<Long> BOUNDED_DEAD_LETTER_PUSH = new DefaultRedisScript<>(
+            "if redis.call('LLEN',KEYS[1])>=tonumber(ARGV[1]) then return 0 end; "
+                    + "redis.call('LPUSH',KEYS[1],ARGV[2]); return 1",
+            Long.class);
 
     private final TimeSeriesService timeSeriesService;
     private final StringRedisTemplate redisTemplate;
@@ -242,7 +259,9 @@ public class HistoryWriteBuffer {
             return HistoryBufferOutcome.DROPPED;
         }
         try {
-            redisTemplate.opsForList().leftPush(properties.getPendingKey(), serialize(request));
+            if (!pushPending(List.of(serialize(request)))) {
+                throw new RedisBacklogFullException();
+            }
             incrementRedisBuffered(reason);
             overloadLogReporter.warn("history-redis-buffered-" + reason.name(),
                     "{}，数据已进入 Redis 历史待写队列，设备={}，点位={}，原因={}",
@@ -257,7 +276,7 @@ public class HistoryWriteBuffer {
             }
             incrementLocalBuffered(reason);
             overloadLogReporter.warn("history-local-buffered-" + reason.name(),
-                    "{}，Redis 历史待写队列不可用，数据已进入本地有界降级队列，设备={}，点位={}，原因={}",
+                    "{}，Redis 历史待写队列不可用或已满，数据已进入本地有界降级队列，设备={}，点位={}，原因={}",
                     reason.message(), request.getDeviceId(), pointId(request), failureMessage(redisException));
             return HistoryBufferOutcome.LOCAL_BUFFERED;
         }
@@ -296,7 +315,9 @@ public class HistoryWriteBuffer {
         }
         try {
             if (!payloads.isEmpty()) {
-                redisTemplate.opsForList().leftPushAll(properties.getPendingKey(), payloads);
+                if (!pushPending(payloads)) {
+                    throw new RedisBacklogFullException();
+                }
                 incrementRedisBuffered(reason, payloads.size());
                 batchFallbackRedisRows.add(payloads.size());
                 batchFallbackRedisOps.increment();
@@ -322,11 +343,11 @@ public class HistoryWriteBuffer {
             batchFallbackLocalRows.add(localBuffered);
             batchFallbackDroppedRows.add(localDropped);
             if (localDropped > dropped) {
-                log.error("{}，Redis 批量历史待写队列不可用，且本地历史降级队列已满，部分数据明确丢弃，rows={}，local={}，dropped={}",
+                log.error("{}，Redis 批量历史待写队列不可用或已满，且本地历史降级队列已满，部分数据明确丢弃，rows={}，local={}，dropped={}",
                         reason.message(), rows, localBuffered, localDropped - dropped, redisException);
             } else {
                 overloadLogReporter.warn("history-local-buffered-batch-" + reason.name(),
-                        "{}，Redis 批量历史待写队列不可用，数据已进入本地有界降级队列，rows={}，原因={}",
+                        "{}，Redis 批量历史待写队列不可用或已满，数据已进入本地有界降级队列，rows={}，原因={}",
                         reason.message(), localBuffered, failureMessage(redisException));
             }
             recordBatchFallbackLatency(System.nanoTime() - startedAt);
@@ -368,15 +389,19 @@ public class HistoryWriteBuffer {
             try {
                 writeBatch(requests);
                 recordReplayBatch(requests.size(), System.nanoTime() - startedAt);
-                replaySuccessfulRows.add(requests.size());
             } catch (RuntimeException exception) {
                 replayFailedRows.add(requests.size());
                 log.warn("历史数据批量回放失败，将在下一轮继续重试", exception);
                 return 0;
             }
             try {
-                removeOwnedProcessing(validJsons);
+                if (!removeOwnedProcessing(validJsons)) {
+                    replayFailedRows.add(requests.size());
+                    return 0;
+                }
+                replaySuccessfulRows.add(requests.size());
             } catch (RuntimeException exception) {
+                replayFailedRows.add(requests.size());
                 log.warn("历史批量回放已写库，但 Redis processing 删除失败，下次可能重复写入", exception);
             }
             return claimed.size();
@@ -403,15 +428,47 @@ public class HistoryWriteBuffer {
         return claimed;
     }
 
-    private void removeOwnedProcessing(List<String> validJsons) {
+    private boolean removeOwnedProcessing(List<String> validJsons) {
+        boolean allRemoved = true;
         for (String json : validJsons) {
-            redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+            Long removed = redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
+            log.debug("历史回放 ACK 命令完成，消息指纹={}，LREM返回={}", payloadFingerprint(json), removed);
+            if (!Long.valueOf(1L).equals(removed)) {
+                allRemoved = false;
+                log.warn("历史回放 ACK 未确认，消息指纹={}，LREM返回={}，消息可能再次投递",
+                        payloadFingerprint(json), removed);
+            }
+        }
+        return allRemoved;
+    }
+
+    /**
+     * 只记录稳定的消息指纹，禁止在 ACK 异常日志中输出业务 payload。
+     */
+    private String payloadFingerprint(String json) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(json.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JDK 不支持 SHA-256", exception);
         }
     }
 
     private boolean moveToDeadLetter(String json, Exception exception) {
         try {
-            redisTemplate.opsForList().leftPush(properties.getDeadLetterKey(), json);
+            if (properties.getDeadLetterCapacity() > 0) {
+                Long added = redisTemplate.execute(BOUNDED_DEAD_LETTER_PUSH,
+                        List.of(properties.getDeadLetterKey()),
+                        String.valueOf(properties.getDeadLetterCapacity()), json);
+                if (!Long.valueOf(1L).equals(added)) {
+                    overloadLogReporter.warn("history-dead-letter-full",
+                            "历史隔离队列已满或状态未知，保留 processing 消息等待处理");
+                    return false;
+                }
+            } else {
+                redisTemplate.opsForList().leftPush(properties.getDeadLetterKey(), json);
+            }
             redisTemplate.opsForList().remove(properties.getProcessingKey(), 1L, json);
             log.error("历史数据待写消息无法反序列化，已转入隔离队列", exception);
             return true;
@@ -491,6 +548,38 @@ public class HistoryWriteBuffer {
             return objectMapper.writeValueAsString(request);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("序列化历史数据待写消息失败", exception);
+        }
+    }
+
+    private boolean pushPending(List<String> payloads) {
+        if (payloads.isEmpty()) {
+            return true;
+        }
+        if (properties.getRedisQueueCapacity() <= 0) {
+            if (payloads.size() == 1) {
+                redisTemplate.opsForList().leftPush(properties.getPendingKey(), payloads.get(0));
+            } else {
+                redisTemplate.opsForList().leftPushAll(properties.getPendingKey(), payloads);
+            }
+            return true;
+        }
+        String[] arguments = new String[payloads.size() + 1];
+        arguments[0] = String.valueOf(properties.getRedisQueueCapacity());
+        for (int index = 0; index < payloads.size(); index++) {
+            arguments[index + 1] = payloads.get(index);
+        }
+        Long pushed = redisTemplate.execute(BOUNDED_PENDING_PUSH,
+                List.of(properties.getPendingKey(), properties.getProcessingKey()),
+                (Object[]) arguments);
+        if (pushed == null) {
+            throw new IllegalStateException("Redis 历史待写队列准入结果未知");
+        }
+        return pushed == payloads.size();
+    }
+
+    private static final class RedisBacklogFullException extends RuntimeException {
+        private RedisBacklogFullException() {
+            super("Redis 历史待写与处理中队列容量已满");
         }
     }
 

@@ -8,9 +8,13 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class TdengineSchemaInitializerTest {
@@ -19,7 +23,42 @@ class TdengineSchemaInitializerTest {
     private final AlarmRepository alarmRepository = mock(AlarmRepository.class);
 
     @Test
-    void runShouldCreateMissingSuperTablesOnStartup() throws Exception {
+    void startupMustNotAccessOptionalDatabaseEvenWithAutoCreateEnabled() {
+        TdengineProperties properties = createProperties();
+        TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
+        initializer.run(null);
+        verifyNoInteractions(dataRepository, alarmRepository);
+    }
+
+    @Test
+    void autoCreateDisabledDoesNotAccessRepositories() {
+        TdengineProperties properties = createProperties();
+        properties.setAutoCreate(false);
+        TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
+        initializer.run(null);
+        initializer.ensureTelemetrySuperTable();
+        initializer.ensureAlarmSuperTable();
+        verifyNoInteractions(dataRepository, alarmRepository);
+    }
+
+    @Test
+    void onDemandDatabaseFailureIsNotSwallowedOrMarkedReadyAndCanBeRetried() {
+        TdengineProperties properties = createProperties();
+        IllegalStateException failure = new IllegalStateException("wangbin-history-unavailable");
+        doThrow(failure).doNothing().when(dataRepository).createDatabase("wangbin_collector", 30);
+        when(dataRepository.countColumn("wangbin_collector", "wangbin_super", "unit")).thenReturn(1L);
+        when(dataRepository.showCreateStable("wangbin_collector", "wangbin_super_v2")).thenReturn(v2CreateSql());
+        TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
+        initializer.run(null);
+        assertSame(failure, assertThrows(IllegalStateException.class, initializer::ensureTelemetrySuperTable));
+        initializer.ensureTelemetrySuperTable();
+        verify(dataRepository, org.mockito.Mockito.times(2)).createDatabase("wangbin_collector", 30);
+        verify(dataRepository).createStable("wangbin_collector", "wangbin_super");
+        verify(dataRepository).createStableV2("wangbin_collector", "wangbin_super_v2");
+    }
+
+    @Test
+    void onDemandShouldCreateMissingSuperTables() throws Exception {
         TdengineProperties properties = createProperties();
         when(dataRepository.countStable("wangbin_collector", "wangbin_super")).thenReturn(0L);
         when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(0L);
@@ -29,7 +68,8 @@ class TdengineSchemaInitializerTest {
 
         TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
 
-        initializer.run(null);
+        initializer.ensureTelemetrySuperTable();
+        initializer.ensureAlarmSuperTable();
 
         verify(dataRepository).createDatabase("wangbin_collector", 30);
         verify(dataRepository).createStable("wangbin_collector", "wangbin_super");
@@ -40,7 +80,7 @@ class TdengineSchemaInitializerTest {
     }
 
     @Test
-    void runShouldSkipExistingStableCreationButUpgradeSchemas() throws Exception {
+    void onDemandShouldSkipExistingStableCreationButUpgradeSchemas() throws Exception {
         TdengineProperties properties = createProperties();
         when(dataRepository.countStable("wangbin_collector", "wangbin_super")).thenReturn(1L);
         when(dataRepository.countStable("wangbin_collector", "alarm_super")).thenReturn(1L);
@@ -50,7 +90,8 @@ class TdengineSchemaInitializerTest {
 
         TdengineSchemaInitializer initializer = new TdengineSchemaInitializer(dataRepository, alarmRepository, properties);
 
-        initializer.run(null);
+        initializer.ensureTelemetrySuperTable();
+        initializer.ensureAlarmSuperTable();
 
         verify(dataRepository).createDatabase("wangbin_collector", 30);
         verify(dataRepository, never()).createStable("wangbin_collector", "wangbin_super");

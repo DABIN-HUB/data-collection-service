@@ -53,7 +53,10 @@ describe("point-editor-utils", () => {
   it("为缺少 pointId 的点位补齐稳定本地编辑标识", () => {
     const rows = normalizePointRows([{ pointCode: "run", pointName: "运行", address: "00001" }]);
 
-    expect(rows[0].pointId).toBe("local-run");
+    expect(rows[0].pointId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(normalizePointRows(rows)[0].pointId).toBe(rows[0].pointId);
+    expect(normalizePointRows([{ pointCode: "run" }])[0].pointId).not.toBe(rows[0].pointId);
+    expect(() => normalizePointRows([{ id: 7, pointCode: "historic" }])).toThrow("历史点位缺少 pointId");
     expect(rows[0].status).toBe(1);
   });
 

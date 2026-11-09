@@ -7,6 +7,9 @@ import com.wangbin.collector.api.application.ConfigImportExportApplicationServic
 import com.wangbin.collector.api.application.LocalDeviceConfigApplicationService;
 import com.wangbin.collector.api.controller.dto.ConfigBundle;
 import com.wangbin.collector.api.controller.dto.ConfigImportRequest;
+import com.wangbin.collector.api.controller.dto.DeviceConfigBundleRequest;
+import com.wangbin.collector.core.config.model.DeviceContext;
+import com.wangbin.collector.core.config.manager.ConfigVersionConflictException;
 import com.wangbin.collector.api.filter.RequestCorrelationFilter;
 import com.wangbin.collector.api.exception.ConfigApiException;
 import com.wangbin.collector.api.exception.ConfigApiExceptionHandler;
@@ -105,7 +108,7 @@ class ConfigControllerTest {
         deviceInfo.setDeviceId("dev-1");
         deviceInfo.setDeviceName("test-device");
 
-        when(configManager.updateDeviceConfig(any(DeviceInfo.class))).thenReturn(true);
+        when(configManager.updateDeviceConfig(any(DeviceInfo.class), eq(null))).thenReturn(true);
 
         mockMvc.perform(put("/api/config/device/dev-1")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -113,7 +116,7 @@ class ConfigControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("success")));
 
-        verify(configManager).updateDeviceConfig(argThat(device -> "dev-1".equals(device.getDeviceId())));
+        verify(configManager).updateDeviceConfig(argThat(device -> "dev-1".equals(device.getDeviceId())), eq(null));
     }
 
     @Test
@@ -124,8 +127,10 @@ class ConfigControllerTest {
                 .build();
         bundle.getDevice().setDeviceId("dev-1");
         request.setBundles(List.of(bundle));
+        when(configManager.getConfigurationDeviceSnapshot("dev-1"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(null, 0L, 0L));
 
-        when(configManager.replaceDeviceContextsAtomically(anyList())).thenReturn(true);
+        when(configManager.replaceDeviceContextsAtomically(anyList(), eq(Map.of()))).thenReturn(true);
 
         mockMvc.perform(post("/api/config/import")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -153,8 +158,8 @@ class ConfigControllerTest {
                         "dataType", "FLOAT")),
                 "startAfterSave", true);
 
-        when(configManager.saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false)))
-                .thenReturn(new ConfigManager.DeviceConfigCommitResult("local-1", 0L, 1L, 1));
+        when(configManager.saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false), eq(null), eq(null)))
+                .thenReturn(new ConfigManager.DeviceConfigCommitResult("local-1", 0L, 1L, 1, 1L));
         when(lifecycleCoordinator.getIntentRevision("local-1")).thenReturn(5L);
         when(lifecycleCoordinator.startDeviceAfterConfigSave("local-1", 5L))
                 .thenReturn(new DeviceLifecycleCoordinator.StartAfterConfigSaveResult(true, "ACCEPTED"));
@@ -175,9 +180,71 @@ class ConfigControllerTest {
                 .andExpect(jsonPath("$.data.startStatus", is("ACCEPTED")))
                 .andExpect(jsonPath("$.data.started", is(true)));
 
-        verify(configManager).saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false));
+        verify(configManager).saveLocalDeviceConfigWithResult(any(DeviceInfo.class), any(DeviceConnection.class), anyList(), eq(false), eq(null), eq(null));
         verify(lifecycleCoordinator).startDeviceAfterConfigSave("local-1", 5L);
         verify(collectionService, never()).startLocalDevice("local-1");
+    }
+
+    @Test
+    void bundleHttpCommitReturnsPersistedRevisionAndStaleBaseRevisionIs409() throws Exception {
+        DeviceInfo local = device("dev-http");
+        local.setConfigSource(ConfigManager.CONFIG_SOURCE_LOCAL);
+        local.setTemporaryConfig(true);
+        DeviceConnection link = connection("dev-http");
+        DataPoint point = point("dev-http");
+        point.setPointId("p-http");
+        when(configManager.getConfigurationDevice("dev-http")).thenReturn(local);
+        when(configManager.isSqlitePersistenceEnabled()).thenReturn(true);
+        when(configManager.isLocalTemporaryDevice("dev-http")).thenReturn(true);
+        when(configManager.getConfigurationDeviceSnapshot("dev-http"))
+                .thenReturn(new ConfigManager.DeviceConfigurationSnapshot(
+                        DeviceContext.of(local, link, List.of(point)), 50L, 12L));
+        byte[] request = objectMapper.writeValueAsBytes(
+                new DeviceConfigBundleRequest(50L, 12L, local, link, List.of(point)));
+        when(configManager.replaceDeviceContextAtomically(eq("dev-http"), any(DeviceInfo.class),
+                any(DeviceConnection.class), anyList(), eq(50L), eq(12L)))
+                .thenReturn(new ConfigManager.DeviceConfigCommitResult("dev-http", 50L, 51L, 1, 13L))
+                .thenThrow(new ConfigVersionConflictException("dev-http", 12L, 13L, true));
+
+        mockMvc.perform(get("/api/config/device/dev-http/bundle"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.configVersion", is(50)))
+                .andExpect(jsonPath("$.data.persistedRevision", is(12)));
+        mockMvc.perform(put("/api/config/device/dev-http/bundle")
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.configVersion", is(51)))
+                .andExpect(jsonPath("$.data.persistedRevision", is(13)));
+        mockMvc.perform(put("/api/config/device/dev-http/bundle")
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.machineCode", is("CONFIG_PERSISTENCE_CONFLICT")))
+                .andExpect(jsonPath("$.data.expectedRevision", is(12)))
+                .andExpect(jsonPath("$.data.currentRevision", is(13)))
+                .andExpect(jsonPath("$.data.committed", is(false)));
+    }
+
+    @Test
+    void partialCrudHttpPassesBaseRevisionAndReturnsConflict() throws Exception {
+        DeviceInfo local = device("partial-http");
+        local.setConfigSource(ConfigManager.CONFIG_SOURCE_LOCAL);
+        local.setTemporaryConfig(true);
+        when(configManager.isSqlitePersistenceEnabled()).thenReturn(true);
+        when(configManager.isLocalTemporaryDevice("partial-http")).thenReturn(true);
+        when(configManager.getConfigurationDevice("partial-http")).thenReturn(local);
+        when(configManager.updateDeviceConfig(any(DeviceInfo.class), eq(7L))).thenReturn(true);
+        mockMvc.perform(put("/api/config/device/partial-http").param("baseRevision", "7")
+                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(local)))
+                .andExpect(status().isOk());
+        verify(configManager).updateDeviceConfig(any(DeviceInfo.class), eq(7L));
+
+        when(configManager.updateConnectionConfig(eq("partial-http"), any(DeviceConnection.class), eq(7L)))
+                .thenThrow(new ConfigVersionConflictException("partial-http", 7L, 8L, true));
+        mockMvc.perform(put("/api/config/device/partial-http/connection").param("baseRevision", "7")
+                        .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsBytes(connection("partial-http"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.machineCode", is("CONFIG_PERSISTENCE_CONFLICT")))
+                .andExpect(jsonPath("$.data.currentRevision", is(8)));
     }
 
     @Test

@@ -39,11 +39,22 @@ describe("http-proxy-utils", () => {
   });
 
   it("只透传安全请求头并由 Main-held credential 注入运维令牌", () => {
-    expect(normalizeProxyHeaders({ Cookie: "bad", "Content-Type": "application/json", Accept: "application/json", Authorization: "bad" }, "[REDACTED]")).toEqual({
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "X-Collector-Token": "[REDACTED]"
-    });
+    for (const tokenHeader of ["X-Collector-Token", "x-collector-token", "X-COLLECTOR-TOKEN"]) {
+      const headers = new Headers(normalizeProxyHeaders({
+        Cookie: "bad",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: "bad",
+        [tokenHeader]: "renderer-token"
+      }, " main-token "));
+      expect([...headers.entries()]).toEqual([
+        ["accept", "application/json"],
+        ["content-type", "application/json"],
+        ["x-collector-token", "main-token"]
+      ]);
+      expect(headers.get("X-Collector-Token")).toBe("main-token");
+    }
+    expect(new Headers(normalizeProxyHeaders({ "X-Collector-Token": "renderer-token" })).has("x-collector-token")).toBe(false);
   });
 
   it("忽略 renderer 提供的 serverUrl，强制使用 Main authoritative serverUrl", () => {
@@ -68,19 +79,27 @@ describe("http-proxy-utils", () => {
     }) as unknown as typeof fetch;
 
     await executeCollectorProxyRequest({
-      serverUrl: "http://127.0.0.1:9090/collector",
-      token: "[REDACTED]",
-      url: "/api/protocols",
-      method: "GET",
-      headers: { Authorization: "bad", Cookie: "bad", "Content-Type": "application/json" }
+      ...withAuthoritativeProxyServerUrl({
+        serverUrl: "http://127.0.0.1:1/collector",
+        token: "renderer-token",
+        url: "/api/protocols",
+        method: "GET",
+        headers: { Authorization: "bad", Cookie: "bad", "Content-Type": "application/json", "X-Collector-Token": "renderer-header-token" }
+      }, "http://127.0.0.1:9090/collector"),
+      token: "main-token"
     });
 
-    expect(globalThis.fetch).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({
-      headers: {
-        "Content-Type": "application/json",
-        "X-Collector-Token": "[REDACTED]"
-      }
-    }));
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [target, options] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(target).toBeInstanceOf(URL);
+    expect(String(target)).toBe("http://127.0.0.1:9090/collector/api/protocols");
+    expect(options).toMatchObject({ method: "GET", body: undefined, signal: expect.any(AbortSignal) });
+    const headers = new Headers(options?.headers);
+    expect([...headers.entries()]).toEqual([
+      ["content-type", "application/json"],
+      ["x-collector-token", "main-token"]
+    ]);
+    expect(headers.get("X-Collector-Token")).toBe("main-token");
   });
 
   it("主进程代理保留包含 data 字段的 RAW DTO 响应体", async () => {

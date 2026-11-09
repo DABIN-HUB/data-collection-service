@@ -57,6 +57,7 @@ public class GracefulShutdown implements TomcatConnectorCustomizer,
         }
 
         log.info("开始优雅停机，停止接收新请求和新采集任务");
+        collectionScheduler.beginGracefulShutdown();
         collectionScheduler.stopAllDevices();
         cacheReportService.shutdown();
         waitForActiveRequests(currentConnector);

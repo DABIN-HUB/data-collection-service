@@ -28,4 +28,6 @@ public class ConfigBundle {
     @Valid
     @Builder.Default
     private List<DataPoint> points = new ArrayList<>();
+    /** 导入已有本地设备时用于整批持久化 CAS。 */
+    private Long persistedRevision;
 }

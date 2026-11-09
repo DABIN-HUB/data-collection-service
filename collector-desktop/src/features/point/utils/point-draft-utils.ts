@@ -19,6 +19,16 @@ export interface ReadonlyItem {
   value: string;
 }
 
+/** 只允许完整对象数组进入结构化编辑；其他原始规则必须经 JSON 显式修改。 */
+export function supportsAlarmRuleEditing(point: DataPoint | null): boolean {
+  const raw = point?.alarmRule;
+  if (raw === undefined || raw === null || raw === "") return true;
+  try {
+    const parsed: unknown = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) && parsed.every(isPlainObject);
+  } catch { return false; }
+}
+
 export function alarmRules(point: DataPoint | null): AlarmRule[] {
   const raw = point?.alarmRule;
   if (!raw) {
@@ -39,7 +49,7 @@ export function alarmRules(point: DataPoint | null): AlarmRule[] {
 }
 
 export function serializeAlarmRules(rules: AlarmRule[]): string {
-  const normalized = rules.map((rule) => pruneEmpty(rule)).filter((rule) => Object.keys(rule).length > 0);
+  const normalized = rules.map((rule) => ({ ...rule })).filter((rule) => Object.keys(rule).length > 0);
   return normalized.length ? JSON.stringify(normalized) : "";
 }
 
@@ -130,16 +140,6 @@ export function buildReadonlyItems(point: DataPoint | null): ReadonlyItem[] {
     ["创建时间", point.createTime],
     ["更新时间", point.updateTime]
   ].filter(([, value]) => hasValue(value)).map(([label, value]) => ({ label: String(label), value: typeof value === "object" ? JSON.stringify(value) : String(value) }));
-}
-
-function pruneEmpty(rule: AlarmRule): AlarmRule {
-  const next: AlarmRule = {};
-  for (const [key, value] of Object.entries(rule)) {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      next[key] = value;
-    }
-  }
-  return next;
 }
 
 function hasValue(value: unknown): boolean {

@@ -10,6 +10,7 @@
 
 | 依赖 | 当前识别许可证 | 备注 |
 | --- | --- | --- |
+| `org.xerial:sqlite-jdbc:3.53.4.0` | Apache-2.0、旧 Zentus BSD-2-Clause、NativeDB.c ISC；SQLite 核心为公有领域 | 独立 wangbin 配置存储使用。上游 JAR 缺失的 NOTICE/ISC 已随模块资源补齐，见 `collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/`。扩展函数历史作者授权仍需商业发布审核，不代表整体法务放行。 |
 | `org.openmuc:j60870:1.7.2` | GNU General Public License | IEC 60870 相关依赖。若随二进制包、Docker 镜像或安装包一起分发，需要单独评估 GPL 合规义务。 |
 | `com.fazecast:jSerialComm:2.11.2` | GNU Lesser GPL v3 / Apache License 2.0 | POM 声明为双许可证，使用和分发时应按所选许可证满足对应条件。 |
 | `com.digitalpetri.modbus:modbus-tcp:2.1.3` | Eclipse Public License 2.0 | 第三方 Modbus TCP 依赖。 |

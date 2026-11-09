@@ -57,7 +57,7 @@ spring:
     driver-class-name: com.taosdata.jdbc.rs.RestfulDriver
     url: ${TDENGINE_DATASOURCE_URL:jdbc:TAOS-RS://100.93.189.63:6041/wangbin_collector}
     username: ${TDENGINE_USERNAME:root}
-    password: ${TDENGINE_PASSWORD:taosdata}
+    password: ${TDENGINE_PASSWORD:Aq7bafb1cf209ae}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5

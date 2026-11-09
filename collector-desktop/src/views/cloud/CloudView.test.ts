@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, h, nextTick, reactive } from "vue";
+import { createMemoryHistory, createRouter } from "vue-router";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(), detail: vi.fn(), replay: vi.fn(), flush: vi.fn(), test: vi.fn(), metrics: vi.fn(),
@@ -26,6 +27,13 @@ async function mountPage() {
   const root = document.createElement("div");
   document.body.append(root);
   const app = createApp(CloudView);
+  const router = createRouter({ history: createMemoryHistory(), routes: [
+    { path: "/", component: { render: () => null } },
+    { path: "/diagnostic", component: { render: () => null } }
+  ] });
+  app.use(router);
+  await router.push("/");
+  await router.isReady();
   app.mount(root);
   await settle();
   return { root, unmount: () => { app.unmount(); root.remove(); } };
@@ -49,7 +57,7 @@ beforeEach(() => {
 describe("CloudView operational interactions", () => {
   it("opens the selected message detail and displays snapshot and commits", async () => {
     const { root, unmount } = await mountPage();
-    expect(root.textContent).toContain("Outbox / ACK 指标");
+    expect(root.querySelector("#cloud-metrics-title")?.textContent).toBe("可靠发件箱 / 云端确认指标");
     await click(root, "查看详情");
     expect(mocks.detail).toHaveBeenCalledWith("msg-1");
     expect(root.textContent).toContain('"value": 42');
@@ -67,12 +75,12 @@ describe("CloudView operational interactions", () => {
     mocks.list.mockResolvedValueOnce([{ messageId: "waiting-1", status: "WAITING_CONFIG" }]);
     const { root, unmount } = await mountPage();
     expect(root.textContent).toContain("WAITING_CONFIG");
-    expect([...root.querySelectorAll("button")].some(el => el.textContent?.includes("Replay"))).toBe(false);
+    expect([...root.querySelectorAll("button")].some(el => el.textContent?.includes("重新发送"))).toBe(false);
     unmount();
   });
   it("replays after confirmation and reloads metrics and list", async () => {
     const { root, unmount } = await mountPage();
-    await click(root, "Replay");
+    await click(root, "重新发送");
     expect(mocks.confirm).toHaveBeenCalledOnce();
     expect(mocks.replay).toHaveBeenCalledWith("msg-1");
     expect(mocks.metrics).toHaveBeenCalledTimes(2);
@@ -82,10 +90,10 @@ describe("CloudView operational interactions", () => {
   it("keeps replay cancellation silent but surfaces API failure", async () => {
     const { root, unmount } = await mountPage();
     mocks.confirm.mockRejectedValueOnce("cancel");
-    await click(root, "Replay");
+    await click(root, "重新发送");
     expect(mocks.replay).not.toHaveBeenCalled();
     mocks.replay.mockRejectedValueOnce(new Error("服务端拒绝重放"));
-    await click(root, "Replay");
+    await click(root, "重新发送");
     expect(root.textContent).toContain("服务端拒绝重放");
     unmount();
   });
@@ -121,14 +129,14 @@ describe("CloudView operational interactions", () => {
   it("does not dispatch flush after cancellation", async () => {
     const { root, unmount } = await mountPage();
     mocks.confirm.mockRejectedValueOnce("cancel");
-    await click(root, "Flush 到期消息");
+    await click(root, "调度到期消息");
     expect(mocks.flush).not.toHaveBeenCalled();
     unmount();
   });
   it("surfaces flush and test API errors", async () => {
     const { root, unmount } = await mountPage();
     mocks.flush.mockRejectedValueOnce(new Error("调度失败"));
-    await click(root, "Flush 到期消息");
+    await click(root, "调度到期消息");
     expect(root.textContent).toContain("调度失败");
     mocks.test.mockRejectedValueOnce(new Error("测试失败"));
     await click(root, "测试云链路");

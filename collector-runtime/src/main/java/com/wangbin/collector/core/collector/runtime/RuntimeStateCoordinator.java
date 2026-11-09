@@ -5,6 +5,7 @@ import com.wangbin.collector.common.domain.entity.DeviceConnection;
 import com.wangbin.collector.common.domain.entity.DeviceInfo;
 import com.wangbin.collector.core.collector.scheduler.CollectionScheduler;
 import com.wangbin.collector.core.config.manager.ConfigManager;
+import com.wangbin.collector.core.config.model.DeviceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -28,11 +29,29 @@ public class RuntimeStateCoordinator {
         DeviceRuntimeSnapshot runtime = collectionScheduler.getDeviceRuntimeSnapshot(deviceId);
         DeviceInfo device = configManager.getDevice(deviceId);
         List<DataPoint> configured = configManager.getDataPoints(deviceId);
+        DeviceConnection connection = configManager.getConnectionConfig(deviceId);
+        if (device == null) {
+            // SQLite 中存在但尚未 START 的设备没有运行缓存；仅为状态投影读取配置，不安装快照。
+            device = configManager.getConfigurationDevice(deviceId);
+            if (device != null) {
+                try {
+                    DeviceContext persisted = configManager.getConfigurationPoints(deviceId);
+                    configured = persisted == null ? List.of() : persisted.getDataPoints();
+                } catch (RuntimeException ignored) {
+                    configured = List.of();
+                }
+                try {
+                    DeviceContext persisted = configManager.getConfigurationConnection(deviceId);
+                    connection = persisted == null ? null : persisted.getConnectionConfig();
+                } catch (RuntimeException ignored) {
+                    connection = null;
+                }
+            }
+        }
         AcquisitionRuntimeTracker.WindowSnapshot facts = runtime.configVersion() == collectionScheduler.getAppliedConfigVersion(deviceId)
                 ? acquisitionRuntimeTracker.snapshot(deviceId, runtime.generation())
                 : new AcquisitionRuntimeTracker.WindowSnapshot(runtime.generation(), 0L, 0L, 0L, Map.of());
         long now = System.currentTimeMillis();
-        DeviceConnection connection = configManager.getConnectionConfig(deviceId);
         long deviceInterval = device == null || device.getCollectionInterval() == null
                 ? DEFAULT_INTERVAL_MS : Math.max(1L, device.getCollectionInterval().longValue());
         long readTimeout = connection == null || connection.getReadTimeout() == null
@@ -174,7 +193,12 @@ public class RuntimeStateCoordinator {
 
     /** 当前配置中的所有设备均可查询，包括尚未启动的设备。 */
     public List<DeviceRuntimeState> snapshots() {
-        return configManager.getAllDeviceIds().stream().sorted().map(this::snapshot).toList();
+        // 设备页面需要看到 SQLite 中存在但尚未安装运行快照的设备；配置摘要查询不会创建运行缓存。
+        return configManager.getConfigurationDevices().stream()
+                .map(DeviceInfo::getDeviceId)
+                .sorted()
+                .map(this::snapshot)
+                .toList();
     }
 
     /** 兼容旧运行接口，健康字段来自与实时查询相同的一次事实投影。 */

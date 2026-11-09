@@ -710,6 +710,8 @@ class HistoryWriteBufferFailureRecoveryTest {
         properties.setDeadLetterKey("history:dead");
         properties.setReplayBatchSize(replayBatchSize);
         properties.setLocalQueueCapacity(localQueueCapacity);
+        properties.setRedisQueueCapacity(0);
+        properties.setDeadLetterCapacity(0);
         return properties;
     }
 

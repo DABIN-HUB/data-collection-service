@@ -78,13 +78,18 @@ public class ConfigSyncService {
      * 处理组件生命周期。
      */
     public void startSyncTask() {
+        Thread startupThread = Thread.currentThread();
         try {
-            syncAllConfig();
-            log.info("首次配置同步完成");
-        } catch (Exception e) {
-            log.error("首次配置同步失败", e);
+            // 复用既有同步执行器；远端不可达不能阻塞已恢复的本地配置提供查询。
+            syncExecutor.execute(() -> {
+                // 共享执行器使用 CallerRunsPolicy；饱和时也不能在启动线程读取远端。
+                if (Thread.currentThread() != startupThread) safeSyncAllConfig();
+            });
+        } catch (RejectedExecutionException exception) {
+            // 不回退启动线程执行远端 IO，后续仍由既有 scheduledSync 重试。
+            log.warn("首次配置同步提交失败，等待既有定时同步任务");
         }
-        log.info("配置同步任务已启动，同步间隔毫秒={}，来源={}", configProperties.getSyncInterval(), configProperties.getYunUrl());
+        log.info("配置同步任务已启动，同步间隔毫秒={}", configProperties.getSyncInterval());
     }
 
     @Scheduled(fixedDelayString = "${collector.config.sync-interval:30000}",

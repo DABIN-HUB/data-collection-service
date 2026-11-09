@@ -34,16 +34,16 @@ public class TdengineSchemaInitializer implements ApplicationRunner {
     private final AtomicBoolean alarmStableReady = new AtomicBoolean(false);
 
     /**
-     * 处理当前业务流程。
+     * 启动时不访问可选历史库，避免连接等待或建库失败阻断配置管理和实时采集。
+     * 遥测与告警服务在实际读写时按既有路径创建并校验 Schema。
      */
     @Override
     public void run(ApplicationArguments args) {
         if (!properties.isAutoCreate()) {
-            log.info("TDengine 自动-创建 disabled, 跳过 startup schema initialization.");
+            log.info("TDengine 自动建表已关闭，启动时不初始化历史 Schema");
             return;
         }
-        ensureTelemetrySuperTable();
-        ensureAlarmSuperTable();
+        log.info("TDengine 已启用，历史 Schema 将按需初始化，启动时不检查历史库可用性");
     }
 
     /**

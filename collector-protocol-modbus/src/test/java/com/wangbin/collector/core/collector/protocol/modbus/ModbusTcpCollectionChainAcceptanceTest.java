@@ -180,6 +180,9 @@ public class ModbusTcpCollectionChainAcceptanceTest {
         ReflectionTestUtils.setField(collector, "connected", true);
         ReflectionTestUtils.setField(collector, "connectionStatus", "CONNECTED");
         ReflectionTestUtils.setField(collector, "connectionAdapter", adapter);
+        // 该夹具绕过采集器 doConnect，需补齐其对真实已连接适配器的请求准入状态。
+        assertTrue(adapter.isConnected());
+        ReflectionTestUtils.setField(collector, "acceptingRequests", true);
         collector.rebuildReadPlans(LOCAL_DEVICE_ID, points);
         return collector;
     }

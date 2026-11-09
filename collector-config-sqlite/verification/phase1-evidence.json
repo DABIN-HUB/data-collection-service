@@ -1,0 +1,332 @@
+{
+  "phase": "wangbin SQLite Phase 1",
+  "branch": "feature_2.0",
+  "baseHead": "d64189a5",
+  "productionTakeoverEnabled": false,
+  "productionServiceDeployedOrRestarted": false,
+  "testSuites": [
+    {
+      "module": "collector-config-sqlite",
+      "class": "WangbinConfigSqliteToolTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "ConfigurationJsonCodecTest",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "SqliteDatabaseTest",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "SqliteOwnershipTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "SqlitePathsTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "LegacyJsonMigrationIntegrationTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "LegacyJsonMigrationTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "SqliteConfigurationPayloadBoundaryTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-config-sqlite",
+      "class": "SqliteConfigurationStoreTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-runtime",
+      "class": "FileConfigLoaderTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-runtime",
+      "class": "ConfigManagerLocalDeviceTest",
+      "tests": 35,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-runtime",
+      "class": "ConfigSyncServiceTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-runtime",
+      "class": "SensitiveConfigSanitizerTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-application",
+      "class": "ConfigConsoleApplicationServiceTest",
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-application",
+      "class": "ConfigDiffCalculatorTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "collector-boot",
+      "class": "WangbinConfigSqliteConfigurationTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "totals": {
+    "tests": 163,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "protectedProductionFilesCompared": 8,
+  "protectedProductionFilesChanged": [],
+  "legacySourceBytesUnchangedFromPhaseStart": true,
+  "existingUntrackedConcurrentDrift": [
+    "tools/windows-service-prototype/Prototype.psm1"
+  ],
+  "concurrentDriftHandling": "preserved; not written or reverted by this task",
+  "migration": {
+    "connectionCount": 45,
+    "reopenVerified": true,
+    "deviceCount": 45,
+    "stablePointIdentities": 749,
+    "repeatMigrationSkipped": true,
+    "isolatedDatabase": true,
+    "sourceSha256": "c1f3bb429a9fc030611bdbf29eac4ea8a7582c72f7370cb75799cc45e13172ef",
+    "pointCount": 749,
+    "whitelistedFieldsCompared": 29365,
+    "stableDeviceIdentities": 45,
+    "sourceBytesUnchanged": true,
+    "unknownExtensionJsonPreserved": true,
+    "status": "VERIFIED"
+  },
+  "cli": {
+    "jarSha256": "ea84c81b72d3c6ceccf65b20168a1b4199f50d50a9cd979009094b4f7c3e44a8",
+    "jarIncludesSchemaAndLicenses": true,
+    "sourceSha256": "c1f3bb429a9fc030611bdbf29eac4ea8a7582c72f7370cb75799cc45e13172ef",
+    "sourceUnchanged": true,
+    "operations": [
+      {
+        "operation": "init",
+        "exitCode": 0,
+        "result": {
+          "status": "INITIALIZED"
+        }
+      },
+      {
+        "operation": "inspect",
+        "exitCode": 0,
+        "result": {
+          "status": "VALID",
+          "inspection": {
+            "sourceExists": true,
+            "sourceSha256": "c1f3bb429a9fc030611bdbf29eac4ea8a7582c72f7370cb75799cc45e13172ef",
+            "deviceCount": 45,
+            "connectionCount": 45,
+            "pointCount": 749,
+            "missingDeviceIds": 0,
+            "duplicateDeviceIds": 0,
+            "missingPointIds": 0,
+            "duplicatePointIds": 0,
+            "problems": []
+          }
+        }
+      },
+      {
+        "operation": "migrate",
+        "exitCode": 0,
+        "result": {
+          "status": "IMPORTED",
+          "devices": 45,
+          "connections": 45,
+          "points": 749,
+          "sourceSha256": "c1f3bb429a9fc030611bdbf29eac4ea8a7582c72f7370cb75799cc45e13172ef",
+          "identityAndConfigurationVerified": true
+        }
+      },
+      {
+        "operation": "repeat",
+        "exitCode": 0,
+        "result": {
+          "status": "ALREADY_MIGRATED",
+          "devices": 45,
+          "connections": 45,
+          "points": 749,
+          "sourceSha256": "c1f3bb429a9fc030611bdbf29eac4ea8a7582c72f7370cb75799cc45e13172ef",
+          "identityAndConfigurationVerified": false
+        }
+      }
+    ]
+  },
+  "artifact": {
+    "path": "F:\\ideaWorkSpace\\data-collection-service\\collector-config-sqlite\\target\\collector-config-sqlite-0.0.1-SNAPSHOT.jar",
+    "sha256": "ea84c81b72d3c6ceccf65b20168a1b4199f50d50a9cd979009094b4f7c3e44a8",
+    "bytes": 69592,
+    "classAndSchemaAndLicenseEntriesMatched": 20
+  },
+  "sourceHashes": {
+    "collector-boot/pom.xml": "a7378e49add2cd15de2127cb9d1093081b1015771d21f50561479a72f70d6038",
+    "collector-boot/src/main/java/com/wangbin/collector/boot/config/WangbinConfigSqliteConfiguration.java": "f6a1083fd449fb85db594fd6d9aea65de6bc22912c40f7aa78f9b43e111da208",
+    "collector-boot/src/main/java/com/wangbin/collector/boot/config/WangbinConfigSqliteProperties.java": "331aaadda74b3d2fa34c1f7f2b503e7898e2d2dce8ff3d795777c72b8343d320",
+    "collector-boot/src/test/java/com/wangbin/collector/boot/config/WangbinConfigSqliteConfigurationTest.java": "9c88282019814977a70fa35db059dbafc226a5f87ba0b077d98e1570ca7b2aac",
+    "collector-config-sqlite/pom.xml": "12b433c6d2e08cd8013fbdff6e1a0efa92cb9d924671bcbfaf96bc772fa71fbc",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/cli/WangbinConfigSqliteTool.java": "43f50fc9b61cb14a1f4b9cec2e478a09838b61742041173589c2fbf038e05f85",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/cli/WangbinInstallationBootstrap.java": "6e21a818695aa300aa81a610ea0b3e59afa4b528a237c0f7118cc25f788eed57",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/codec/ConfigurationJsonCodec.java": "2cb908eca6b700416ae13acd642a0c3b22aa4be9431a38bb561c5147d5a586a7",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqliteDatabase.java": "fee1b7be74975daf1110f126e4f0c53c426da65ddf2653ae6ab78659b23ae92f",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqliteFileSecurity.java": "17cce89c082759e91aef6965eab171dc341d28569f706c6fa93d03e960a53747",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqlitePaths.java": "6a2607c492e1e25c871dca90cd3f94f065751787f05a9c070074f7e58bd7f3d9",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigration.java": "7a03729907829ceee4c10ff3bd64093de8ab5288c053c81deb3445ac0d399585",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/MigrationInspection.java": "12e53f372e5bced421a7ebd35ee3e7a5204dd28e1746d6210fa63dec79ef4fbe",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/MigrationResult.java": "8c64f6502c99cd1c04987e6445fbcc2e37953a0dcf4c105263dd5a5fb75d454b",
+    "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationStore.java": "ad161ad76601efddcfec15bdc92bd1f8833da14a599289c6c44371e53d19abb4",
+    "collector-config-sqlite/src/main/resources/db/migration/V001__wangbin_configuration.sql": "b45002fbc3b6a6d55972106f364aeb9998984d99297ac8c22186c659648febbc",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/cli/WangbinConfigSqliteToolTest.java": "dd888d57c05c4c7343501db42bc186288b778de44eb213f2251e22e4ff9df399",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/codec/ConfigurationJsonCodecTest.java": "ce92c214b2ab5a9a2fc6fc8532e492a201347d7b5c38274b7c751b77e3fa9acc",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqliteDatabaseTest.java": "1c1eb5174aa16e47d4cc2a43021e96f4c36e6492fae2471f84bdbe7c9850484f",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqliteOwnershipTest.java": "008c4714c3c410565128ddf5817cf7795a65106578de6d7dd7df3b283bd6928b",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqlitePathsTest.java": "a8020c0778b7359956a3c69a046646744bf4856df7b5c7cf2faf545eaec4b698",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigrationIntegrationTest.java": "21e665298d2d500273f57d486185b6e0d98e54dd5a77229e2b63048ea3b994bc",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigrationTest.java": "7bb96cfff90f347b4ad223f432998ce2d3415cf653451292831c2f3d4d3d05f6",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationPayloadBoundaryTest.java": "ece09b7b0f8b1245cf66722ad2c717b63ac10710986ed3786951c54520a46b9b",
+    "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationStoreTest.java": "494853e0fc2ae8b74677d7a19c6fd951a3cf4899a338ab76b24605dbd466ab23",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationConflictException.java": "64c41af6c216e4015e5c0596f7eea662ae5e28131a636af6e926816e61ca85ee",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationModelChecks.java": "6fecfaf3f0faa6c288c83b79dee9190d9be70ba7b120e383cef7a9f0b47860ae",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationReader.java": "fe716514f57e17eeb2ec1e6fba9f8cafefaae3d3254b8676ccbe9c2a503f1597",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationRevision.java": "a3c3a0217f078ecdebd2131857775ee859a23f5502051f90ccbf0fbaa6693765",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationStore.java": "efbb8a32deaef1c2bcf5d2d544ce8e97dfb547bc957d762207698c701edbbf49",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConnectionConfiguration.java": "da813e9b7734c4766ab3822f838678859531b07091a0c39f49f6cf2407f970e2",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/DeviceConfiguration.java": "2ebfc8b5dee06e023dc0682ebf9ffa348d49fca0d615cb482ee67f2888423ff5",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/GatewaySetting.java": "8fb064acfdf7f9a34f5b80e8caf2d954a5c98e2d80bcf0543b193bb16c2d640c",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/MigrationRecord.java": "6a7e27524ad70a13b6a748a8d3e115d29252c32b704823135f4c5692664bb140",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/PointConfiguration.java": "d46e1fb0d4f079d3977042b6b0ee561176156d670b33b366847de2b63f2e39f9",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ProtocolProfile.java": "ef4e1b4f9e337cadb81f5fff9ca408a2e1f751038da102bbc38b1140486a99d9",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/RemoteSnapshot.java": "c2d77dd86a6a90eeb28517ec0f22c7fff22cd9e367bb6403932d09736adcdb34",
+    "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/StoredDeviceConfiguration.java": "6083ecf69381a344df8510f4e60df3d163786195dec10ef70524b34f7ad36f55",
+    "pom.xml": "64b0dc30c75d61bcafd3a2907b0a0ab2439309c16e78d33f0feac156cf3f16b2"
+  },
+  "scope": {
+    "modifiedTracked": [
+      "THIRD-PARTY-NOTICES.md",
+      "collector-boot/pom.xml",
+      "pom.xml"
+    ],
+    "newFilesAtCapture": [
+      "collector-boot/src/main/java/com/wangbin/collector/boot/config/WangbinConfigSqliteConfiguration.java",
+      "collector-boot/src/main/java/com/wangbin/collector/boot/config/WangbinConfigSqliteProperties.java",
+      "collector-boot/src/test/java/com/wangbin/collector/boot/config/WangbinConfigSqliteConfigurationTest.java",
+      "collector-config-sqlite/PHASE2-INTERFACES.md",
+      "collector-config-sqlite/README.md",
+      "collector-config-sqlite/VERIFICATION.md",
+      "collector-config-sqlite/pom.xml",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/cli/WangbinConfigSqliteTool.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/cli/WangbinInstallationBootstrap.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/codec/ConfigurationJsonCodec.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqliteDatabase.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqliteFileSecurity.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/database/SqlitePaths.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigration.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/MigrationInspection.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/migration/MigrationResult.java",
+      "collector-config-sqlite/src/main/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationStore.java",
+      "collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/LICENSE",
+      "collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/LICENSE.zentus",
+      "collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/NOTICE",
+      "collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/NativeDB-ISC-NOTICE.txt",
+      "collector-config-sqlite/src/main/resources/META-INF/licenses/sqlite-jdbc-3.53.4.0/PROVENANCE.md",
+      "collector-config-sqlite/src/main/resources/db/migration/V001__wangbin_configuration.sql",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/cli/WangbinConfigSqliteToolTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/codec/ConfigurationJsonCodecTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqliteDatabaseTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqliteOwnershipTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/database/SqlitePathsTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigrationIntegrationTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/migration/LegacyJsonMigrationTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationPayloadBoundaryTest.java",
+      "collector-config-sqlite/src/test/java/com/wangbin/collector/config/sqlite/store/SqliteConfigurationStoreTest.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationConflictException.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationModelChecks.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationReader.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationRevision.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConfigurationStore.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ConnectionConfiguration.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/DeviceConfiguration.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/GatewaySetting.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/MigrationRecord.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/PointConfiguration.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/ProtocolProfile.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/RemoteSnapshot.java",
+      "collector-runtime/src/main/java/com/wangbin/collector/core/config/persistence/StoredDeviceConfiguration.java"
+    ]
+  },
+  "limitations": [
+    "Linux native/cross-UID execution not performed",
+    "All-reactor test compilation blocked by unchanged OpcUaCollectorReadStatusTest missing client field",
+    "No service restart or full production startup performed",
+    "No power-loss/online-backup acceptance",
+    "Commercial extension-function provenance and GPG identity verification remain release review items"
+  ],
+  "evidenceScope": "Final scoped tests and isolated migration/CLI; not all-reactor test success or production deployment."
+}

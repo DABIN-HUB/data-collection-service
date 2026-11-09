@@ -1,6 +1,7 @@
 package com.wangbin.collector.core.collector.scheduler;
 
 import com.wangbin.collector.core.collector.manager.CollectionManager;
+import com.wangbin.collector.core.collector.protocol.base.ProtocolCollector;
 import com.wangbin.collector.core.config.CollectorProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,20 +9,25 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ReconnectCoordinatorTest {
 
@@ -29,6 +35,7 @@ class ReconnectCoordinatorTest {
     private CollectorProperties collectorProperties;
     private CollectionTaskGuard collectionTaskGuard;
     private SchedulerRuntimeState runtimeState;
+    private final Map<String, ProtocolCollector> collectors = new ConcurrentHashMap<>();
     private final List<ThreadPoolExecutor> executors = new ArrayList<>();
 
     @BeforeEach
@@ -40,6 +47,9 @@ class ReconnectCoordinatorTest {
         collectionTaskGuard = new CollectionTaskGuard();
         runtimeState = new SchedulerRuntimeState();
         runtimeState.initializeTimeSlices(1, 1000);
+        when(collectionManager.getCollector(anyString()))
+                .thenAnswer(invocation -> collectors.get(invocation.getArgument(0)));
+
     }
 
     @AfterEach
@@ -53,13 +63,15 @@ class ReconnectCoordinatorTest {
         ReconnectCoordinator coordinator = coordinator(executor);
         String deviceId = "dev-dup";
         long generation = markRunning(deviceId);
+        ProtocolCollector expectedCollector = collectors.get(deviceId);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         doAnswer(invocation -> {
             entered.countDown();
             release.await(2, TimeUnit.SECONDS);
-            return null;
-        }).when(collectionManager).reconnectDevice(deviceId, generation);
+            return true;
+        }).when(collectionManager).reconnectDeviceAutomatically(
+                eq(deviceId), eq(generation), same(expectedCollector));
 
         coordinator.scheduleIfNeeded(deviceId, generation);
         assertTrue(entered.await(1, TimeUnit.SECONDS));
@@ -68,7 +80,7 @@ class ReconnectCoordinatorTest {
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
         assertEquals(1L, coordinator.getAttemptCount());
-        verify(collectionManager).reconnectDevice(deviceId, generation);
+        verify(collectionManager).reconnectDeviceAutomatically(deviceId, generation, expectedCollector);
     }
 
     @Test
@@ -97,11 +109,14 @@ class ReconnectCoordinatorTest {
         long oldGeneration = markRunning(deviceId);
 
         coordinator.scheduleIfNeeded(deviceId, oldGeneration);
+        assertEquals(1, executor.getQueue().size());
         runtimeState.markRunning(deviceId, collectionTaskGuard.activateNextGeneration(deviceId));
         blocker.countDown();
+        waitUntil(() -> executor.getCompletedTaskCount() >= 2);
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
-        verify(collectionManager, never()).reconnectDevice(deviceId, oldGeneration);
+        verify(collectionManager, never()).reconnectDeviceAutomatically(
+                eq(deviceId), eq(oldGeneration), same(collectors.get(deviceId)));
     }
 
     @Test
@@ -109,9 +124,15 @@ class ReconnectCoordinatorTest {
         ReconnectCoordinator coordinator = coordinator(fixedPool("reconnect-reset", 1, 8));
         String deviceId = "dev-reset";
         long generation = markRunning(deviceId);
-        doThrow(new RuntimeException("fail"))
-                .doNothing()
-                .when(collectionManager).reconnectDevice(deviceId, generation);
+        ProtocolCollector expectedCollector = collectors.get(deviceId);
+        AtomicInteger reconnectAttempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (reconnectAttempts.incrementAndGet() == 1) {
+                throw new RuntimeException("fail");
+            }
+            return true;
+        }).when(collectionManager).reconnectDeviceAutomatically(
+                eq(deviceId), eq(generation), same(expectedCollector));
 
         coordinator.scheduleIfNeeded(deviceId, generation);
         waitUntil(() -> coordinator.getFailureCount() == 1L);
@@ -154,13 +175,15 @@ class ReconnectCoordinatorTest {
         ReconnectCoordinator coordinator = coordinator(fixedPool("reconnect-restart", 1, 8));
         String deviceId = "dev-restart";
         long oldGeneration = markRunning(deviceId);
+        ProtocolCollector expectedCollector = collectors.get(deviceId);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         doAnswer(invocation -> {
             entered.countDown();
             release.await(2, TimeUnit.SECONDS);
-            return null;
-        }).when(collectionManager).reconnectDevice(deviceId, oldGeneration);
+            return true;
+        }).when(collectionManager).reconnectDeviceAutomatically(
+                eq(deviceId), eq(oldGeneration), same(expectedCollector));
 
         coordinator.scheduleIfNeeded(deviceId, oldGeneration);
         assertTrue(entered.await(1, TimeUnit.SECONDS));
@@ -171,7 +194,39 @@ class ReconnectCoordinatorTest {
         waitUntil(() -> !coordinator.isReconnecting(deviceId));
 
         verify(collectionManager, never()).disconnectDevice(deviceId);
+        verify(collectionManager).reconnectDeviceAutomatically(deviceId, oldGeneration, expectedCollector);
         verify(collectionManager).cleanupDeviceIfGeneration(deviceId, oldGeneration);
+        assertEquals(0L, coordinator.getSuccessCount());
+    }
+
+    @Test
+    void replacedCollectorMustRejectQueuedReconnectWithoutTouchingEitherInstance() throws Exception {
+        ThreadPoolExecutor executor = fixedPool("reconnect-replaced", 1, 8);
+        CountDownLatch blocker = new CountDownLatch(1);
+        executor.execute(() -> {
+            try {
+                blocker.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        ReconnectCoordinator coordinator = coordinator(executor);
+        String deviceId = "dev-replaced";
+        long generation = markRunning(deviceId);
+        ProtocolCollector oldCollector = collectors.get(deviceId);
+        ProtocolCollector newCollector = mock(ProtocolCollector.class);
+        when(newCollector.isAutomaticReconnectAllowed()).thenReturn(true);
+
+        coordinator.scheduleIfNeeded(deviceId, generation);
+        assertEquals(1, executor.getQueue().size());
+        collectors.put(deviceId, newCollector);
+        blocker.countDown();
+
+        waitUntil(() -> executor.getCompletedTaskCount() >= 2);
+        waitUntil(() -> !coordinator.isReconnecting(deviceId));
+
+        verify(collectionManager, never()).reconnectDeviceAutomatically(deviceId, generation, oldCollector);
+        verify(collectionManager, never()).reconnectDeviceAutomatically(deviceId, generation, newCollector);
         assertEquals(0L, coordinator.getSuccessCount());
     }
 
@@ -180,24 +235,29 @@ class ReconnectCoordinatorTest {
         ReconnectCoordinator coordinator = coordinator(fixedPool("reconnect-intent-generation", 2, 8));
         String deviceId = "dev-generation-backoff";
         long oldGeneration = markRunning(deviceId);
+        ProtocolCollector oldCollector = collectors.get(deviceId);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         doAnswer(invocation -> {
             entered.countDown();
             release.await(2, TimeUnit.SECONDS);
             throw new IllegalStateException("旧代次重连失败");
-        }).when(collectionManager).reconnectDevice(deviceId, oldGeneration);
+        }).when(collectionManager).reconnectDeviceAutomatically(
+                eq(deviceId), eq(oldGeneration), same(oldCollector));
         coordinator.scheduleIfNeeded(deviceId, oldGeneration);
         assertTrue(entered.await(1, TimeUnit.SECONDS));
         runtimeState.removeDevice(deviceId);
         collectionTaskGuard.clearDevice(deviceId);
         long generation = markRunning(deviceId);
+        ProtocolCollector newCollector = collectors.get(deviceId);
+        doAnswer(invocation -> true).when(collectionManager).reconnectDeviceAutomatically(
+                eq(deviceId), eq(generation), same(newCollector));
         coordinator.scheduleIfNeeded(deviceId, generation);
         waitUntil(() -> coordinator.getSuccessCount() == 1L);
         release.countDown();
         waitUntil(() -> coordinator.getFailureCount() == 1L);
         assertEquals(0L, coordinator.getNextRetryAt(deviceId));
-        verify(collectionManager).reconnectDevice(deviceId, generation);
+        verify(collectionManager).reconnectDeviceAutomatically(deviceId, generation, newCollector);
         verify(collectionManager, never()).disconnectDevice(deviceId);
     }
 
@@ -212,6 +272,9 @@ class ReconnectCoordinatorTest {
     }
 
     private long markRunning(String deviceId) {
+        ProtocolCollector collector = mock(ProtocolCollector.class);
+        when(collector.isAutomaticReconnectAllowed()).thenReturn(true);
+        collectors.put(deviceId, collector);
         runtimeState.requestRunning(deviceId);
         long generation = collectionTaskGuard.activateNextGeneration(deviceId);
         runtimeState.markRunning(deviceId, generation);
