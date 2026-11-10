@@ -28,7 +28,7 @@
 1. 当前可编译、可运行的代码和实际运行行为。
 2. 自动化测试、真实设备联调记录和本地可复现实验结果。
 3. `ProtocolDescriptorProvider`、`ProtocolDescriptorRegistry`、`CollectorFactory`、`ConnectionAdapterProvider`、`ConnectionFactory` 和 `ProtocolConnectionValidator` 的实际实现。
-4. 后端控制器、应用服务、前端 `api-client.js` 和控制台页面的真实调用链。
+4. 后端控制器、应用服务、`collector-desktop/src/api/` 和控制台页面的真实调用链。
 5. `docs/`、`README.md`、架构计划文档和历史问题清单。
 
 历史文档只能作为设计背景。历史文档如果仍将注册表描述为新协议元数据入口，以本文件为准：新增协议必须通过独立的 `ProtocolDescriptorProvider` 提供元数据，`ProtocolDescriptorRegistry` 只负责聚合、归一化和查询。
@@ -39,8 +39,8 @@
 
 ```text
 设备配置来源
-  -> FileConfigLoader / RemoteConfigLoader
-  -> ConfigManager 配置归一化、校验、缓存和设备上下文构建
+  -> 本地 SQLite 配置权威 / 按需读取；远端配置按既有来源规则同步
+  -> ConfigManager 配置归一化、校验及运行设备上下文构建
   -> CollectionScheduler 启停设备、连接、分片调度、批量计划和运行代次管理
   -> CollectionManager 按本地 deviceId 管理协议采集器
   -> CollectorFactory / ConnectionFactory / ConnectionManager
@@ -85,7 +85,7 @@
 
 主链路必须遵守以下事实：
 
-1. `ConfigManager` 管理配置事实和本地设备上下文，协议实现不得自行创建第二套设备配置。
+1. SQLite 是本地持久配置权威，`ConfigManager` 只管理运行设备上下文及既有远端配置投影；管理页查询已持久化配置不应为停止设备建立运行上下文，协议实现不得自行创建第二套设备配置。
 2. `CollectionScheduler` 管理设备运行代次、调度和在途任务，停止设备后旧代次结果不得继续进入后处理链路。
 3. 拉取型数据必须经过 `BaseCollector` 的转换和质量处理。
 4. 推送型、订阅型和边缘接入数据必须进入 `TelemetryIngressService`。
@@ -94,15 +94,16 @@
 7. 云平台身份转换只能发生在上报边界，不能反向污染本地设备主键。
 8. 上报发送成功、云端 ACK 成功和设备影子提交完成是不同状态，必须按提交策略推进。
 9. 设备停止、应用关闭、连接断开、订阅取消和上报排空必须支持重复执行。
+10. 应用启动不自动 START 设备；显式 START 只按目标 `deviceId` 读取持久配置，STOP 释放该设备任务、连接和运行配置而不删除 SQLite 记录；保存配置本身不得隐式启动设备。旧 generation 的结果不得进入新 generation 的处理链路。
 
 ## 4. 技术基线
 
 1. Java 版本：Java 17。
-2. 核心框架：Spring Boot 3.2。
-3. 构建工具：Maven。
+2. 核心框架：Spring Boot 3.5.16，以根 `pom.xml` 实际版本为准。
+3. 构建工具：Maven 多模块；POM 内部版本为 `0.0.1-SNAPSHOT`，已发布 Linux 产品版本为 `0.1.0`，二者不得混同；不据此自行变更 Electron 版本。
 4. 测试框架：JUnit 5、Spring Boot Test 和项目已有协议测试设施。
-5. 前端形态：当前生产控制台为 `collector-desktop/` 下的 Vue 3 工作台，支持 Electron 客户端和后端内置 `/desktop/index.html` 网页入口；旧 `src/main/resources/static/admin/` 静态 Web 控制台已经删除，不再作为开发或发布入口。
-6. 主要存储和中间件：本地缓存、Redis、TDengine，以及配置启用的云端上报通道。
+5. 前端形态：`collector-desktop/` 的 Vue 3 + TypeScript + Vite renderer 由 Electron 和后端内置 `/desktop/index.html` 网页入口共用；旧 `src/main/resources/static/admin/` 静态 Web 控制台已删除。
+6. SQLite 是本地配置持久化权威；Redis 用于实时缓存与 Stream；TDengine 是可选历史存储；其余为本地缓存及按配置启用的云端上报通道。
 7. 协议驱动和网络库以 `pom.xml` 当前依赖为准，不得只根据历史文档猜测版本或能力。
 
 引入新依赖前，必须先确认现有依赖不能满足要求。禁止为简单功能重复引入功能重叠的网络、JSON、工具或并发库。
@@ -290,6 +291,8 @@
 
 ## 18. 前端控制台规则
 
+Electron 与 Web 复用同一份 Vue renderer；保留 Hash Router、Pinia 单一领域状态及 Electron main/preload/IPC 的现有边界，具体以 `collector-desktop/AGENTS.md` 为准，不为 Windows 安装包另建业务页面或采集实现。
+
 1. 控制台生产页面必须通过 `collector-desktop/src/api/` 下的统一 API 封装访问后端接口。
 2. 禁止在 Vue 生产页面中绕过统一 API 封装直接散落 `fetch` 调用；Electron 主进程受控 HTTP 代理除外。
 3. 禁止在生产控制台页面保留模拟业务数据、静态风险设备、静态拓扑状态或失败默认正常状态。
@@ -389,6 +392,8 @@ git diff --check
 
 如果由于本地缺少真实设备、数据库、Redis、Node.js 或其他外部环境而无法执行某项检查，交付说明中必须明确列出未执行项和剩余风险，不能写成“全部通过”。
 
+跨平台验收还须区分 Windows 本地结果、Linux Runner 结果及现场设备结果；具体时区、路径、SQLite 上下文和 Surefire 边界见第 32 章。不得以编译通过、跳过测试的打包或单平台通过替代实际测试通过。
+
 ## 25. 文档同步要求
 
 新增或修改协议时，必须同步检查以下文档：
@@ -400,6 +405,8 @@ git diff --check
 5. `docs/99-问题与未完成功能清单.md`：记录仍未完成或只完成实验验证的能力。
 6. `README.md`：用户可见配置、启动方式或部署要求发生变化时同步更新。
 7. `AGENTS.md`：架构规则或开发流程发生变化时同步更新，避免新旧规则冲突。
+
+对用户明确确认的功能、接口、配置、数据、运行或发布契约变更，按第 34 章同步维护本文件；已有规则足以覆盖时无需重复增加。
 
 每个协议文档至少包含以下内容：
 
@@ -459,10 +466,10 @@ git diff --check
 
 只有上述适用项全部完成，且不存在影响原有采集流程的回归问题，协议才可以声明为交付完成。
 
-## 28. SQLite / Redis 精简改造固定阶段与权限
+## 28. SQLite / Redis 精简改造阶段基线与权限
 
-1. 本次 SQLite / Redis 改造只在 `feature_2.0` 分支进行，严格按阶段 01～08 顺序执行；每次只完成当前获授权阶段。
-2. 每阶段修改后执行关联检查及测试，通过后只暂存本阶段文件并本地提交；提交后停止，等待用户手动 push，再等待 ChatGPT 对 GitHub 实际提交明确判定 PASS，才可进入下一阶段。
+1. 阶段 01～08 已按原授权顺序完成并验收；以下阶段描述是历史边界，不是尚待自动实施的任务表。后续新任务仍须限定在 `feature_2.0` 的当次授权范围内。
+2. 原阶段流程要求按阶段验证、仅暂存本阶段文件、本地提交后等待用户 push 和 GitHub 实际提交判定；不得以历史阶段 PASS 授权新开发或发布。阶段 08 的浏览器、Modbus、Redis 和 TDengine 闭环属于已记录的特定环境证据，不等于所有工业协议或现场设备认证。
 3. 严禁自动 push、创建分支、worktree、merge、rebase、`reset --hard` 或 `clean`；不得清理、覆盖未提交的用户改动。
 4. 遇到超范围问题，先说明必要性、涉及文件及影响并等待批准；未经批准不做额外修复、重构、文档扩张、性能优化或模块迁移。
 
@@ -475,17 +482,17 @@ git diff --check
 5. 数据库建表 SQL 保留在现有 migration 资源；SQLite 配置持久化使用 MyBatis + HikariCP，不因改造清空、删除、重建已有数据库或未经授权修改表结构。
 6. 保留稳定 `deviceId`、全局唯一 `pointId`、外键、唯一性、事务原子性及必要的修订校验；不得在提交失败时返回伪成功，也不得因编排失败重复执行已成功提交的 SQL。
 7. 不将实时数据或历史采集值写入 SQLite；SQLite CRUD 不依赖 Redis 或 TDengine 的可用性。
-8. 阶段 01 保持现有启动恢复行为；阶段 05 才取消应用启动时将全部 SQLite 设备配置载入长期内存。阶段 04 才实现用户手动启动时按 `deviceId` 读取完整配置、停止时释放任务和运行配置且不删除 SQLite 数据。
+8. 阶段 01 曾保留旧启动恢复行为；阶段 04 已实现按 `deviceId` 手动启动、停止释放运行资源而保留配置；阶段 05 已取消启动时将全部 SQLite 设备配置载入长期运行内存。不得将阶段 01 的过渡行为当作当前要求。
 
 ### 28.2 Redis、采集与设备生命周期
 
 1. Redis 只用于实时数据缓存、必要消息流和运行时数据；继续复用现有协议采集及公共数据处理链路。
 2. 连接成功不等于点位有效采集成功；启动单设备不能意外启动其他设备；设备必须手动启动，应用启动后不自动采集。
-3. 本轮不重做 TDengine 历史 ACK、死信队列或 exactly-once 体系。
+3. 阶段 01～08 未将 TDengine 历史 ACK、死信队列或 exactly-once 体系纳入改造；后续不得据阶段验收声称这些能力已完成。
 
-### 28.3 固定阶段及范围
+### 28.3 已完成阶段及原授权范围
 
-1. 阶段 01：统一 SQLite Service / ServiceImpl / Mapper，建立本规范；不得提前实现阶段 02～08。
+1. 阶段 01：统一 SQLite Service / ServiceImpl / Mapper，建立本规范；当时不得提前实现阶段 02～08。
 2. 阶段 02：设备列表、详情、连接、点位按需查询，去掉单设备保存时的全库扫描。
 3. 阶段 03：SQLite CAS、持久修订版本、提交回执及 CRUD 一致性。
 4. 阶段 04：手动启动按 `deviceId` 加载 SQLite 配置，停止释放运行资源。
@@ -493,3 +500,55 @@ git diff --check
 6. 阶段 06：Redis 配置、实时数据写入、读回及异常状态验证。
 7. 阶段 07：Redis Windows 服务及进程管理。
 8. 阶段 08：端到端回归、必要遗留清理及最终验收。
+
+## 29. 版本控制、普通 CI 与发布审批
+
+1. 开发改动仅在 `feature_2.0`；`master` 是正式分支，由用户审核并自行合并。每次操作前核对 HEAD、工作区及差异，仅暂存当次授权文件；本地提交不等于已同步 GitHub。禁止未经批准 push、force push、创建分支或 worktree，以及执行 `git merge`、`git rebase`、`git reset`、`git restore`、`git clean`、`git stash`、移动标签或发布。存在时保护 `collector-boot/src/main/resources/application.yml` 和 `.hermes.md`，不存在时也不为任务创建。
+2. 普通 CI 在 push `master` 或目标分支为 `master` 的 PR 上运行：Java 17、`npm ci`、前端 typecheck 和全量 Vitest、`build:web`、Maven `clean verify`、可执行 JAR 中 Web 入口及 JS/CSS 检查、配置秘密扫描、P0 回归、UTF-8 检查；以 `.github/workflows/ci.yml` 为执行事实。
+3. 失败不得以跳过实际失败测试、`continue-on-error`、`|| true`、Maven `-fn` 或 `-DskipTests` 冒充成功。编译、测试、候选构建、正式发布是不同门禁；前一步失败而跳过后续步骤时，不得声称全流程 PASS。Windows 本地测试与 Linux Runner 应满足相同业务契约，结果分别记录。
+4. 普通 CI PASS 不授予正式 Release 权限。Actions Node 运行时弃用 warning 与实际构建失败分别记录；升级 Action 或依赖另行验证，不因 warning 擅自升级。
+
+## 30. Vue/Web 构建产物管理
+
+1. `collector-boot/src/main/resources/static/desktop/` 是 `.gitignore` 忽略的生成目录，Git 不跟踪其中 `index.html`、JS、CSS 或字体；不得提交本地构建产物或比较跨平台生成 hash 来代替业务验收。
+2. 保持 `build:web = build:renderer + sync:web`：CI 从当前 Vue 源码先构建 renderer 并同步到后端，再运行 Maven 打包；检查最终 JAR 的 `desktop/index.html` 及其引用的 JS/CSS，而不是依赖旧仓库页面。
+3. `sync:web` 会递归删除目标生成目录再复制资源；执行前确认目标仅包含可重建的已归属产物，不得在包含未知用户文件或受保护数据的目录上无差别清理。
+4. 根目录旧 `Dockerfile` 不自动执行 `build:web`，从无预生成页面的干净源码单独构建它不能视作完整 Web 发行构建；本条只记录兼容性边界，不授权修改 Dockerfile。
+
+## 31. Linux 正式发行与部署保护
+
+1. 已发布的 `v0.1.0` 是 Linux AMD64 正式版本（与 Maven 内部 `0.0.1-SNAPSHOT` 分开）。`master` push 只在 Runner 本地构建候选镜像并上传候选 Artifact，不推送候选镜像；候选包的镜像占位符不可部署。正式标签须位于 `master` 历史、对应同一 SHA 已成功的 `master` push CI；标签构建先生成 Vue Web 资源，再打 Spring Boot JAR，构建 linux/amd64 镜像并发布 GHCR。
+2. 正式包 Compose 固定实际 GHCR 镜像摘要；验证匿名拉取、AMD64 架构、JAR SHA-256、源码 SHA 和包校验，再在隔离 Ubuntu 环境验收首装、重启、数据保留、Redis、鉴权与缺库保护；仅所有门禁通过后创建带 tar.gz 和 SHA-256 的 GitHub Release。GHCR 上传不等于安装成功；失败时留下的远端镜像应如实报告。不得移动已发布标签或重写 `v0.1.0` 构件，后续版本必须经用户另行批准；Windows 工作流不得删改或削弱 Linux 发布链。
+3. 当前发行面向 Ubuntu 22.04/24.04 x86_64，Java 17 容器承载 Spring Boot 和 Vue Web，Redis 为独立容器及持久化卷，TDengine 默认关闭、Electron 不打入服务端包。Compose 默认仅绑定 `127.0.0.1`；设备须手动 START。部署使用非 root 身份，容器 UID/GID 与宿主绑定目录所有者匹配；不接管宿主已有 Redis。
+4. 宿主发行路径为 `data/data/collector.db` 和同级 `data/data.wangbin-installation/`，在容器中数据库对应 `/var/lib/wangbin-collector/data/collector.db`。只准备外层 `data/`；内层数据库目录和保护目录由安装逻辑创建，先认领保护证据再建库目录。缺库但已有目录/保护证据时拒绝空库重建；库与 WAL/SHM 等附属文件须通过所有者及 0700/0600 权限检查。禁止递归 chown、chmod 777、删库绕过问题或在写入中直接复制单个 SQLite 文件冒充一致性备份；停止/升级/卸载不得默认删除配置和 Redis 卷。
+5. 首次部署随机生成运维令牌，不能使用演示令牌；不开放未鉴权 API。无运行设备时业务 `/health` 可以为 DOWN，应用就绪应独立检查 readiness，不能混为一谈。Runner 安装验收不代表现场工业硬件全面认证。
+
+## 32. Windows 开发与跨平台测试兼容
+
+1. Windows 是主要开发环境；不得为 Linux CI 改变 Windows 本地时间显示、ProgramData 默认 SQLite 路径、设备生命周期或既有业务语义。Windows 本地测试与 Linux CI 分开记录。
+2. `config-sync-utils.test.ts` 的本地时间期望须按运行时实际时区和与生产实现一致的 `toLocaleString("zh-CN", { hour12: false })` 计算；该 API 不固定 Asia/Shanghai。UTC 与 Asia/Shanghai 场景均应兼容，不得为通过 CI 强改用户本地显示。
+3. `web-console-utils.test.mjs` 使用 `node:path`、`os.tmpdir()` 和当前系统路径规则，不硬编码 Windows 盘符；保留 Web 路径、同步旧文件清理与复制数量断言，只清理由测试创建且确认归属的临时目录，不改变业务文件结构。
+4. `ApplicationContextTest` 用静态 `@TempDir` 和 `@DynamicPropertySource` 在 Spring Context 初始化前提供独立的 SQLite 绝对测试路径；不预建库的专用父目录和保护目录，运行真实库初始化并确认二者创建，`@DirtiesContext(AFTER_CLASS)` 关闭上下文后再清理临时目录。不让测试访问 Linux 生产默认 `/var/lib/wangbin-collector/`，不关闭 SQLite、改 `legacy-json`、使用 root 或放宽系统目录权限。Redis/TDengine 不是本上下文测试的外部依赖。
+5. Windows Maven 测试先核对 Java/Maven 环境；若 Surefire Manifest-JAR 跨盘符路径报 `'other' has different root`，可使用已验证的 `-Dsurefire.useManifestOnlyJar=false`，保留完整命令证据。带兼容参数 PASS 不得宣称无参数 PASS；不得跳过实际测试。具体适用性以目标环境的真实故障为准。
+
+## 33. Windows 服务及未来安装包保护
+
+1. `tools/windows-service-management/README.md` 与现有 PowerShell 模块限定 `WangbinCollector-Redis`：服务名或端口相似不构成归属。副作用操作前必须核对 SCM、受控安装目录、可执行文件及构件 SHA-256、归属记录、服务账号、Service SID、ACL、wrapper/子进程关系和监听 PID；无法证明归属时拒绝。`EXTERNAL_REDIS` 仅可只读探测，不得安装、启停或卸载。
+2. Program Files 存受控代码，ProgramData 存数据、日志、配置和受保护状态；真实服务使用受控账号及最小 ACL。不得为安装/升级放宽 Redis 或 SQLite 数据目录 ACL，直接改动现役服务，或卸载非本产品资源；卸载产品时默认保留 SQLite/Redis 数据。非只读服务管理必须有本次明确授权及必要权限；历史验收不授权未来停服、故障注入或卸载。
+3. Redis Windows 原生构件、WinSW 和依赖须核验来源、哈希与再分发许可；Docker/WSL 验证不能冒充 Windows SCM 原生服务验收。阶段 07/08 的真实 Windows 验收仅约束相应受控现场，不代表任意机器已获安装授权。
+4. **Windows 正式发布工作流尚未开发、正式安装验收尚未完成。** 开始安装包任务前审计 `collector-desktop/package.json`、Electron main/preload/IPC、现有 NSIS 配置、Redis 服务管理、SQLite ProgramData 路径、Windows 权限与服务证据、Java 17/JAR、共享 renderer 和 Linux 已发布门禁；不得自行选新服务框架、运行库、数据库或部署架构。
+5. Windows 与 Linux 复用后端业务逻辑和 Vue renderer；安装器仅管理归属已证明的产品资源，不另造配置/采集实现、不自动接管现有 Redis、TDengine 或用户服务，不因打包改变 START/STOP、运行代次与持久化语义，不以 Linux POSIX 操作代替 Windows ACL。保护已有 SQLite、Redis 数据和配置，分别实测安装、启动、升级、重启、卸载、恢复；新增 Windows CI 不得削弱普通 CI 或 Linux Release。
+6. 未来版本号、源码与构件校验及 Release 权限应遵循 `master` 正式发布体系，但不得擅自改动现有 `v0.1.0`。Electron/NSIS 打包成功不代表真实 Windows 安装通过，更不代表正式可发布。
+
+## 34. 用户明确需求变更与 AGENTS.md 自动同步规则
+
+1. 当用户明确批准新增、修改或删除功能，改变接口/配置/字段/持久化契约、设备启停恢复重连、前端交互与状态语义、Windows/Linux 运行发布行为，或明确冻结新开发/验收约束时，把**经用户确认且已实际实现、验证的最终长期规则**同步到本文件。该维护属于已授权功能任务的配套步骤，无需用户每次重复提醒；本文件不是自行新增产品需求或扩大代码修改权限的依据。
+2. 修改前核对代码、HEAD、工作区和既有规则，列明新需求及必须保持的行为；不得把推测或建议记作用户批准。实施时仅触及授权代码范围，保留其他契约，依授权范围完成验证，并定点补充相应规则。
+3. 完成后定点替代冲突旧描述，写清适用功能、必须保持的行为、不得破坏的边界与必要验收；未通过或未验证的能力明确标状态，绝不写成 PASS。不得重复堆砌、记录一次性日志/临时路径/秘密/未经确认的设想；无新增长期契约时，说明现有覆盖规则而不机械增补。
+4. 将本文件与功能改动一同提交，或以可追溯的独立配套提交交付；最终报告说明更新位置。若新需求与冻结行为冲突、需越权触及核心模块、改变 SQLite/Redis 安全或设备启动语义、破坏已发布兼容性、降低 CI/鉴权/发布门禁，或旧规则有效性无法确认，先报告并请求用户确认，不得借“自动同步”静默突破边界。
+
+## 35. 回归与交付状态检查
+
+1. 区分已验收的阶段 01～08、已发布 Linux `v0.1.0`、普通 CI、待实施的 Windows 正式发布和未经现场认证的协议；不得以某一层 PASS 推导其他层 PASS。
+2. 变更前核查分支、HEAD、状态、差异及本文件；变更后仅在授权范围执行相应检查，记录真实通过、失败、未执行和受限项。文档独立维护无需重建既有全量 Maven 或正式 Release，不得据此声称这些门禁本轮重新通过。
+3. 暂存前核对路径和 `git diff --check`；`AGENTS.md` 虽被 `.gitignore` 通配忽略但已由 Git 跟踪，应通过 `git ls-files -- AGENTS.md` 确认并只暂存授权文件。完成本地提交后等待用户手动 push，随后另行核验 GitHub 同步、CI 和发布状态。
