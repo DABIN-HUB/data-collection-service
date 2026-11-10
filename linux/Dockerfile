@@ -2,9 +2,10 @@
 FROM eclipse-temurin:17-jre-jammy
 ARG SOURCE_SHA
 ARG JAR_SHA256
+ARG RELEASE_VERSION
 LABEL org.opencontainers.image.source="https://github.com/DABIN-HUB/data-collection-service" \
       org.opencontainers.image.revision="${SOURCE_SHA}" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="${RELEASE_VERSION}" \
       org.opencontainers.image.description="WangbinCollector Linux 服务"
 WORKDIR /opt/wangbin-collector
 COPY app.jar app.jar

@@ -517,9 +517,9 @@ git diff --check
 
 ## 31. Linux 正式发行与部署保护
 
-1. 已发布的 `v0.1.0` 是 Linux AMD64 正式版本（与 Maven 内部 `0.0.1-SNAPSHOT` 分开）。`master` push 只在 Runner 本地构建候选镜像并上传候选 Artifact，不推送候选镜像；候选包的镜像占位符不可部署。正式标签须位于 `master` 历史、对应同一 SHA 已成功的 `master` push CI；标签构建先生成 Vue Web 资源，再打 Spring Boot JAR，构建 linux/amd64 镜像并发布 GHCR。
-2. 正式包 Compose 固定实际 GHCR 镜像摘要；验证匿名拉取、AMD64 架构、JAR SHA-256、源码 SHA 和包校验，再在隔离 Ubuntu 环境验收首装、重启、数据保留、Redis、鉴权与缺库保护；仅所有门禁通过后创建带 tar.gz 和 SHA-256 的 GitHub Release。GHCR 上传不等于安装成功；失败时留下的远端镜像应如实报告。不得移动已发布标签或重写 `v0.1.0` 构件，后续版本必须经用户另行批准；Windows 工作流不得删改或削弱 Linux 发布链。
-3. 当前发行面向 Ubuntu 22.04/24.04 x86_64，Java 17 容器承载 Spring Boot 和 Vue Web，Redis 为独立容器及持久化卷，TDengine 默认关闭、Electron 不打入服务端包。Compose 默认仅绑定 `127.0.0.1`；设备须手动 START。部署使用非 root 身份，容器 UID/GID 与宿主绑定目录所有者匹配；不接管宿主已有 Redis。
+1. 已发布的 `v0.1.0` 仅为 Linux AMD64 正式版本；`v0.1.1` 的双架构发行工程面向 AMD64 和 ARM64（与 Maven 内部 `0.0.1-SNAPSHOT` 分开），不追溯更改旧版构件。`master` push 分别在原生 Runner 构建两种候选镜像并上传两份候选 Artifact，不推送候选镜像；带镜像占位符的候选包不可部署。正式标签须位于 `master` 历史、对应同一 SHA 已成功的 `master` push CI；先生成 Vue Web 资源和同一份 Spring Boot JAR，再构建具有两种平台的 GHCR 镜像索引。
+2. 正式 AMD64 与 ARM64 包的 Compose 固定经校验的 GHCR 多架构索引摘要，不得以单架构清单摘要冒充索引；两平台匿名拉取、JAR SHA-256、源码 SHA、镜像平台、包和校验文件均须核验。两种原生架构隔离验收首装、重启、数据保留、Redis 缓存与 Stream、鉴权与缺库保护后，方可创建一次性上传四个附件的 GitHub Release；任一平台失败不得发布宣称双架构完成的 Release。GHCR 上传不等于安装成功；失败时留下的远端镜像应如实报告。不得移动已发布标签或重写 `v0.1.0` 构件；新版本号须经用户明确批准；Windows 工作流不得删改或削弱 Linux 发布链。
+3. 双架构发行面向 Ubuntu 22.04/24.04 x86_64 或 aarch64，拒绝其他架构及交叉使用发行包。Java 17 容器承载 Spring Boot 和 Vue Web，Redis 为独立容器及持久化卷，TDengine 默认关闭、Electron 不打入服务端包。Compose 默认仅绑定 `127.0.0.1`；设备须手动 START。部署使用非 root 身份，容器 UID/GID 与宿主绑定目录所有者匹配；不接管宿主已有 Redis。ARM64 GitHub Runner 原生验收与甲骨文服务器现场验收分开记录；未经另行授权不得连接后者，也不得把未做的现场协议验收标为 PASS。
 4. 宿主发行路径为 `data/data/collector.db` 和同级 `data/data.wangbin-installation/`，在容器中数据库对应 `/var/lib/wangbin-collector/data/collector.db`。只准备外层 `data/`；内层数据库目录和保护目录由安装逻辑创建，先认领保护证据再建库目录。缺库但已有目录/保护证据时拒绝空库重建；库与 WAL/SHM 等附属文件须通过所有者及 0700/0600 权限检查。禁止递归 chown、chmod 777、删库绕过问题或在写入中直接复制单个 SQLite 文件冒充一致性备份；停止/升级/卸载不得默认删除配置和 Redis 卷。
 5. 首次部署随机生成运维令牌，不能使用演示令牌；不开放未鉴权 API。无运行设备时业务 `/health` 可以为 DOWN，应用就绪应独立检查 readiness，不能混为一谈。Runner 安装验收不代表现场工业硬件全面认证。
 
