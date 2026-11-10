@@ -1,9 +1,9 @@
-# WangbinCollector Linux 0.1.0
+# WangbinCollector Linux 0.1.1
 
-本包包含 Compose 文件和脚本，不包含源码、JRE、Electron、真实凭据或用户数据。需要 Ubuntu 22.04/24.04 x86_64、Docker Engine、Compose 插件、`curl`、`sha256sum` 和 `openssl`；首次启动需联网拉取 GHCR 和 Docker Hub 镜像。
+本包包含 Compose 文件和脚本，不包含源码、JRE、Electron、真实凭据或用户数据。需要 Ubuntu 22.04/24.04 x86_64（amd64 包）或 aarch64（arm64 包）、Docker Engine、Compose 插件、`curl`、`sha256sum` 和 `openssl`；首次启动需联网拉取 GHCR 和 Docker Hub 镜像。不同架构的包不能交叉部署；32 位 ARM 不受支持。
 
 ```bash
-tar -xzf WangbinCollector-0.1.0-linux-amd64.tar.gz
+tar -xzf WangbinCollector-0.1.1-linux-amd64.tar.gz  # aarch64 主机改用 arm64 包
 cd WangbinCollector
 bash deploy.sh
 ```
@@ -17,6 +17,6 @@ bash logs.sh
 bash stop.sh
 ```
 
-Docker Compose 镜像由发布工作流固定到 GHCR 摘要；仅正式 Release 包可部署。构建验证上传的候选包携带无法部署的镜像占位符，用于检查文件结构，不是可安装发行版。普通 `/health` 可以在没有运行设备时显示 `DOWN`，启动就绪应查看 `/collector/actuator/health/readiness` 与网页入口；设备仍需手动 START。TDengine 默认关闭。
+Docker Compose 镜像由发布工作流固定到包含 amd64 和 arm64 的 GHCR 索引摘要；仅正式 Release 包可部署。构建验证上传的候选包携带无法部署的镜像占位符，用于检查文件结构，不是可安装发行版。两个包的 `BUILD-MANIFEST` 分别记录目标平台，但可引用同一索引摘要。普通 `/health` 可以在没有运行设备时显示 `DOWN`，启动就绪应查看 `/collector/actuator/health/readiness` 与网页入口；设备仍需手动 START。TDengine 默认关闭。
 
-部署出错时不要清理 `data/`、Redis 卷或安装保护目录。需要修改运维配置时停止容器、备份文件并确保权限维持 0600；更换账号前先规划数据库目录所有权，不要递归 chown 旧数据。此包不代表商业发布批准、硬件全面认证或 Redis 构件再分发许可。
+部署出错时不要清理 `data/`、Redis 卷或安装保护目录。需要修改运维配置时停止容器、备份文件并确保权限维持 0600；更换账号前先规划数据库目录所有权，不要递归 chown 旧数据。ARM64 GitHub Runner 验收与甲骨文真实服务器、现场工业协议验收分别记录；未经明确授权不得连接或部署真实服务器。此包不代表商业发布批准、硬件全面认证或 Redis 构件再分发许可。

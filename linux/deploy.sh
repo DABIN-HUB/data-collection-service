@@ -9,11 +9,20 @@ docker compose version >/dev/null 2>&1 || fail '缺少 Docker Compose 插件'
 command -v sha256sum >/dev/null || fail '缺少 sha256sum'
 command -v openssl >/dev/null || fail '缺少 openssl'
 command -v curl >/dev/null || fail '缺少 curl'
-[[ "$(uname -m)" == x86_64 ]] || fail '只支持 x86_64'
+case "$(uname -m)" in
+  x86_64) host_platform=linux/amd64 ;;
+  aarch64) host_platform=linux/arm64 ;;
+  *) fail '只支持 x86_64 和 aarch64（64 位 ARM），不支持 32 位 ARM' ;;
+esac
 [[ "$(id -u)" != 0 ]] || fail '不得以 root 执行；数据库由当前账号与容器同 UID 持有'
-[[ -f VERSION && -f SHA256SUMS && -f compose.yaml ]] || fail '发行文件不完整'
-[[ "$(< VERSION)" == '0.1.0' ]] || fail '发行版本不匹配'
+[[ -f VERSION && -f SHA256SUMS && -f BUILD-MANIFEST && -f compose.yaml ]] || fail '发行文件不完整'
+version="$(< VERSION)"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '发行版本格式无效'
 sha256sum -c --status SHA256SUMS || fail '发行文件校验失败；不要使用损坏的压缩包'
+[[ "$(grep -c '^platform=' BUILD-MANIFEST)" == 1 && "$(grep -c '^version=' BUILD-MANIFEST)" == 1 ]] || fail '构建清单版本或平台字段无效'
+[[ "$(sed -n 's/^version=//p' BUILD-MANIFEST)" == "$version" ]] || fail '发行版本不匹配'
+[[ "$(sed -n 's/^platform=//p' BUILD-MANIFEST)" == "$host_platform" ]] || fail "发行包架构与宿主机不匹配（需要 $host_platform）"
+project="wangbincollector-${version//./}"
 [[ ! -L data && ! -L logs && ! -L config ]] || fail '发行目录不允许符号链接'
 [[ ! -L config/application-release.yml && ! -L config/ops-token && ! -L config/passwd && ! -L .env ]] || fail '发行配置不允许符号链接'
 [[ -d config && -f config/application-release.yml.example ]] || fail '发行配置模板缺失'
@@ -53,8 +62,8 @@ fi
 grep -Fxq "COLLECTOR_UID=$(id -u)" .env && grep -Fxq "COLLECTOR_GID=$(id -g)" .env || fail '.env 与当前运行账号不一致'
 port="${COLLECTOR_PORT:-$(sed -n 's/^COLLECTOR_PORT=//p' .env)}"
 [[ "$port" =~ ^[0-9]{1,5}$ ]] && (( port > 0 && port <= 65535 )) || fail '监听端口无效'
-docker compose -p wangbincollector-010 config --quiet || fail 'Compose 配置解析失败'
-docker compose -p wangbincollector-010 pull || fail '镜像拉取失败；请确认 GHCR 可匿名拉取'
+docker compose -p "$project" config --quiet || fail 'Compose 配置解析失败'
+docker compose -p "$project" pull || fail '镜像拉取失败；请确认 GHCR 可匿名拉取'
 # Java 的 SQLite 所有者核验需要容器 NSS 能按实际宿主 UID 查到用户。
 # 仅首次从已固定摘要的镜像复制系统账号表，再补充当前 UID；不触碰已有数据库。
 if [[ ! -e config/passwd ]]; then
@@ -66,7 +75,7 @@ if [[ ! -e config/passwd ]]; then
 fi
 [[ -f config/passwd && ! -L config/passwd && "$(stat -c %u config/passwd)" == "$(id -u)" && "$(stat -c %a config/passwd)" == 644 ]] || fail '容器账号映射文件权限异常'
 awk -F: -v uid="$(id -u)" '$3 == uid {found=1} END {exit !found}' config/passwd || fail '容器账号映射缺少当前 UID'
-docker compose -p wangbincollector-010 up -d --no-build || fail '容器启动失败，请查看日志（不会清理数据）'
+docker compose -p "$project" up -d --no-build || fail '容器启动失败，请查看日志（不会清理数据）'
 
 # /health 可能因为尚无设备报告 DOWN；就绪用 Boot readiness 与网页入口独立判断。
 ready=0

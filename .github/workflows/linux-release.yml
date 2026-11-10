@@ -1,17 +1,23 @@
-name: Linux 0.1.0 发行工程
+name: Linux 双架构发行工程
 on:
   push:
     branches: [master]
-    tags: [v0.1.0]
+    tags: [v0.1.1]
+concurrency:
+  group: linux-release-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
-  linux-amd64:
+  prepare:
     runs-on: ubuntu-22.04
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      jar_sha256: ${{ steps.jar.outputs.sha256 }}
+      version: ${{ steps.source.outputs.version }}
     permissions:
       actions: read
-      contents: write
-      packages: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,11 +26,12 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$(< linux/VERSION)" == '0.1.0' ]]
+          version="$(< linux/VERSION)"
+          [[ "$version" == '0.1.1' ]]
           source_sha="$(git rev-parse HEAD)"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            [[ "$GITHUB_REF_NAME" == v0.1.0 ]]
-            [[ "$(git rev-parse 'refs/tags/v0.1.0^{commit}')" == "$source_sha" ]]
+            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+            [[ "$(git rev-parse "refs/tags/v$version^{commit}")" == "$source_sha" ]]
             git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
             git merge-base --is-ancestor "$source_sha" refs/remotes/origin/master
           else
@@ -32,6 +39,10 @@ jobs:
           fi
           git diff --quiet && git diff --cached --quiet
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        id: source
       - name: 校验标签提交的 master CI 已成功
         if: github.ref_type == 'tag'
         uses: actions/github-script@v7
@@ -80,6 +91,7 @@ jobs:
           other_changes="$(git diff --name-only -- . ':(exclude)collector-boot/src/main/resources/static/desktop')"
           [[ -z "$other_changes" ]]
       - name: 构建完整 Spring Boot JAR
+        id: jar
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -100,72 +112,175 @@ jobs:
           jar tf "$RUNNER_TEMP/sqlite.jar" | grep -qx 'db/migration/V001__wangbin_configuration.sql'
           unzip -p "$RUNNER_TEMP/linux-image/app.jar" 'BOOT-INF/lib/collector-storage-*.jar' > "$RUNNER_TEMP/storage.jar"
           jar tf "$RUNNER_TEMP/storage.jar" | grep -qx 'mapper/storage/DataRepository.xml'
-          echo "JAR_SHA256=$(sha256sum "$RUNNER_TEMP/linux-image/app.jar" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          jar_sha="$(sha256sum "$RUNNER_TEMP/linux-image/app.jar" | cut -d' ' -f1)"
+          echo "sha256=$jar_sha" >> "$GITHUB_OUTPUT"
+      - name: 传递经过核验的同一 JAR 和 Dockerfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-image-input
+          path: ${{ runner.temp }}/linux-image/
+          if-no-files-found: error
+          retention-days: 3
+  candidate:
+    if: github.ref_type == 'branch'
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            machine: x86_64
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-image-input
+          path: ${{ runner.temp }}/linux-image
       - uses: docker/setup-buildx-action@v3
-      - name: 构建 AMD64 镜像（普通提交不推送）
-        if: github.ref_type == 'branch'
+      - name: 原生架构候选镜像及不可部署发行包
         shell: bash
         run: |
           set -Eeuo pipefail
-          docker buildx build --platform linux/amd64 --load \
-            --build-arg SOURCE_SHA="$SOURCE_SHA" --build-arg JAR_SHA256="$JAR_SHA256" \
-            -t wangbincollector:0.1.0-candidate -f "$RUNNER_TEMP/linux-image/Dockerfile" "$RUNNER_TEMP/linux-image"
-          [[ "$(docker image inspect wangbincollector:0.1.0-candidate --format '{{.Os}}/{{.Architecture}}')" == linux/amd64 ]]
-          bash linux/package.sh "$RUNNER_TEMP/release" "$SOURCE_SHA" "$JAR_SHA256" '__APP_IMAGE__'
-          tar -tzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz"
-          (cd "$RUNNER_TEMP/release" && sha256sum -c WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256)
-      - name: 上传候选包（不能直接部署）
-        if: github.ref_type == 'branch'
+          [[ "$(uname -m)" == "${{ matrix.machine }}" ]]
+          [[ "$(git rev-parse HEAD)" == '${{ needs.prepare.outputs.source_sha }}' ]]
+          [[ "$(sha256sum "$RUNNER_TEMP/linux-image/app.jar" | cut -d' ' -f1)" == '${{ needs.prepare.outputs.jar_sha256 }}' ]]
+          docker buildx build --platform linux/${{ matrix.arch }} --load \
+            --build-arg SOURCE_SHA='${{ needs.prepare.outputs.source_sha }}' \
+            --build-arg JAR_SHA256='${{ needs.prepare.outputs.jar_sha256 }}' \
+            --build-arg RELEASE_VERSION='${{ needs.prepare.outputs.version }}' \
+            -t wangbincollector:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}-candidate \
+            -f "$RUNNER_TEMP/linux-image/Dockerfile" "$RUNNER_TEMP/linux-image"
+          image=wangbincollector:${{ needs.prepare.outputs.version }}-${{ matrix.arch }}-candidate
+          [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/${{ matrix.arch }} ]]
+          [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == '${{ needs.prepare.outputs.source_sha }}' ]]
+          bash linux/package.sh "$RUNNER_TEMP/release" '${{ needs.prepare.outputs.source_sha }}' \
+            '${{ needs.prepare.outputs.jar_sha256 }}' '__APP_IMAGE__' '${{ matrix.arch }}'
+          name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+          tar -tzf "$RUNNER_TEMP/release/$name"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
+      - name: 上传候选包（仅验结构，不可部署）
         uses: actions/upload-artifact@v4
         with:
-          name: WangbinCollector-0.1.0-linux-amd64-candidate
+          name: WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}-candidate
           path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+  publish-image:
+    if: github.ref_type == 'tag'
+    needs: prepare
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-image-input
+          path: ${{ runner.temp }}/linux-image
+      - name: 复核输入 JAR 摘要
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$(sha256sum "$RUNNER_TEMP/linux-image/app.jar" | cut -d' ' -f1)" == '${{ needs.prepare.outputs.jar_sha256 }}' ]]
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
-        if: github.ref_type == 'tag'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: 构建并发布 GHCR 镜像
-        if: github.ref_type == 'tag'
+      - name: 拒绝覆盖已有发行镜像
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # 先确认注册表可达；目标标签存在即停止，不以覆盖既有发行物重试。
+          docker buildx imagetools inspect ghcr.io/dabin-hub/data-collection-service:0.1.0 >/dev/null
+          if lookup="$(docker buildx imagetools inspect 'ghcr.io/dabin-hub/data-collection-service:${{ needs.prepare.outputs.version }}' 2>&1)"; then
+            echo '目标版本镜像已存在，拒绝覆盖' >&2
+            exit 1
+          fi
+          [[ "$lookup" == *'not found'* || "$lookup" == *'manifest unknown'* ]] || { echo '无法确认目标标签不存在，拒绝发布' >&2; exit 1; }
+      - name: 构建并暂存统一多架构 GHCR 索引（不是正式版本标签）
         id: image
         uses: docker/build-push-action@v6
         with:
           context: ${{ runner.temp }}/linux-image
           file: ${{ runner.temp }}/linux-image/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/dabin-hub/data-collection-service:0.1.0
+          tags: ghcr.io/dabin-hub/data-collection-service:staging-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: |
-            SOURCE_SHA=${{ env.SOURCE_SHA }}
-            JAR_SHA256=${{ env.JAR_SHA256 }}
-      - name: 验证匿名可拉取镜像及架构并封装正式包
-        if: github.ref_type == 'tag'
+            SOURCE_SHA=${{ needs.prepare.outputs.source_sha }}
+            JAR_SHA256=${{ needs.prepare.outputs.jar_sha256 }}
+            RELEASE_VERSION=${{ needs.prepare.outputs.version }}
+      - name: 复核索引摘要和两个平台
         shell: bash
         run: |
           set -Eeuo pipefail
           image="ghcr.io/dabin-hub/data-collection-service@${{ steps.image.outputs.digest }}"
           [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
-          docker logout ghcr.io
-          docker image rm "$image" >/dev/null 2>&1 || true
-          docker pull --platform linux/amd64 "$image"
-          [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/amd64 ]]
-          bash linux/package.sh "$RUNNER_TEMP/release" "$SOURCE_SHA" "$JAR_SHA256" "$image"
-          tar -tzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz"
-          (cd "$RUNNER_TEMP/release" && sha256sum -c WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256)
-      - name: Ubuntu 隔离首装、重启与鉴权验收
-        if: github.ref_type == 'tag'
+          docker buildx imagetools inspect --raw "$image" | python3 -c 'import json,sys; d=json.load(sys.stdin); p={(x.get("platform",{}).get("os"),x.get("platform",{}).get("architecture")) for x in d.get("manifests",[])}; assert d.get("mediaType") in ("application/vnd.oci.image.index.v1+json","application/vnd.docker.distribution.manifest.list.v2+json") and {("linux","amd64"),("linux","arm64")} <= p, p'
+  acceptance:
+    if: github.ref_type == 'tag'
+    needs: [prepare, publish-image]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            machine: x86_64
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 原生架构匿名拉取并生成正式包
         shell: bash
         run: |
           set -Eeuo pipefail
+          [[ "$(uname -m)" == '${{ matrix.machine }}' ]]
+          [[ "$(git rev-parse HEAD)" == '${{ needs.prepare.outputs.source_sha }}' ]]
+          [[ "$(< linux/VERSION)" == '${{ needs.prepare.outputs.version }}' ]]
+          image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
+          [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
+          docker logout ghcr.io
+          docker pull --platform linux/${{ matrix.arch }} "$image"
+          [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/${{ matrix.arch }} ]]
+          [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == '${{ needs.prepare.outputs.source_sha }}' ]]
+          [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" == '${{ needs.prepare.outputs.version }}' ]]
+          bash linux/package.sh "$RUNNER_TEMP/release" '${{ needs.prepare.outputs.source_sha }}' \
+            '${{ needs.prepare.outputs.jar_sha256 }}' "$image" '${{ matrix.arch }}'
+          name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+          tar -tzf "$RUNNER_TEMP/release/$name"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
+      - name: Ubuntu 原生隔离首装、重启与鉴权验收
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          project=wangbincollector-${{ needs.prepare.outputs.version }}
+          project=${project//./}
+          name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
           mkdir -p "$RUNNER_TEMP/linux-acceptance"
-          tar -xzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" -C "$RUNNER_TEMP/linux-acceptance"
-          cd "$RUNNER_TEMP/linux-acceptance/WangbinCollector"
+          tar -xzf "$RUNNER_TEMP/release/$name" -C "$RUNNER_TEMP/linux-acceptance"
+          acceptance_dir="$RUNNER_TEMP/linux-acceptance/WangbinCollector"
+          cd "$acceptance_dir"
+          trap 'docker compose -p "$project" stop' EXIT
+          sha256sum -c SHA256SUMS
+          [[ "$(sed -n 's/^platform=//p' BUILD-MANIFEST)" == linux/${{ matrix.arch }} ]]
           bash deploy.sh
           test -f data/data/collector.db
           test -d data/data.wangbin-installation
           test "$(stat -c %u data/data/collector.db)" = "$(id -u)"
           test "$(stat -c %a data/data/collector.db)" = 600
+          test "$(stat -c %a data/data)" = 700
           unauth="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9090/collector/api/config/devices)"
           dev="$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Collector-Token: ops-token' http://127.0.0.1:9090/collector/api/config/devices)"
           token="$(< config/ops-token)"
@@ -174,11 +289,22 @@ jobs:
           curl -fsS -H "X-Collector-Token: $token" http://127.0.0.1:9090/collector/api/cache/health | \
             python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("overallStatus")=="HEALTHY" and any(x.get("type")=="REDIS" and x.get("status")=="HEALTHY" for x in d.get("levels",[]))'
           unset token
-          stream_id="$(docker compose -p wangbincollector-010 exec -T redis redis-cli XADD wangbin-release-acceptance '*' value 1)"
+          [[ "$(docker compose -p "$project" exec -T redis redis-cli SET wangbin-release-acceptance value)" == OK ]]
+          [[ "$(docker compose -p "$project" exec -T redis redis-cli GET wangbin-release-acceptance)" == value ]]
+          stream_id="$(docker compose -p "$project" exec -T redis redis-cli XADD wangbin-release-stream '*' value 1)"
           [[ "$stream_id" =~ ^[0-9]+-[0-9]+$ ]]
-          [[ "$(docker compose -p wangbincollector-010 exec -T redis redis-cli XLEN wangbin-release-acceptance | tr -d '\r')" == 1 ]]
+          [[ "$(docker compose -p "$project" exec -T redis redis-cli XLEN wangbin-release-stream)" == 1 ]]
+          docker compose -p "$project" exec -T redis redis-cli SAVE
+          # 仅在隔离 Runner 重建本发行的 Redis 容器，确认命名卷保留缓存与 Stream。
+          docker compose -p "$project" up -d --no-deps --force-recreate redis
+          for _ in {1..30}; do
+            if [[ "$(docker compose -p "$project" exec -T redis redis-cli PING 2>/dev/null)" == PONG ]]; then break; fi
+            sleep 2
+          done
+          [[ "$(docker compose -p "$project" exec -T redis redis-cli GET wangbin-release-acceptance)" == value ]]
+          [[ "$(docker compose -p "$project" exec -T redis redis-cli XLEN wangbin-release-stream)" == 1 ]]
           before="$(sha256sum data/data/collector.db | cut -d' ' -f1)"
-          docker compose -p wangbincollector-010 restart app
+          docker compose -p "$project" restart app
           ready=0
           for _ in {1..60}; do
             if curl -fsS http://127.0.0.1:9090/collector/actuator/health/readiness | grep -Eq '"status"[[:space:]]*:[[:space:]]*"UP"'; then ready=1; break; fi
@@ -186,10 +312,15 @@ jobs:
           done
           [[ "$ready" == 1 ]]
           [[ "$(sha256sum data/data/collector.db | cut -d' ' -f1)" == "$before" ]]
-          docker compose -p wangbincollector-010 stop
+          token="$(< config/ops-token)"
+          curl -fsS -H "X-Collector-Token: $token" http://127.0.0.1:9090/collector/api/device/running | \
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("data")==[], d'
+          unset token
+          docker compose -p "$project" stop
+          trap - EXIT
           # 在另一个全新发行目录仅创建安装保护证据，验证缺库时脚本拒绝重建。
           mkdir -p "$RUNNER_TEMP/linux-guard"
-          tar -xzf "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" -C "$RUNNER_TEMP/linux-guard"
+          tar -xzf "$RUNNER_TEMP/release/$name" -C "$RUNNER_TEMP/linux-guard"
           cd "$RUNNER_TEMP/linux-guard/WangbinCollector"
           mkdir -m 700 data
           mkdir -m 700 data/data.wangbin-installation
@@ -198,14 +329,94 @@ jobs:
             exit 1
           fi
           test ! -e data/data/collector.db
-      - name: 创建 GitHub Release（仅全部门禁通过后）
-        if: github.ref_type == 'tag'
+      - name: 上传原生验收后的正式包
+        uses: actions/upload-artifact@v4
+        with:
+          name: WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}-verified
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+  promote-image:
+    if: github.ref_type == 'tag'
+    needs: [prepare, publish-image, acceptance]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 两平台验收后晋升正式版本，拒绝覆盖已有标签
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag='ghcr.io/dabin-hub/data-collection-service:${{ needs.prepare.outputs.version }}'
+          image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
+          [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools inspect "$image" >/dev/null
+          if lookup="$(docker buildx imagetools inspect "$tag" 2>&1)"; then
+            echo '正式版本标签已存在，拒绝覆盖' >&2
+            exit 1
+          fi
+          [[ "$lookup" == *'not found'* || "$lookup" == *'manifest unknown'* ]] || { echo '无法确认正式标签不存在，拒绝晋升' >&2; exit 1; }
+          docker buildx imagetools create --tag "$tag" "$image"
+          promoted="$(docker buildx imagetools inspect "$tag" | sed -n 's/^Digest:[[:space:]]*//p')"
+          [[ "$promoted" == '${{ needs.publish-image.outputs.digest }}' ]] || { echo '正式标签索引摘要与验收摘要不一致' >&2; exit 1; }
+          docker buildx imagetools inspect --raw "$tag" | python3 -c 'import json,sys; d=json.load(sys.stdin); p={(x.get("platform",{}).get("os"),x.get("platform",{}).get("architecture")) for x in d.get("manifests",[])}; assert d.get("mediaType") in ("application/vnd.oci.image.index.v1+json","application/vnd.docker.distribution.manifest.list.v2+json") and {("linux","amd64"),("linux","arm64")} <= p, p'
+  release:
+    if: github.ref_type == 'tag'
+    needs: [prepare, publish-image, acceptance, promote-image]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: WangbinCollector-${{ needs.prepare.outputs.version }}-linux-amd64-verified
+          path: ${{ runner.temp }}/release
+      - uses: actions/download-artifact@v4
+        with:
+          name: WangbinCollector-${{ needs.prepare.outputs.version }}-linux-arm64-verified
+          path: ${{ runner.temp }}/release
+      - name: 两种正式附件、索引摘要与源码交叉复核
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$(git rev-parse HEAD)" == '${{ needs.prepare.outputs.source_sha }}' ]]
+          [[ "$(< linux/VERSION)" == '${{ needs.prepare.outputs.version }}' ]]
+          image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
+          [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
+          for arch in amd64 arm64; do
+            name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-$arch.tar.gz
+            (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
+            mkdir -p "$RUNNER_TEMP/verify-$arch"
+            tar -xzf "$RUNNER_TEMP/release/$name" -C "$RUNNER_TEMP/verify-$arch"
+            (cd "$RUNNER_TEMP/verify-$arch/WangbinCollector" && sha256sum -c SHA256SUMS)
+            manifest="$RUNNER_TEMP/verify-$arch/WangbinCollector/BUILD-MANIFEST"
+            grep -Fxq "version=${{ needs.prepare.outputs.version }}" "$manifest"
+            grep -Fxq "platform=linux/$arch" "$manifest"
+            grep -Fxq "source_sha=${{ needs.prepare.outputs.source_sha }}" "$manifest"
+            grep -Fxq "jar_sha256=${{ needs.prepare.outputs.jar_sha256 }}" "$manifest"
+            grep -Fxq "app_image=$image" "$manifest"
+          done
+          [[ "$(find "$RUNNER_TEMP/release" -maxdepth 1 -type f | wc -l)" == 4 ]]
+      - name: 创建 GitHub Release（两平台全部通过后）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          gh release create v0.1.0 \
-            "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz" \
-            "$RUNNER_TEMP/release/WangbinCollector-0.1.0-linux-amd64.tar.gz.sha256" \
-            --title 'WangbinCollector 0.1.0 Linux AMD64' --generate-notes --verify-tag
+          version='${{ needs.prepare.outputs.version }}'
+          gh release create "v$version" \
+            "$RUNNER_TEMP/release/WangbinCollector-$version-linux-amd64.tar.gz" \
+            "$RUNNER_TEMP/release/WangbinCollector-$version-linux-amd64.tar.gz.sha256" \
+            "$RUNNER_TEMP/release/WangbinCollector-$version-linux-arm64.tar.gz" \
+            "$RUNNER_TEMP/release/WangbinCollector-$version-linux-arm64.tar.gz.sha256" \
+            --title "WangbinCollector $version Linux AMD64 + ARM64" --generate-notes --verify-tag
