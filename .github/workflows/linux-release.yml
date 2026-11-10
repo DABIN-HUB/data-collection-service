@@ -206,7 +206,7 @@ jobs:
             exit 1
           fi
           [[ "$lookup" == *'not found'* || "$lookup" == *'manifest unknown'* ]] || { echo '无法确认目标标签不存在，拒绝发布' >&2; exit 1; }
-      - name: 构建并发布统一多架构 GHCR 索引
+      - name: 构建并暂存统一多架构 GHCR 索引（不是正式版本标签）
         id: image
         uses: docker/build-push-action@v6
         with:
@@ -214,7 +214,7 @@ jobs:
           file: ${{ runner.temp }}/linux-image/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/dabin-hub/data-collection-service:${{ needs.prepare.outputs.version }}
+          tags: ghcr.io/dabin-hub/data-collection-service:staging-${{ github.run_id }}-${{ github.run_attempt }}
           build-args: |
             SOURCE_SHA=${{ needs.prepare.outputs.source_sha }}
             JAR_SHA256=${{ needs.prepare.outputs.jar_sha256 }}
@@ -335,9 +335,40 @@ jobs:
           name: WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}-verified
           path: ${{ runner.temp }}/release/*
           if-no-files-found: error
-  release:
+  promote-image:
     if: github.ref_type == 'tag'
     needs: [prepare, publish-image, acceptance]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 两平台验收后晋升正式版本，拒绝覆盖已有标签
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag='ghcr.io/dabin-hub/data-collection-service:${{ needs.prepare.outputs.version }}'
+          image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
+          [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
+          docker buildx imagetools inspect "$image" >/dev/null
+          if lookup="$(docker buildx imagetools inspect "$tag" 2>&1)"; then
+            echo '正式版本标签已存在，拒绝覆盖' >&2
+            exit 1
+          fi
+          [[ "$lookup" == *'not found'* || "$lookup" == *'manifest unknown'* ]] || { echo '无法确认正式标签不存在，拒绝晋升' >&2; exit 1; }
+          docker buildx imagetools create --tag "$tag" "$image"
+          promoted="$(docker buildx imagetools inspect "$tag" | sed -n 's/^Digest:[[:space:]]*//p')"
+          [[ "$promoted" == '${{ needs.publish-image.outputs.digest }}' ]] || { echo '正式标签索引摘要与验收摘要不一致' >&2; exit 1; }
+          docker buildx imagetools inspect --raw "$tag" | python3 -c 'import json,sys; d=json.load(sys.stdin); p={(x.get("platform",{}).get("os"),x.get("platform",{}).get("architecture")) for x in d.get("manifests",[])}; assert d.get("mediaType") in ("application/vnd.oci.image.index.v1+json","application/vnd.docker.distribution.manifest.list.v2+json") and {("linux","amd64"),("linux","arm64")} <= p, p'
+  release:
+    if: github.ref_type == 'tag'
+    needs: [prepare, publish-image, acceptance, promote-image]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
