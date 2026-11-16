@@ -16,9 +16,9 @@
 | `com.digitalpetri.modbus:modbus-tcp:2.1.3` | Eclipse Public License 2.0 | 第三方 Modbus TCP 依赖。 |
 | `com.digitalpetri.modbus:modbus-serial:2.1.3` | Eclipse Public License 2.0 | 第三方 Modbus Serial 依赖。 |
 | `org.eclipse.californium:californium-core:3.11.0` | Eclipse Public License 2.0 / Eclipse Distribution License 1.0 | CoAP 相关依赖。 |
-| `org.eclipse.milo:milo-sdk-core:1.0.8` | Eclipse Public License 2.0 | OPC UA 相关依赖。 |
-| `org.eclipse.milo:milo-sdk-client:1.0.8` | Eclipse Public License 2.0 | OPC UA 相关依赖。 |
-| `org.eclipse.milo:milo-sdk-server:1.0.8` | Eclipse Public License 2.0 | OPC UA 相关依赖。 |
+| `org.eclipse.milo:milo-sdk-core:1.1.5` | Eclipse Public License 2.0 | OPC UA 相关生产依赖。 |
+| `org.eclipse.milo:milo-sdk-client:1.1.5` | Eclipse Public License 2.0 | OPC UA 相关生产依赖。 |
+| `org.eclipse.milo:milo-sdk-server:1.1.5` | Eclipse Public License 2.0 | 仅供测试使用，不进入正式产品 JAR。 |
 | `org.eclipse.paho:org.eclipse.paho.mqttv5.client:1.2.5` | Eclipse Public License 2.0 | MQTT v5 客户端依赖。 |
 | `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5` | Eclipse Public License 2.0 | MQTT v3 客户端依赖。 |
 | `org.springframework.boot:*`、`org.apache.*`、`com.fasterxml.*` 等 | Apache License 2.0 或各自 POM 声明许可证 | 以实际依赖 POM 和发布包内许可证文件为准。 |

@@ -1,9 +1,9 @@
-# WangbinCollector Linux 0.1.1
+# WangbinCollector Linux 0.1.2
 
-本包包含 Compose 文件和脚本，不包含源码、JRE、Electron、真实凭据或用户数据。需要 Ubuntu 22.04/24.04 x86_64（amd64 包）或 aarch64（arm64 包）、Docker Engine、Compose 插件、`curl`、`sha256sum` 和 `openssl`；首次启动需联网拉取 GHCR 和 Docker Hub 镜像。不同架构的包不能交叉部署；32 位 ARM 不受支持。
+本包包含 Compose 文件、脚本、`LICENSE` 和 `THIRD-PARTY-NOTICES.md`，不包含源码、JRE、Electron、真实凭据或用户数据。需要 Ubuntu 22.04/24.04 x86_64（amd64 包）或 aarch64（arm64 包）、Docker Engine、Compose 插件、`curl`、`sha256sum` 和 `openssl`；首次启动需联网拉取 GHCR 和 Docker Hub 镜像。不同架构的包不能交叉部署；32 位 ARM 不受支持。
 
 ```bash
-tar -xzf WangbinCollector-0.1.1-linux-amd64.tar.gz  # aarch64 主机改用 arm64 包
+tar -xzf WangbinCollector-0.1.2-linux-amd64.tar.gz  # aarch64 主机改用 arm64 包
 cd WangbinCollector
 bash deploy.sh
 ```

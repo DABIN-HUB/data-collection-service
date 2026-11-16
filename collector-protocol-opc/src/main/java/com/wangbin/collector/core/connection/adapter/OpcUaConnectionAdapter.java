@@ -426,7 +426,7 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         }
         cleanupTrustListManager();
         Path baseDir = resolveSecurityBaseDir();
-        // Milo 1.0.8 的参数依次为颁发者证书、颁发者 CRL、可信证书和可信 CRL；拒绝证书仅进隔离区。
+        // Milo 1.1.5 的参数依次为颁发者证书、颁发者 CRL、可信证书和可信 CRL；拒绝证书仅进隔离区。
         privateDirectory(baseDir.resolve("issuer"));
         privateDirectory(baseDir.resolve("trusted"));
         Path issuerCerts = privateDirectory(baseDir.resolve("issuer/certs"));
