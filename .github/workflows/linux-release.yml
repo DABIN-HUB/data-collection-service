@@ -2,7 +2,7 @@ name: Linux 双架构发行工程
 on:
   push:
     branches: [master]
-    tags: [v0.1.1]
+    tags: [v0.1.2]
 concurrency:
   group: linux-release-${{ github.ref }}
   cancel-in-progress: false
@@ -27,7 +27,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           version="$(< linux/VERSION)"
-          [[ "$version" == '0.1.1' ]]
+          [[ "$version" == '0.1.2' ]]
           source_sha="$(git rev-parse HEAD)"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
             [[ "$GITHUB_REF_NAME" == "v$version" ]]

@@ -19,6 +19,7 @@ mkdir -p "$staging/WangbinCollector/config"
 for file in compose.yaml deploy.sh stop.sh logs.sh README.md VERSION; do
   cp "$root/$file" "$staging/WangbinCollector/$file"
 done
+cp "$root/../LICENSE" "$root/../THIRD-PARTY-NOTICES.md" "$staging/WangbinCollector/"
 cp "$root/config/application-release.yml.example" "$staging/WangbinCollector/config/"
 if [[ "$image" != '__APP_IMAGE__' ]]; then
   sed -i "s|__APP_IMAGE__|$image|g" "$staging/WangbinCollector/compose.yaml"
@@ -29,7 +30,7 @@ printf 'version=%s\nsource_sha=%s\njava=17\nplatform=linux/%s\nfrontend_build=np
   > "$staging/WangbinCollector/BUILD-MANIFEST"
 (
   cd "$staging/WangbinCollector"
-  sha256sum VERSION BUILD-MANIFEST README.md compose.yaml deploy.sh stop.sh logs.sh config/application-release.yml.example > SHA256SUMS
+  sha256sum VERSION BUILD-MANIFEST LICENSE THIRD-PARTY-NOTICES.md README.md compose.yaml deploy.sh stop.sh logs.sh config/application-release.yml.example > SHA256SUMS
 )
 archive="$output/$name"
 tar -C "$staging" -czf "$archive" WangbinCollector
