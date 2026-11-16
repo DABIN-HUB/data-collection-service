@@ -17,7 +17,7 @@ import org.eclipse.milo.opcua.stack.core.security.DefaultClientCertificateValida
 import org.eclipse.milo.opcua.stack.core.security.FileBasedCertificateQuarantine;
 import org.eclipse.milo.opcua.stack.core.security.FileBasedTrustListManager;
 import org.eclipse.milo.opcua.stack.core.security.SecurityPolicy;
-import org.eclipse.milo.opcua.stack.core.security.TrustListManager;
+import org.eclipse.milo.opcua.stack.core.util.validation.ValidationCheck;
 import org.eclipse.milo.opcua.stack.core.types.builtin.DataValue;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.Unsigned;
@@ -34,6 +34,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -41,13 +43,17 @@ import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
+import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
@@ -65,8 +71,16 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
     private static final Pattern PRIVATE_KEY_PATTERN =
             Pattern.compile("-----BEGIN PRIVATE KEY-----(.*?)-----END PRIVATE KEY-----", Pattern.DOTALL);
     private static final long MIN_TIMEOUT_MS = 5000L;
+    /** X.509 证书 SAN 扩展中 URI 的通用名称类型编码。 */
+    private static final int URI_SAN_TYPE = 6;
+    private static final Set<ValidationCheck> CERTIFICATE_CHECKS = EnumSet.of(
+            ValidationCheck.APPLICATION_URI, ValidationCheck.HOSTNAME, ValidationCheck.VALIDITY,
+            ValidationCheck.KEY_USAGE_END_ENTITY, ValidationCheck.EXTENDED_KEY_USAGE_END_ENTITY);
+    private static final Set<PosixFilePermission> PRIVATE_DIRECTORY_PERMISSIONS = EnumSet.of(
+            PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE);
 
     private volatile OpcUaClient client;
+    private FileBasedTrustListManager trustListManager;
     private String endpointUrl;
     private String securityPolicy;
     private MessageSecurityMode securityMode;
@@ -83,6 +97,15 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
      */
     @Override
     protected void doConnect() throws Exception {
+        try {
+            connectAndInitialize();
+        } catch (Exception e) {
+            cleanupClient();
+            throw e;
+        }
+    }
+
+    private void connectAndInitialize() throws Exception {
         this.endpointUrl = resolveEndpointUrl();
         this.securityPolicy = resolveSecurityPolicy();
         this.securityMode = resolveSecurityMode();
@@ -95,21 +118,20 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
         long requestTimeout = resolveRequestTimeout();
         builder.setEndpoint(endpoint);
         builder.setRequestTimeout(Unsigned.uint(requestTimeout));
-        builder.setCertificateValidator(resolveCertificateValidator());
+        CertificateValidator certificateValidator = resolveCertificateValidator();
+        builder.setCertificateValidator(certificateValidator);
         applyClientCertificates(builder, clientKeyMaterial);
-        builder.setIdentityProvider(resolveIdentityProvider(endpoint, clientKeyMaterial));
+        builder.setIdentityProvider(resolveIdentityProvider(endpoint, clientKeyMaterial, certificateValidator));
 
         client = OpcUaClient.create(builder.build());
         long connectTimeout = resolveConnectTimeout();
+        CompletableFuture<OpcUaClient> connectAttempt = client.connectAsync();
         try {
-            client.connectAsync().get(connectTimeout, TimeUnit.MILLISECONDS);
+            connectAttempt.get(connectTimeout, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            cleanupClient();
+            connectAttempt.cancel(true);
             throw CollectorException.connectionException(
                     "OPC UA连接超时(" + connectTimeout + "ms)", currentDeviceId());
-        } catch (Exception e) {
-            cleanupClient();
-            throw e;
         }
 
         connectionParams.put("endpointUrl", endpointUrl);
@@ -275,16 +297,26 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
                     endpoint.getSecurityPolicyUri().equalsIgnoreCase(securityPolicy);
             boolean modeMatch = securityMode == null || endpoint.getSecurityMode() == securityMode;
             if (policyMatch && modeMatch) {
+                if (!SecurityPolicy.None.getUri().equalsIgnoreCase(securityPolicy)
+                        && (endpoint.getServer() == null
+                        || endpoint.getServer().getApplicationUri() == null
+                        || endpoint.getServer().getApplicationUri().isBlank()
+                        || endpoint.getServerCertificate() == null
+                        || endpoint.getServerCertificate().isNullOrEmpty())) {
+                    throw CollectorException.configException("安全 OPC UA 端点缺少服务端证书或应用 URI",
+                            currentDeviceId(), null);
+                }
                 return endpoint;
             }
         }
-        return endpoints.get(0);
+        throw CollectorException.configException("服务器未提供所要求的 OPC UA 安全策略和消息模式", currentDeviceId(), null);
     }
 
     /**
      * 解析或转换业务数据。
      */
-    private IdentityProvider resolveIdentityProvider(EndpointDescription endpoint, ClientKeyMaterial clientKeyMaterial) {
+    private IdentityProvider resolveIdentityProvider(EndpointDescription endpoint, ClientKeyMaterial clientKeyMaterial,
+                                                     CertificateValidator certificateValidator) {
         AuthType authType = resolveAuthType();
         switch (authType) {
             case USERNAME -> {
@@ -295,7 +327,8 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
                 if (!supportsIdentityToken(endpoint, UserTokenType.UserName)) {
                     throw CollectorException.configException("OPC UA端点不支持USERNAME认证", currentDeviceId(), null);
                 }
-                return new UsernameProvider(credentials.username(), credentials.password() != null ? credentials.password() : "");
+                return new UsernameProvider(credentials.username(), credentials.password() != null ? credentials.password() : "",
+                        certificateValidator);
             }
             case CERT -> {
                 if (clientKeyMaterial == null) {
@@ -345,6 +378,19 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
                 log.warn("失败 to 断开 OPC UA client", e);
             }
         }
+        cleanupTrustListManager();
+    }
+
+    private void cleanupTrustListManager() {
+        FileBasedTrustListManager manager = trustListManager;
+        trustListManager = null;
+        if (manager != null) {
+            try {
+                manager.close();
+            } catch (IOException e) {
+                log.warn("关闭 OPC UA 证书信任列表失败，设备: {}", currentDeviceId(), e);
+            }
+        }
     }
 
     /**
@@ -372,24 +418,42 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
     private CertificateValidator resolveCertificateValidator() throws IOException {
         boolean trustAll = Boolean.TRUE.equals(config.getBoolConfig("trustAllServerCert", false));
         if (trustAll) {
+            if (!SecurityPolicy.None.getUri().equalsIgnoreCase(resolveSecurityPolicy())) {
+                throw new IOException("安全 OPC UA 连接禁止信任所有服务端证书");
+            }
             log.warn("OPC UA连接 {} 启用了信任所有服务端证书，仅建议在测试环境使用", currentDeviceId());
             return new CertificateValidator.InsecureCertificateValidator();
         }
+        cleanupTrustListManager();
         Path baseDir = resolveSecurityBaseDir();
-        Path trustedDir = baseDir.resolve("trusted");
-        Path rejectedDir = baseDir.resolve("rejected");
-        Path issuersDir = baseDir.resolve("issuers");
-        Path issuersRejectedDir = baseDir.resolve("issuers-rejected");
-        Files.createDirectories(trustedDir);
-        Files.createDirectories(rejectedDir);
-        Files.createDirectories(issuersDir);
-        Files.createDirectories(issuersRejectedDir);
-        TrustListManager trustListManager =
-                new FileBasedTrustListManager(trustedDir, rejectedDir, issuersDir, issuersRejectedDir);
-        Path quarantineDir = baseDir.resolve("quarantine");
-        Files.createDirectories(quarantineDir);
-        CertificateQuarantine quarantine = new FileBasedCertificateQuarantine(quarantineDir.toFile());
-        return new DefaultClientCertificateValidator(trustListManager, quarantine);
+        // Milo 1.0.8 的参数依次为颁发者证书、颁发者 CRL、可信证书和可信 CRL；拒绝证书仅进隔离区。
+        privateDirectory(baseDir.resolve("issuer"));
+        privateDirectory(baseDir.resolve("trusted"));
+        Path issuerCerts = privateDirectory(baseDir.resolve("issuer/certs"));
+        Path issuerCrls = privateDirectory(baseDir.resolve("issuer/crl"));
+        Path trustedCerts = privateDirectory(baseDir.resolve("trusted/certs"));
+        Path trustedCrls = privateDirectory(baseDir.resolve("trusted/crl"));
+        Path quarantineDir = privateDirectory(baseDir.resolve("quarantine"));
+        FileBasedTrustListManager manager = new FileBasedTrustListManager(
+                issuerCerts, issuerCrls, trustedCerts, trustedCrls);
+        try {
+            manager.initialize();
+            if (!SecurityPolicy.None.getUri().equalsIgnoreCase(resolveSecurityPolicy())
+                    && manager.getTrustedCertificates().isEmpty()) {
+                throw new IOException("OPC UA 安全连接缺少已审核的可信证书");
+            }
+            CertificateQuarantine quarantine = new FileBasedCertificateQuarantine(quarantineDir.toFile());
+            CertificateValidator validator = new DefaultClientCertificateValidator(manager, CERTIFICATE_CHECKS, quarantine);
+            trustListManager = manager;
+            return validator;
+        } catch (IOException | RuntimeException e) {
+            try {
+                manager.close();
+            } catch (IOException closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
+        }
     }
 
     /**
@@ -398,28 +462,79 @@ public class OpcUaConnectionAdapter extends AbstractConnectionAdapter<OpcUaClien
     private Path resolveSecurityBaseDir() throws IOException {
         String key = config.getConnectionId();
         if (key == null || key.isBlank()) {
-            key = currentDeviceId() != null ? currentDeviceId() : "default";
+            key = currentDeviceId();
         }
-        key = key.replaceAll("[^a-zA-Z0-9-_]", "_");
-        Path baseDir = Paths.get("target", "opcua", "security", key);
-        Files.createDirectories(baseDir);
-        return baseDir;
+        if (key == null || !key.matches("[a-zA-Z0-9_-]+")) {
+            throw new IOException("OPC UA 连接标识包含非法路径字符");
+        }
+        String configuredRoot = config.getStringConfig("pkiBaseDir", null);
+        Path root;
+        if (configuredRoot != null && !configuredRoot.isBlank()) {
+            root = Paths.get(configuredRoot);
+            if (!root.isAbsolute() || !Files.isDirectory(root)) {
+                throw new IOException("OPC UA PKI 根目录必须是已经存在的绝对目录");
+            }
+        } else {
+            root = Paths.get("target", "opcua", "security").toAbsolutePath().normalize();
+            Files.createDirectories(root);
+        }
+        if (Files.isSymbolicLink(root)) {
+            throw new IOException("OPC UA PKI 根目录不允许符号链接");
+        }
+        return privateDirectory(root.resolve(key));
+    }
+
+    private Path privateDirectory(Path path) throws IOException {
+        if (Files.isSymbolicLink(path)) {
+            throw new IOException("OPC UA PKI 目录不允许符号链接");
+        }
+        Files.createDirectories(path);
+        if (Files.getFileAttributeView(path, PosixFileAttributeView.class) != null) {
+            Files.setPosixFilePermissions(path, PRIVATE_DIRECTORY_PERMISSIONS);
+        }
+        return path;
     }
 
     /**
      * 处理当前业务流程。
      */
-    private void applyClientCertificates(OpcUaClientConfigBuilder builder, ClientKeyMaterial material) {
+    private void applyClientCertificates(OpcUaClientConfigBuilder builder, ClientKeyMaterial material)
+            throws CertificateParsingException {
         boolean secureChannel = securityPolicy != null &&
                 !SecurityPolicy.None.getUri().equalsIgnoreCase(securityPolicy);
         if (material != null) {
             builder.setKeyPair(material.keyPair());
             builder.setCertificate(material.leafCertificate());
             builder.setCertificateChain(material.certificateChain());
+            if (secureChannel) {
+                builder.setApplicationUri(clientApplicationUri(material.leafCertificate()));
+            }
         } else if (secureChannel) {
             throw CollectorException.configException(
                     "安全策略 " + securityPolicy + " 需要配置客户端证书", currentDeviceId(), null);
         }
+    }
+
+    private String clientApplicationUri(X509Certificate certificate) throws CertificateParsingException {
+        String applicationUri = null;
+        var names = certificate.getSubjectAlternativeNames();
+        if (names != null) {
+            for (List<?> name : names) {
+                if (name.size() >= 2 && Integer.valueOf(URI_SAN_TYPE).equals(name.get(0))
+                        && name.get(1) instanceof String uri && !uri.isBlank()) {
+                    if (applicationUri != null) {
+                        throw CollectorException.configException("OPC UA 客户端证书含有多个应用 URI",
+                                currentDeviceId(), null);
+                    }
+                    applicationUri = uri;
+                }
+            }
+        }
+        if (applicationUri == null) {
+            throw CollectorException.configException("安全 OPC UA 客户端证书缺少应用 URI SAN",
+                    currentDeviceId(), null);
+        }
+        return applicationUri;
     }
 
     /**
