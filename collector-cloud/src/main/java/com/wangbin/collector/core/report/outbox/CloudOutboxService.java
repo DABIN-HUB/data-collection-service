@@ -202,6 +202,8 @@ public class CloudOutboxService {
                 current.getWindowStart(), current.getWindowEnd(), current.getCreatedAt(),
                 System.currentTimeMillis(), current.getAttempts(), CloudOutboxStatus.PENDING,
                 null, current.getReportData(), current.getCommits());
+        pending.setPublishedAt(current.getPublishedAt());
+        pending.setAckReceivedAt(current.getAckReceivedAt());
         return repository.replayIsolated(pending);
     }
 

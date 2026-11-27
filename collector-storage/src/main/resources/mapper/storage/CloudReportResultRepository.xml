@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wangbin.collector.storage.repository.CloudReportResultRepository">
+  <update id="createTable">
+    CREATE TABLE IF NOT EXISTS ${database}.cloud_report_results_v1 (
+      ts TIMESTAMP,
+      message_id VARCHAR(128) COMPOSITE KEY,
+      local_device_ids_json VARCHAR(8192),
+      device_hashes_json VARCHAR(5000),
+      cloud_device_id NCHAR(256),
+      gateway_device_id NCHAR(256),
+      status VARCHAR(32),
+      published_at BIGINT,
+      ack_at BIGINT,
+      created_at BIGINT,
+      completed_at BIGINT,
+      attempts INT
+    )
+  </update>
+  <select id="showCreateTable" resultType="java.util.Map">
+    SHOW CREATE TABLE ${database}.cloud_report_results_v1
+  </select>
+  <insert id="insert">
+    INSERT INTO ${database}.cloud_report_results_v1
+    (ts,message_id,local_device_ids_json,device_hashes_json,cloud_device_id,
+     gateway_device_id,status,published_at,ack_at,created_at,completed_at,attempts)
+    VALUES (#{ts,jdbcType=TIMESTAMP},#{messageId},#{deviceIdsJson},#{deviceHashesJson},#{cloudDeviceId},
+            #{gatewayDeviceId},#{status},#{publishedAt},#{ackAt},#{createdAt},#{completedAt},#{attempts})
+  </insert>
+  <sql id="filter">
+    completed_at &gt;= #{startTs} AND completed_at &lt;= #{endTs}
+    <if test="devicePattern != null">
+      AND device_hashes_json LIKE #{devicePattern}
+    </if>
+  </sql>
+  <select id="query" resultType="java.util.Map">
+    SELECT message_id,local_device_ids_json,cloud_device_id,gateway_device_id,status,
+           published_at,ack_at,created_at,completed_at,attempts
+    FROM ${database}.cloud_report_results_v1
+    WHERE <include refid="filter"/>
+    ORDER BY completed_at DESC, message_id ASC
+    LIMIT #{limit} OFFSET #{offset}
+  </select>
+  <select id="count" resultType="java.lang.Long">
+    SELECT COUNT(*) FROM ${database}.cloud_report_results_v1
+    WHERE <include refid="filter"/>
+    <if test="ackOnly">AND status = 'ACK_CONFIRMED'</if>
+  </select>
+</mapper>

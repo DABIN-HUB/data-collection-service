@@ -45,11 +45,11 @@
           </label>
           <label class="history-field">
             <span>开始</span>
-            <input v-model="startTime" type="datetime-local" title="开始时间" />
+            <input v-model="startTime" type="datetime-local" title="开始时间" @input="usesDefaultTimeWindow = false" />
           </label>
           <label class="history-field">
             <span>结束</span>
-            <input v-model="endTime" type="datetime-local" title="结束时间" />
+            <input v-model="endTime" type="datetime-local" title="结束时间" @input="usesDefaultTimeWindow = false" />
           </label>
           <label class="history-field history-limit">
             <span>条数</span>
@@ -92,7 +92,7 @@
             <span>{{ selectedPointLabel }}</span>
           </div>
           <div v-if="historyChartPresentation" class="history-chart-wrap">
-            <div class="history-chart-caption"><span>数值</span><span>按采样顺序排列</span></div>
+            <div class="history-chart-caption"><span>数值</span><span>按事件时间升序排列</span></div>
             <svg class="history-chart-svg" viewBox="0 0 780 320" role="img" aria-label="主点位与对比点位历史折线，按各自样本序号排列，使用统一原始数值轴">
               <g class="history-chart-grid">
                 <path d="M64 56H744M64 107H744M64 158H744M64 209H744M64 260H744" />
@@ -131,7 +131,7 @@
               {{ series.label }} <b>{{ series.latestText }}</b>
             </span>
           </div>
-          <p v-if="historyChartPresentation" class="history-chart-note">横向距离表示各曲线的样本顺序，不表示等时间间隔；序号参考最长曲线，统一原始数值尺度，不换算单位。</p>
+          <p v-if="historyChartPresentation" class="history-chart-note">按可识别事件时间升序、缺失时间排末尾；横向距离表示各曲线的样本顺序，不表示等时间间隔；序号参考最长曲线，统一原始数值尺度，不换算单位。</p>
           <p v-if="failedComparePointRefs.length" class="history-compare-note">摘要统计成功曲线；标题和下方的对比点位数为已选择数量。</p>
           <div class="history-stat-row">
             <span>主曲线记录数 <b>{{ historyPresentation.recordCount }}</b></span>
@@ -227,8 +227,8 @@
             <tbody>
               <tr v-for="(row, index) in historyRows" :key="`${formatHistoryTime(row)}-${index}`">
                 <td class="history-mono">{{ formatHistoryTime(row) }}</td>
-                <td :title="String(displayValue(row))">{{ displayValue(row) }}</td>
-                <td>{{ row.quality || row.qualityCode || '-' }}</td>
+                <td :title="String(historyDisplayValue(row))">{{ historyDisplayValue(row) }}</td>
+                <td>{{ row.quality ?? row.qualityCode ?? '-' }}</td>
                 <td><code>{{ compactJson(row) }}</code></td>
               </tr>
             </tbody>
@@ -250,7 +250,7 @@ import { useRoute } from "vue-router";
 import { getDeviceAlarmHistory, getPointHistory } from "@/api/data.api";
 import { getDevicePointsConfig } from "@/api/config.api";
 import { normalizeAlarmHistoryRows } from "@/features/alarm/utils/alarm-history-utils";
-import { normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
+import { formatHistoryTime, historyDisplayValue, historyNumericValue, latestHistoryValueText, normalizeHistoryRows, type HistoryRow } from "@/features/history/utils/history-data-utils";
 import { resolveHistoryPartialFailure, type HistoryPartialFailureState } from "@/features/history/utils/history-partial-failure";
 import {
   buildHistoryDataQueryParams,
@@ -289,8 +289,11 @@ const failedComparePointRefs = ref<string[]>([]);
 const relatedAlarmsUnavailable = ref(false);
 const loading = ref(false);
 const limit = ref(200);
-const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000));
-const endTime = ref(defaultDateTimeLocal(0));
+const initialWindowEnd = Date.now();
+const startTime = ref(defaultDateTimeLocal(-60 * 60 * 1000, initialWindowEnd));
+const endTime = ref(defaultDateTimeLocal(0, initialWindowEnd));
+const usesDefaultTimeWindow = ref(true);
+const pendingAutoHistoryQuery = ref(false);
 const initialized = ref(false);
 const lastAppliedRouteKey = ref("__initial__");
 const pendingHistoryQueryContext = ref<HistoryQueryContext | null>(null);
@@ -320,10 +323,10 @@ const historySeries = computed(() => buildHistoryTrendSeries([
     .map((ref) => ({ key: ref, label: pointLabelOf(ref), rows: comparePointRows.value[ref] || [] }))
 ]));
 
-const numericValues = computed(() => historyRows.value.map((row) => Number(displayValue(row))).filter((value) => Number.isFinite(value)));
+const numericValues = computed(() => historyRows.value.map(historyNumericValue).filter((value): value is number => value !== undefined));
 const historyMin = computed(() => numericValues.value.length ? Math.min(...numericValues.value).toFixed(2) : "-");
 const historyMax = computed(() => numericValues.value.length ? Math.max(...numericValues.value).toFixed(2) : "-");
-const historyLatest = computed(() => historyRows.value.length ? String(displayValue(historyRows.value[historyRows.value.length - 1])) : "-");
+const historyLatest = computed(() => latestHistoryValueText(historyRows.value));
 const historyTimeRangeText = computed(() => {
   if (!startTime.value || !endTime.value) {
     return "-";
@@ -379,8 +382,14 @@ onMounted(async () => {
   if (appStore.capabilities == null) {
     await appStore.refreshCapabilities();
   }
-  await applyRouteQuery({ autoQuery: appStore.capabilities?.history.available === true });
+  await applyRouteQuery({ autoQuery: true });
   initialized.value = true;
+});
+
+watch(() => appStore.capabilities?.history.available, (available) => {
+  if (available === true && pendingAutoHistoryQuery.value) {
+    void autoQueryHistory();
+  }
 });
 
 watch(() => [route.query.deviceId, route.query.pointId, route.query.pointRef], () => {
@@ -393,13 +402,14 @@ watch(() => [route.query.deviceId, route.query.pointId, route.query.pointRef], (
 onBeforeUnmount(() => {
   historyPointsOwner.invalidate();
   historyQueryOwner.invalidate();
+  pendingAutoHistoryQuery.value = false;
   loading.value = false;
   pendingHistoryQueryContext.value = null;
 });
 
 async function handleDeviceChange() {
   deviceStore.selectDevice(deviceId.value);
-  await loadPoints();
+  await loadPoints({ autoQuery: true });
 }
 
 async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boolean } = {}) {
@@ -408,6 +418,10 @@ async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boo
     preferredPointRef: options.preferredPointRef,
     autoQuery: options.autoQuery
   });
+  historyQueryOwner.invalidate();
+  loading.value = false;
+  pendingHistoryQueryContext.value = null;
+  pendingAutoHistoryQuery.value = false;
   pointRef.value = "";
   comparePointRefs.value = [];
   historyRows.value = [];
@@ -430,8 +444,9 @@ async function loadPoints(options: { preferredPointRef?: string; autoQuery?: boo
     points.value = nextPoints;
     const resolvedPointRef = resolvePointRefFromPoints(nextPoints, snapshot.preferredPointRef);
     pointRef.value = resolvedPointRef || pointKey(nextPoints[0]);
-    if (snapshot.autoQuery && resolvedPointRef) {
-      await loadHistory();
+    if (snapshot.autoQuery && pointRef.value) {
+      pendingAutoHistoryQuery.value = true;
+      await autoQueryHistory();
     }
   } catch (error) {
     if (!historyPointsOwner.canCommit(ticket, currentHistoryPointsRequestContext())) {
@@ -457,6 +472,7 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
     historyQueryOwner.invalidate();
     loading.value = false;
     pendingHistoryQueryContext.value = null;
+    pendingAutoHistoryQuery.value = false;
     deviceId.value = "";
     points.value = [];
     pointRef.value = "";
@@ -475,17 +491,27 @@ async function applyRouteQuery(options: { autoQuery: boolean }) {
 
   if (deviceId.value !== targetDeviceId || points.value.length === 0) {
     deviceId.value = targetDeviceId;
-    await loadPoints({ preferredPointRef: queryPointRef, autoQuery: options.autoQuery && Boolean(queryPointRef) });
+    await loadPoints({ preferredPointRef: queryPointRef, autoQuery: options.autoQuery });
     return;
   }
 
   const resolvedPointRef = resolvePointRef(queryPointRef);
   if (resolvedPointRef) {
     pointRef.value = resolvedPointRef;
-    if (options.autoQuery && queryPointRef) {
-      await loadHistory();
+    if (options.autoQuery) {
+      pendingAutoHistoryQuery.value = true;
+      await autoQueryHistory();
     }
   }
+}
+
+async function autoQueryHistory() {
+  if (!pendingAutoHistoryQuery.value || !deviceId.value || !pointRef.value || appStore.capabilities?.history.available !== true) {
+    return;
+  }
+  pendingAutoHistoryQuery.value = false;
+  limit.value = 200;
+  await loadHistory();
 }
 
 async function loadHistory() {
@@ -493,11 +519,13 @@ async function loadHistory() {
     ElMessage.warning(appStore.capabilities?.history.reason || appStore.capabilitiesError || "当前服务未启用历史存储能力");
     return;
   }
+  refreshDefaultTimeWindow();
   const requestContext = currentHistoryQueryContext();
   if (!requestContext.deviceId || !requestContext.pointRef) {
     ElMessage.warning("请先选择设备和点位");
     return;
   }
+  pendingAutoHistoryQuery.value = false;
   const ticket = historyQueryOwner.begin(requestContext);
   const canPreserveLastGood = hasLastGoodForContext(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext);
   if (shouldClearLastGoodForRequest(lastSuccessfulHistoryContext.value, requestContext, isSameHistoryQueryContext)) {
@@ -736,30 +764,23 @@ function pointLabelOf(ref: string): string {
   return point ? `${point.pointName || point.pointCode || point.pointId || point.address || ref} · ${point.dataType || "未知类型"}` : ref;
 }
 
-function displayValue(row: HistoryRow): unknown {
-  return row.value ?? row.currentValue ?? row.rawValue ?? row.val ?? "-";
-}
-
-function formatHistoryTime(row: { timestamp?: number | string; time?: number | string; collectTime?: number | string; createdAt?: number | string }): string {
-  const raw = row.timestamp || row.time || row.collectTime || row.createdAt;
-  if (!raw) {
-    return "-";
-  }
-  if (typeof raw !== "string" && typeof raw !== "number") {
-    return String(raw);
-  }
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleString();
-}
-
 function compactJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function defaultDateTimeLocal(offsetMs: number): string {
-  const date = new Date(Date.now() + offsetMs);
+function defaultDateTimeLocal(offsetMs: number, now = Date.now()): string {
+  const date = new Date(now + offsetMs);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function refreshDefaultTimeWindow() {
+  if (!usesDefaultTimeWindow.value) {
+    return;
+  }
+  const now = Date.now();
+  startTime.value = defaultDateTimeLocal(-60 * 60 * 1000, now);
+  endTime.value = defaultDateTimeLocal(0, now);
 }
 
 // 展示派生只读取原状态；首次未成功时不把空数组画成零，保留原有上次成功结果与反馈。
@@ -789,8 +810,8 @@ const historyPresentation = computed(() => {
 // 轴读取成功 series 的原始数值，取值优先级与原 helper 相同；不改任何 curve 点或 formatter。
 const historyChartPresentation = computed(() => {
   const valuesBySeries = historySeries.value.map((series) => series.rows
-    .map((row) => Number(row.value ?? row.currentValue ?? row.rawValue ?? row.val))
-    .filter((value) => Number.isFinite(value)));
+    .map(historyNumericValue)
+    .filter((value): value is number => value !== undefined));
   const allValues = valuesBySeries.flat();
   if (!allValues.length) {
     return null;

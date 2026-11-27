@@ -14,7 +14,6 @@ import java.util.Map;
  */
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class CloudOutboxMessage {
 
     private String messageId;
@@ -26,12 +25,49 @@ public class CloudOutboxMessage {
     private long windowStart;
     private long windowEnd;
     private long createdAt;
+    private long publishedAt;
+    private long ackReceivedAt;
     private long nextAttemptAt;
     private int attempts;
     private CloudOutboxStatus status;
     private String lastError;
     private ReportDataSnapshot reportData;
     private List<CloudOutboxCommit> commits;
+
+    /**
+     * 保留历史构造签名，兼容已有 Redis 消息；发布时间和 ACK 时间在状态机推进时补充。
+     */
+    public CloudOutboxMessage(String messageId,
+                              String localDeviceId,
+                              String productKey,
+                              String deviceName,
+                              String gatewayDeviceId,
+                              long shadowVersion,
+                              long windowStart,
+                              long windowEnd,
+                              long createdAt,
+                              long nextAttemptAt,
+                              int attempts,
+                              CloudOutboxStatus status,
+                              String lastError,
+                              ReportDataSnapshot reportData,
+                              List<CloudOutboxCommit> commits) {
+        this.messageId = messageId;
+        this.localDeviceId = localDeviceId;
+        this.productKey = productKey;
+        this.deviceName = deviceName;
+        this.gatewayDeviceId = gatewayDeviceId;
+        this.shadowVersion = shadowVersion;
+        this.windowStart = windowStart;
+        this.windowEnd = windowEnd;
+        this.createdAt = createdAt;
+        this.nextAttemptAt = nextAttemptAt;
+        this.attempts = attempts;
+        this.status = status;
+        this.lastError = lastError;
+        this.reportData = reportData;
+        this.commits = commits;
+    }
 
     /**
      * 解析或转换业务数据。

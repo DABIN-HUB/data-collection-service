@@ -1,5 +1,11 @@
 # collector-desktop 前端架构重构进度
 
+## 本轮：历史数据显示与云上报结果查询
+
+本轮仅在现有独立 History/Cloud View 与对应 API/类型工具中修复历史字段转换、有效点位自动查询和结果列表；独立结果来自 `GET /api/cloud/results`，不会从 Outbox 或 MQTT 发送次数推断 ACK。已落库的去重 ACK 数可显示，但因历史双存储故障无法跨重启证明无漏记，必须始终明确显示完整性未获证实；Redis 待补写或存储不可用时计数显示未知。保持 Router/Pinia 单一领域状态、Electron/Web 共用 renderer、Outbox 完成删除和影子提交语义不变。
+
+本地验证：前端 `lint`、`stylelint`、`typecheck`、`build`、`build:web` 通过；生成的 61 个 renderer 文件与后端 Web 静态目录逐字节一致，Java 17 的受影响 Maven 模块跳过测试打包成功，可执行 JAR 含 Web 入口、引用的资源及新增存储 Mapper。未新增或运行测试；未连接现役 TDengine 做新表实际写入、Redis 补写或真实业务 ACK 联调，未部署或重启现役服务，旧消息不能回补。全仓源码语言审计有既存未改文件的 59 项告警，不能据此宣称审计通过。
+
 ## 最新请求：发布阻断R1（2026-10-26，按停止门交付）
 
 当前状态：`MQTT_DEFAULT_PASS / OPC_TEST_COMPILE_PASS / FRONTEND_REGRESSION_PASS / TDENGINE_STARTUP_PARTIAL / SQLITE_EXTRA_POSTCOMMIT_503 / RELEASE_NOT_READY`。不创建Phase18，不扩改SQLite/历史架构或Windows安装。

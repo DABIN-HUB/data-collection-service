@@ -249,6 +249,120 @@
   padding: 14px 18px;
 }
 
+.cloud-view .cloud-results {
+  padding: 14px 18px;
+}
+
+.cloud-view .cloud-result-filters {
+  align-items: flex-end;
+}
+
+.cloud-view .cloud-result-device-filter {
+  width: 210px;
+}
+
+.cloud-view .cloud-result-time-filter {
+  width: 210px;
+}
+
+.cloud-view .cloud-result-status-filter {
+  width: 166px;
+}
+
+.cloud-view .cloud-result-query-note,
+.cloud-view .cloud-result-coverage {
+  margin: 10px 0;
+  color: var(--cloud-muted);
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-result-coverage[data-complete="false"] {
+  color: var(--cloud-warning);
+}
+
+.cloud-view .cloud-result-integrity {
+  display: grid;
+  min-width: 0;
+  margin-top: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--cloud-line-soft);
+  border-radius: 6px;
+  background: var(--app-color-bg-soft);
+}
+
+.cloud-view .cloud-result-integrity > span {
+  display: grid;
+  min-width: 0;
+  padding: 10px 12px;
+  gap: 4px;
+  border-right: 1px solid var(--cloud-line-soft);
+  overflow-wrap: anywhere;
+}
+
+.cloud-view .cloud-result-integrity > span:last-child {
+  border-right: 0;
+}
+
+.cloud-view .cloud-result-integrity b {
+  color: var(--cloud-text);
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cloud-view .cloud-result-integrity small {
+  color: var(--cloud-muted);
+  font-size: 11px;
+}
+
+.cloud-view .cloud-result-table {
+  min-width: 1380px;
+}
+
+.cloud-view .cloud-result-col-message { width: 190px; }
+.cloud-view .cloud-result-col-device { width: 160px; }
+.cloud-view .cloud-result-col-cloud { width: 160px; }
+.cloud-view .cloud-result-col-gateway { width: 150px; }
+.cloud-view .cloud-result-col-status { width: 150px; }
+.cloud-view .cloud-result-col-time { width: 160px; }
+.cloud-view .cloud-result-col-attempts { width: 120px; }
+
+.cloud-view .cloud-result-status[data-result-status="PUBLISHED"] {
+  color: var(--app-color-primary);
+  border-color: var(--app-color-primary);
+  background: var(--app-color-info-soft);
+}
+
+.cloud-view .cloud-result-status[data-result-status="ACK_CONFIRMED"] {
+  color: var(--app-color-success);
+  border-color: var(--app-color-success);
+  background: var(--app-color-success-soft);
+}
+
+.cloud-view .cloud-result-status[data-result-status="FAILED"] {
+  color: var(--cloud-danger);
+  border-color: var(--app-color-error);
+  background: var(--app-color-error-soft);
+}
+
+.cloud-view .cloud-result-pagination {
+  display: flex;
+  min-width: 0;
+  margin-top: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--cloud-muted);
+  font-size: 12px;
+}
+
+.cloud-view .cloud-result-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .cloud-view .exact-surface-head {
   min-width: 0;
   margin: 0 0 12px;
@@ -934,6 +1048,16 @@
     width: 100%;
   }
 
+  .cloud-view .cloud-result-device-filter,
+  .cloud-view .cloud-result-time-filter,
+  .cloud-view .cloud-result-status-filter {
+    width: 100%;
+  }
+
+  .cloud-view .cloud-result-integrity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .cloud-view .cloud-stat-row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -958,8 +1082,16 @@
 
 @media (max-width: 420px) {
   .cloud-view .cloud-metric-rail,
-  .cloud-view .cloud-stat-row {
+  .cloud-view .cloud-stat-row,
+  .cloud-view .cloud-result-integrity {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .cloud-view .cloud-result-integrity > span {
+    border-right: 0;
+    border-bottom: 1px solid var(--cloud-line-soft);
+  }
+  .cloud-view .cloud-result-integrity > span:last-child {
+    border-bottom: 0;
   }
   .cloud-view .cloud-metric-rail .modao-property-item,
   .cloud-view .cloud-metric-rail .modao-property-item:nth-child(4n) {
