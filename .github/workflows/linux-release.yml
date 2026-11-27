@@ -2,7 +2,7 @@ name: Linux 双架构发行工程
 on:
   push:
     branches: [master]
-    tags: [v0.1.2]
+    tags: ['v*']
 concurrency:
   group: linux-release-${{ github.ref }}
   cancel-in-progress: false
@@ -26,16 +26,21 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          version="$(< linux/VERSION)"
-          [[ "$version" == '0.1.2' ]]
           source_sha="$(git rev-parse HEAD)"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+              echo '正式标签必须使用 v主版本.次版本.修订号，且不能含前导零' >&2
+              exit 1
+            }
+            version="${GITHUB_REF_NAME#v}"
             [[ "$GITHUB_REF_NAME" == "v$version" ]]
             [[ "$(git rev-parse "refs/tags/v$version^{commit}")" == "$source_sha" ]]
             git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
             git merge-base --is-ancestor "$source_sha" refs/remotes/origin/master
           else
             [[ "$GITHUB_REF" == refs/heads/master ]]
+            version="$(< linux/VERSION)"
+            [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           fi
           git diff --quiet && git diff --cached --quiet
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
@@ -159,7 +164,8 @@ jobs:
           [[ "$(docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}')" == linux/${{ matrix.arch }} ]]
           [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == '${{ needs.prepare.outputs.source_sha }}' ]]
           bash linux/package.sh "$RUNNER_TEMP/release" '${{ needs.prepare.outputs.source_sha }}' \
-            '${{ needs.prepare.outputs.jar_sha256 }}' '__APP_IMAGE__' '${{ matrix.arch }}'
+            '${{ needs.prepare.outputs.jar_sha256 }}' '__APP_IMAGE__' '${{ matrix.arch }}' \
+            '${{ needs.prepare.outputs.version }}'
           name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
           tar -tzf "$RUNNER_TEMP/release/$name"
           (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
@@ -248,7 +254,6 @@ jobs:
           set -Eeuo pipefail
           [[ "$(uname -m)" == '${{ matrix.machine }}' ]]
           [[ "$(git rev-parse HEAD)" == '${{ needs.prepare.outputs.source_sha }}' ]]
-          [[ "$(< linux/VERSION)" == '${{ needs.prepare.outputs.version }}' ]]
           image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
           [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
           docker logout ghcr.io
@@ -257,7 +262,8 @@ jobs:
           [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" == '${{ needs.prepare.outputs.source_sha }}' ]]
           [[ "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" == '${{ needs.prepare.outputs.version }}' ]]
           bash linux/package.sh "$RUNNER_TEMP/release" '${{ needs.prepare.outputs.source_sha }}' \
-            '${{ needs.prepare.outputs.jar_sha256 }}' "$image" '${{ matrix.arch }}'
+            '${{ needs.prepare.outputs.jar_sha256 }}' "$image" '${{ matrix.arch }}' \
+            '${{ needs.prepare.outputs.version }}'
           name=WangbinCollector-${{ needs.prepare.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
           tar -tzf "$RUNNER_TEMP/release/$name"
           (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
@@ -274,6 +280,7 @@ jobs:
           cd "$acceptance_dir"
           trap 'docker compose -p "$project" stop' EXIT
           sha256sum -c SHA256SUMS
+          [[ "$(< VERSION)" == '${{ needs.prepare.outputs.version }}' ]]
           [[ "$(sed -n 's/^platform=//p' BUILD-MANIFEST)" == linux/${{ matrix.arch }} ]]
           bash deploy.sh
           test -f data/data/collector.db
@@ -390,7 +397,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$(git rev-parse HEAD)" == '${{ needs.prepare.outputs.source_sha }}' ]]
-          [[ "$(< linux/VERSION)" == '${{ needs.prepare.outputs.version }}' ]]
           image='ghcr.io/dabin-hub/data-collection-service@${{ needs.publish-image.outputs.digest }}'
           [[ "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]]
           for arch in amd64 arm64; do
@@ -398,8 +404,10 @@ jobs:
             (cd "$RUNNER_TEMP/release" && sha256sum -c "$name.sha256")
             mkdir -p "$RUNNER_TEMP/verify-$arch"
             tar -xzf "$RUNNER_TEMP/release/$name" -C "$RUNNER_TEMP/verify-$arch"
-            (cd "$RUNNER_TEMP/verify-$arch/WangbinCollector" && sha256sum -c SHA256SUMS)
-            manifest="$RUNNER_TEMP/verify-$arch/WangbinCollector/BUILD-MANIFEST"
+            bundle="$RUNNER_TEMP/verify-$arch/WangbinCollector"
+            (cd "$bundle" && sha256sum -c SHA256SUMS)
+            [[ "$(< "$bundle/VERSION")" == '${{ needs.prepare.outputs.version }}' ]]
+            manifest="$bundle/BUILD-MANIFEST"
             grep -Fxq "version=${{ needs.prepare.outputs.version }}" "$manifest"
             grep -Fxq "platform=linux/$arch" "$manifest"
             grep -Fxq "source_sha=${{ needs.prepare.outputs.source_sha }}" "$manifest"
