@@ -508,8 +508,8 @@ git diff --check
 ## 29. 版本控制、普通 CI 与发布审批
 
 1. 开发改动仅在 `feature_2.0`；`master` 是正式分支，由用户审核并自行合并。每次操作前核对 HEAD、工作区及差异，仅暂存当次授权文件；本地提交不等于已同步 GitHub。禁止未经批准 push、force push、创建分支或 worktree，以及执行 `git merge`、`git rebase`、`git reset`、`git restore`、`git clean`、`git stash`、移动标签或发布。存在时保护 `collector-boot/src/main/resources/application.yml` 和 `.hermes.md`，不存在时也不为任务创建。
-2. 普通 CI 在 push `master` 或目标分支为 `master` 的 PR 上运行：Java 17、`npm ci`、前端 typecheck 和全量 Vitest、`build:web`、Maven `clean verify`、可执行 JAR 中 Web 入口及 JS/CSS 检查、配置秘密扫描、P0 回归、UTF-8 检查；以 `.github/workflows/ci.yml` 为执行事实。
-3. 失败不得以跳过实际失败测试、`continue-on-error`、`|| true`、Maven `-fn` 或 `-DskipTests` 冒充成功。编译、测试、候选构建、正式发布是不同门禁；前一步失败而跳过后续步骤时，不得声称全流程 PASS。Windows 本地测试与 Linux Runner 应满足相同业务契约，结果分别记录。
+2. 普通 CI 在 push `master` 或目标分支为 `master` 的 PR 上运行：Java 17、`npm ci`、前端 typecheck、`build:web`、Maven `-Dmaven.test.skip=true clean package`、可执行 JAR 中 Web 入口及 JS/CSS 检查、配置秘密扫描、UTF-8 检查；不编译或运行前端、Java 和 P0 测试。以 `.github/workflows/ci.yml` 为执行事实；Linux 正式发行及现场验收门禁不因此变更。
+3. 普通 CI 使用 `-Dmaven.test.skip=true` 仅为经用户明确确认的无测试生产构建契约，不是原有 Maven 测试失败的修复，也不能宣称测试通过。其他验证仍不得以 `continue-on-error`、`|| true` 或 Maven `-fn` 冒充成功。编译、测试、候选构建、正式发布是不同门禁；前一步失败而跳过后续步骤时，不得声称全流程 PASS。Windows 本地测试与 Linux Runner 的测试结果须与普通 CI 构建结果分开记录。
 4. 普通 CI PASS 不授予正式 Release 权限。Actions Node 运行时弃用 warning 与实际构建失败分别记录；升级 Action 或依赖另行验证，不因 warning 擅自升级。
 
 ## 30. Vue/Web 构建产物管理

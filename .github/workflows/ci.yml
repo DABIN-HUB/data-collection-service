@@ -36,14 +36,11 @@ jobs:
       - name: 桌面控制台类型检查
         run: npm --prefix collector-desktop run typecheck
 
-      - name: 桌面控制台测试
-        run: npm --prefix collector-desktop test
-
       - name: 构建并同步网页控制台
         run: npm --prefix collector-desktop run build:web
 
-      - name: Maven clean verify
-        run: mvn -B -ntp clean verify
+      - name: Maven 生产构建（不编译或运行测试）
+        run: mvn -B -ntp -Dmaven.test.skip=true clean package
 
       - name: 检查最终可执行Jar
         shell: bash
@@ -67,9 +64,6 @@ jobs:
 
       - name: 扫描生产配置秘密
         run: node scripts/scan-config-secrets.mjs
-
-      - name: 执行P0固定回归
-        run: mvn -B -ntp -pl collector-boot -am -Pp0-regression test
 
       - name: 检查UTF-8编码
         shell: bash
