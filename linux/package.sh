@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# 用法：package.sh <输出目录> <源码 SHA> <Jar SHA-256> <镜像索引引用或候选占位符> <架构>。
-[[ $# == 5 ]] || { printf '用法：package.sh OUTPUT SOURCE_SHA JAR_SHA256 IMAGE_REF amd64|arm64\n' >&2; exit 2; }
-output="$1"; source_sha="$2"; jar_sha="$3"; image="$4"; arch="$5"
+# 用法：package.sh <输出目录> <源码 SHA> <Jar SHA-256> <镜像索引引用或候选占位符> <架构> <发行版本>。
+[[ $# == 6 ]] || { printf '用法：package.sh OUTPUT SOURCE_SHA JAR_SHA256 IMAGE_REF amd64|arm64 VERSION\n' >&2; exit 2; }
+output="$1"; source_sha="$2"; jar_sha="$3"; image="$4"; arch="$5"; version="$6"
 [[ "$source_sha" =~ ^[a-f0-9]{40}$ && "$jar_sha" =~ ^[a-f0-9]{64}$ ]] || { printf '源码或 JAR 校验值无效\n' >&2; exit 2; }
 [[ "$arch" == amd64 || "$arch" == arm64 ]] || { printf '发行架构无效\n' >&2; exit 2; }
 [[ "$image" == '__APP_IMAGE__' || "$image" =~ ^ghcr\.io/dabin-hub/data-collection-service@sha256:[a-f0-9]{64}$ ]] || { printf '镜像摘要无效\n' >&2; exit 2; }
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-version="$(< "$root/VERSION")"
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf '发行版本无效\n' >&2; exit 2; }
+[[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { printf '发行版本无效\n' >&2; exit 2; }
 name="WangbinCollector-$version-linux-$arch.tar.gz"
 mkdir -p "$output"
 output="$(cd "$output" && pwd)"
@@ -16,9 +15,15 @@ output="$(cd "$output" && pwd)"
 staging="$(mktemp -d "$output/.wangbin-release.XXXXXXXX")"
 trap 'rm -rf -- "$staging"' EXIT
 mkdir -p "$staging/WangbinCollector/config"
-for file in compose.yaml deploy.sh stop.sh logs.sh README.md VERSION; do
+for file in compose.yaml deploy.sh stop.sh logs.sh; do
   cp "$root/$file" "$staging/WangbinCollector/$file"
 done
+# 正式发行版本仅由已校验的标签传入，不依赖源码中的候选版本文件。
+printf '%s\n' "$version" > "$staging/WangbinCollector/VERSION"
+grep -q '__RELEASE_VERSION__' "$root/README.md" || { printf '发行说明缺少版本占位符\n' >&2; exit 2; }
+sed "s|__RELEASE_VERSION__|$version|g" "$root/README.md" > "$staging/WangbinCollector/README.md"
+! grep -q '__RELEASE_VERSION__' "$staging/WangbinCollector/README.md"
+grep -Fxq "# WangbinCollector Linux $version" "$staging/WangbinCollector/README.md"
 cp "$root/../LICENSE" "$root/../THIRD-PARTY-NOTICES.md" "$staging/WangbinCollector/"
 cp "$root/config/application-release.yml.example" "$staging/WangbinCollector/config/"
 if [[ "$image" != '__APP_IMAGE__' ]]; then
