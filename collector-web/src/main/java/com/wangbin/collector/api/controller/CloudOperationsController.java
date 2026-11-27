@@ -1,6 +1,7 @@
 package com.wangbin.collector.api.controller;
 
 import com.wangbin.collector.api.application.CloudOperationsApplicationService;
+import com.wangbin.collector.api.application.CloudReportResultApplicationService;
 import com.wangbin.collector.api.controller.dto.CloudFlushResponse;
 import com.wangbin.collector.api.controller.dto.CloudOutboxDetailResponse;
 import com.wangbin.collector.api.controller.dto.CloudOutboxItemResponse;
@@ -8,6 +9,7 @@ import com.wangbin.collector.api.controller.dto.CloudTestResponse;
 import com.wangbin.collector.api.error.ApiErrorResponseFactory;
 import com.wangbin.collector.common.web.result.ApiResult;
 import com.wangbin.collector.core.report.outbox.CloudOutboxStatus;
+import com.wangbin.collector.core.report.outbox.CloudReportResultPage;
 import lombok.RequiredArgsConstructor;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,26 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CloudOperationsController {
     private final CloudOperationsApplicationService service;
+    private final CloudReportResultApplicationService resultService;
+
+    /**
+     * 查询独立上报结果历史；计数只统计当前时间范围内已提交的真实业务 ACK。
+     */
+    @GetMapping("/results")
+    public ResponseEntity<ApiResult<CloudReportResultPage>> results(
+            @RequestParam(required = false) String deviceId,
+            @RequestParam(required = false) Long startTs,
+            @RequestParam(required = false) Long endTs,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit,
+            HttpServletRequest request) {
+        try {
+            return ResponseEntity.ok(ApiResult.success(resultService.query(deviceId, startTs, endTs, page, limit)));
+        } catch (IllegalArgumentException exception) {
+            return ApiErrorResponseFactory.response(request, HttpStatus.BAD_REQUEST,
+                    "INVALID_QUERY_RANGE", exception.getMessage(), null);
+        }
+    }
 
     @GetMapping("/outbox")
     public ApiResult<List<CloudOutboxItemResponse>> list(@RequestParam(required = false) CloudOutboxStatus status,

@@ -65,6 +65,79 @@
         </details>
       </section>
 
+      <section id="cloud-results" class="exact-surface cloud-results" tabindex="-1" aria-labelledby="cloud-results-title">
+        <div class="exact-surface-head">
+          <h2 id="cloud-results-title">独立上报结果（TDengine）</h2>
+          <span>{{ resultHeaderText }}</span>
+        </div>
+        <OperationSourceStatus
+          :state="resultSourceState"
+          source="独立上报结果历史"
+          :last-attempt-at="resultLastAttemptAt"
+          :last-success-at="resultLastSuccess?.getTime()"
+          :detail="resultSourceDetail"
+        />
+        <div class="heading-actions cloud-filters cloud-result-filters">
+          <label class="cloud-filter-field cloud-result-device-filter">
+            <span>本地设备 ID</span>
+            <input v-model="resultDeviceId" aria-label="上报结果本地设备 ID" placeholder="全部设备" @keyup.enter="submitCloudResults" />
+          </label>
+          <label class="cloud-filter-field cloud-result-time-filter">
+            <span>开始时间</span>
+            <input v-model="resultStartTime" type="datetime-local" aria-label="上报结果开始时间" />
+          </label>
+          <label class="cloud-filter-field cloud-result-time-filter">
+            <span>结束时间</span>
+            <input v-model="resultEndTime" type="datetime-local" aria-label="上报结果结束时间" />
+          </label>
+          <label class="cloud-filter-field cloud-result-status-filter">
+            <span>状态（当前页）</span>
+            <select v-model="resultStatus" aria-label="上报结果状态">
+              <option value="">全部状态</option>
+              <option v-for="status in resultStatuses" :key="status" :value="status">{{ status }}</option>
+            </select>
+          </label>
+          <button type="button" class="primary" :disabled="resultLoading" @click="submitCloudResults">{{ resultLoading ? '查询中…' : '查询结果' }}</button>
+        </div>
+        <p class="cloud-result-query-note">默认查询最近 24 小时，每页最多 50 条。PUBLISHED 仅表示发布成功，不计入 ACK；只有 ACK_CONFIRMED 才计入窗口内去重 ACK。</p>
+        <div v-if="resultError" class="cloud-error" role="alert">{{ resultError }}</div>
+        <div class="cloud-result-integrity" aria-label="上报结果完整性摘要">
+          <span><b>{{ resultAckCountText }}</b><small>已归档 ACK_CONFIRMED（按 messageId 去重）</small></span>
+          <span><b>{{ resultTotalText }}</b><small>已归档结果数（查询范围）</small></span>
+          <span><b>{{ resultPageData ? knownCountText(resultPageData.pendingCount) : '未知' }}</b><small>待补写结果</small></span>
+          <span><b>{{ resultPageData ? knownCountText(resultPageData.missingCount) : '未知' }}</b><small>无法补写结果</small></span>
+        </div>
+        <p class="cloud-result-coverage" :data-complete="resultPageData?.complete === true">{{ resultCoverageText }}</p>
+        <div v-if="resultLoading && !resultLastSuccess" class="cloud-empty">结果读取中…</div>
+        <div v-else-if="resultVisibleItems.length" class="cloud-table-scroll" tabindex="0" role="region" aria-label="独立上报结果列表，可横向和纵向滚动">
+          <table class="runtime-table cloud-table cloud-result-table" aria-label="独立上报结果">
+            <colgroup><col class="cloud-result-col-message" /><col class="cloud-result-col-device" /><col class="cloud-result-col-cloud" /><col class="cloud-result-col-gateway" /><col class="cloud-result-col-status" /><col class="cloud-result-col-time" /><col class="cloud-result-col-time" /><col class="cloud-result-col-time" /><col class="cloud-result-col-attempts" /></colgroup>
+            <thead><tr><th scope="col">消息 ID</th><th scope="col">本地设备</th><th scope="col">云端设备</th><th scope="col">网关设备</th><th scope="col">状态</th><th scope="col">发布时间</th><th scope="col">ACK 时间</th><th scope="col">完成时间</th><th scope="col">失败重试次数</th></tr></thead>
+            <tbody>
+              <tr v-for="row in resultVisibleItems" :key="row.messageId">
+                <td>{{ row.messageId }}</td>
+                <td>{{ formatDeviceIds(row.localDeviceIds) }}</td>
+                <td>{{ row.cloudDeviceId || '-' }}</td>
+                <td>{{ row.gatewayDeviceId || '-' }}</td>
+                <td><span class="cloud-row-state cloud-result-status" :data-result-status="row.status">{{ row.status || '未知' }}</span></td>
+                <td>{{ formatResultTimestamp(row.publishedAt) }}</td>
+                <td>{{ formatAckTimestamp(row) }}</td>
+                <td>{{ formatResultTimestamp(row.completedAt) }}</td>
+                <td>{{ formatResultAttempts(row.attempts) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else-if="!resultLoading" class="cloud-empty">{{ resultEmptyText }}</div>
+        <div class="cloud-result-pagination">
+          <span>{{ resultPaginationText }}</span>
+          <div class="cloud-result-page-actions">
+            <button type="button" :disabled="resultLoading || resultPageNumber <= 1 || !resultLastSuccess" @click="changeResultPage(-1)">上一页</button>
+            <button type="button" :disabled="resultLoading || !resultHasNextPage" @click="changeResultPage(1)">下一页</button>
+          </div>
+        </div>
+      </section>
+
       <section id="cloud-metrics" class="exact-surface cloud-metrics" tabindex="-1" aria-labelledby="cloud-metrics-title">
         <div class="exact-surface-head">
           <h2 id="cloud-metrics-title">可靠发件箱 / 云端确认指标</h2>
@@ -157,7 +230,7 @@ import { RouterLink } from "vue-router";
 import { ElDrawer, ElMessage, ElMessageBox } from "element-plus";
 
 import { getCloudReportMetrics } from "@/api/monitor.api";
-import { flushCloudOutbox, getCloudOutboxDetail, listCloudOutbox, replayCloudOutbox, testCloudLink } from "@/api/cloud.api";
+import { flushCloudOutbox, getCloudOutboxDetail, listCloudOutbox, listCloudResults, replayCloudOutbox, testCloudLink } from "@/api/cloud.api";
 import OperationSourceStatus from "@/components/ui/OperationSourceStatus.vue";
 import {
   buildCloudEnabledText,
@@ -167,7 +240,15 @@ import {
 } from "@/features/cloud/utils/cloud-report-utils";
 import { useAppStore } from "@/stores/app.store";
 import type { CloudReportMetricsResponse } from "@/types/monitor";
-import type { CloudOutboxDetail, CloudOutboxListItem, CloudTestResponse } from "@/types/cloud";
+import type {
+  CloudOutboxDetail,
+  CloudOutboxListItem,
+  CloudReportResultItem,
+  CloudReportResultPage,
+  CloudReportResultQueryParams,
+  CloudReportResultStatus,
+  CloudTestResponse
+} from "@/types/cloud";
 
 const appStore = useAppStore();
 const reportMetrics = ref<CloudReportMetricsResponse | null>(null);
@@ -178,6 +259,26 @@ const outboxRows = ref<CloudOutboxListItem[]>([]);
 const outboxStatuses = ["PENDING", "PUBLISHING", "WAITING_ACK", "WAITING_CONFIG", "ISOLATED"] as const;
 const outboxStatus = ref("");
 const outboxDeviceId = ref("");
+const resultStatuses = ["PUBLISHED", "ACK_CONFIRMED", "FAILED"] as const;
+const RESULT_PAGE_SIZE = 50;
+const resultPageData = ref<CloudReportResultPage | null>(null);
+const resultDeviceId = ref("");
+const resultStartTime = ref(toDateTimeLocal(Date.now() - 24 * 60 * 60 * 1000));
+const resultEndTime = ref(toDateTimeLocal(Date.now()));
+const resultStatus = ref<"" | CloudReportResultStatus>("");
+const resultPageNumber = ref(1);
+const resultLoading = ref(false);
+const resultError = ref("");
+const resultLastSuccess = ref<Date | null>(null);
+const resultLastAttemptAt = ref<number | null>(null);
+const resultReadState = ref<ReadState>("unknown");
+const resultLoadedContext = ref<{
+  deviceId: string;
+  startTs: number;
+  endTs: number;
+  page: number;
+  limit: number;
+} | null>(null);
 const testResult = ref<CloudTestResponse | null>(null);
 const actionError = ref("");
 const detailVisible = ref(false);
@@ -188,6 +289,12 @@ const detail = ref<CloudOutboxDetail | null>(null);
 const metricsLastSuccess = ref<Date | null>(null);
 const outboxLastSuccess = ref<Date | null>(null);
 type ReadState = "unknown" | "loading" | "ready" | "error";
+type CloudResultRequest = CloudReportResultQueryParams & {
+  startTs: number;
+  endTs: number;
+  page: number;
+  limit: number;
+};
 const pageLastAttemptAt = ref<number | null>(null);
 const metricsLastAttemptAt = ref<number | null>(null);
 const outboxLastAttemptAt = ref<number | null>(null);
@@ -197,7 +304,8 @@ const failedSource = ref<"" | "capability" | "metrics" | "outbox">("");
 const outboxLoadedContext = ref<{ status: string; deviceId: string } | null>(null);
 let detailGeneration = 0;
 let cloudLoadGeneration = 0;
-onUnmounted(() => { detailGeneration++; cloudLoadGeneration++; });
+let resultLoadGeneration = 0;
+onUnmounted(() => { detailGeneration++; cloudLoadGeneration++; resultLoadGeneration++; });
 
 const detailFields = computed(() => detail.value ? [
   { label: "消息 ID", value: detail.value.summary.messageId },
@@ -288,10 +396,70 @@ const outboxSourceDetail = computed(() => {
   const loaded = outboxLoadedContext.value;
   const source = loaded ? `显示中的成功筛选：状态 ${loaded.status || "全部"}，设备 ${loaded.deviceId || "全部"}。` : "队列尚未成功读取。";
   const currentChanged = loaded && (loaded.status !== outboxStatus.value || loaded.deviceId !== outboxDeviceId.value.trim());
-  const note = failedSource.value === "metrics" || failedSource.value === "capability" ? "本轮前置读取失败，未继续请求队列。" : outboxReadState.value === "error" ? "本次队列读取失败，保留上次成功数据。" : "最多读取 50 条消息，队列成功不代表指标或云端确认成功。";
+  const note = failedSource.value === "metrics" || failedSource.value === "capability" ? "本轮前置读取失败，未继续请求队列。" : outboxReadState.value === "error" ? "本次队列读取失败，保留上次成功数据。" : "最多读取 50 条未完成或隔离消息，包含发送中和等待配置状态；空列表不能推断未成功。";
   return `${source}${currentChanged ? "当前筛选已变更，现有列表不属于当前条件。" : ""}${note}`;
 });
-
+const resultItems = computed<CloudReportResultItem[]>(() => resultPageData.value?.items ?? []);
+const resultVisibleItems = computed(() => resultStatus.value
+  ? resultItems.value.filter((item) => item.status === resultStatus.value)
+  : resultItems.value);
+const resultSourceState = computed((): "unknown" | "loading" | "ready" | "empty" | "error" | "degraded" | "disabled" => {
+  if (resultReadState.value === "loading") return "loading";
+  if (resultReadState.value === "error") return resultLastSuccess.value ? "degraded" : "error";
+  if (resultReadState.value === "ready") {
+    if (resultPageData.value?.complete !== true) return "degraded";
+    return resultItems.value.length ? "ready" : "empty";
+  }
+  return "unknown";
+});
+const resultHeaderText = computed(() => resultLastSuccess.value
+  ? `${resultItems.value.length} 项 · ${resultLastSuccess.value.toLocaleString("zh-CN", { hour12: false })}`
+  : "结果尚未成功读取");
+const resultAckCountText = computed(() => knownCountText(resultPageData.value?.ackCount));
+const resultTotalText = computed(() => knownCountText(resultPageData.value?.total));
+const resultCoverageText = computed(() => {
+  const page = resultPageData.value;
+  if (!resultLastSuccess.value || !page) return "结果尚未成功读取；不能据此判断未成功或 ACK 数。";
+  if (page.complete) return "结果范围已完整读取；ACK 只统计状态为 ACK_CONFIRMED 的去重 messageId，PUBLISHED 不计入 ACK。";
+  const pending = knownCountText(page.pendingCount);
+  const missing = knownCountText(page.missingCount);
+  if (pending === "未知" && missing === "未知" && page.total === null) {
+    return "结果存储未启用或当前不可查询；列表和统计均未知，空列表不能推断没有成功上报。";
+  }
+  const countNote = page.total === null ? "统计未知" : "显示的只是已归档记录计数，不代表历史上报总量";
+  return `历史完整性未获证实：${pending === "未知" ? "待补写数量未知" : `待补写 ${pending} 条`}，${missing === "未知" ? "无法补写数量未知" : `无法补写 ${missing} 条`}；${countNote}。`;
+});
+const resultEmptyText = computed(() => {
+  if (resultStatus.value && resultItems.value.length) return "当前页没有匹配该状态的记录；状态筛选只作用于当前已读取页。";
+  if (!resultLastSuccess.value || !resultPageData.value) return "结果尚未成功加载，请查询或刷新重试。";
+  if (!resultPageData.value.complete) return "当前页暂无已归档结果；历史可能不完整，不能据此判断未成功。";
+  return "该时间范围暂无已记录的上报终态；不代表当前没有待发送或未完成消息，请结合 Outbox。";
+});
+const resultHasKnownTotal = computed(() => {
+  const total = resultPageData.value?.total;
+  return typeof total === "number" && Number.isFinite(total) && total >= 0;
+});
+const resultTotalPages = computed(() => {
+  const total = resultPageData.value?.total;
+  return resultHasKnownTotal.value && typeof total === "number" ? Math.ceil(total / RESULT_PAGE_SIZE) : 0;
+});
+const resultHasNextPage = computed(() => {
+  if (!resultLastSuccess.value || resultLoading.value || !resultPageData.value) return false;
+  if (resultHasKnownTotal.value) return resultPageNumber.value < resultTotalPages.value;
+  return resultItems.value.length >= RESULT_PAGE_SIZE;
+});
+const resultPaginationText = computed(() => {
+  if (!resultLastSuccess.value) return "页码未知";
+  if (resultHasKnownTotal.value) return `第 ${resultTotalPages.value === 0 ? 0 : resultPageNumber.value} / ${resultTotalPages.value} 页 · 共 ${resultTotalText.value} 条`;
+  return `第 ${resultPageNumber.value} 页 · 总数未知`;
+});
+const resultSourceDetail = computed(() => {
+  if (resultReadState.value === "loading") return "正在读取独立 TDengine 结果；不会用 Outbox 或 MQTT 发送数替代 ACK。";
+  if (resultReadState.value === "error") return "本次结果读取失败；成功时间未推进，已有结果属于上次成功查询。";
+  if (!resultLastSuccess.value || !resultPageData.value) return "默认查询最近 24 小时；每页最多 50 条。";
+  const scope = resultLoadedContext.value?.deviceId ? `设备 ${resultLoadedContext.value.deviceId}` : "全部设备";
+  return `${scope}，最近一次成功查询第 ${resultLoadedContext.value?.page ?? resultPageNumber.value} 页；${resultPageData.value.complete ? "完整性已确认" : "历史完整性未获证实；非空计数仅代表已归档记录"}。`;
+});
 function displayField(source: Record<string, unknown> | null | undefined, key: string, suffix = ""): string {
   if (!metricsLastSuccess.value || !source || !Object.hasOwn(source, key)) return "未知";
   const value = source[key];
@@ -311,8 +479,134 @@ function scrollToCloudSection(anchor: string) {
   target?.focus({ preventScroll: true });
 }
 
+function knownCountText(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? String(value) : "未知";
+}
+
+function toDateTimeLocal(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function parseDateTimeLocal(value: string): number | null {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function buildCloudResultQuery(): CloudResultRequest | null {
+  const startTs = parseDateTimeLocal(resultStartTime.value);
+  const endTs = parseDateTimeLocal(resultEndTime.value);
+  if (startTs === null || endTs === null) {
+    resultError.value = "请输入有效的结果查询时间范围";
+    resultReadState.value = "error";
+    return null;
+  }
+  if (endTs < startTs) {
+    resultError.value = "结果查询结束时间不能早于开始时间";
+    resultReadState.value = "error";
+    return null;
+  }
+  if (endTs - startTs > 31 * 24 * 60 * 60 * 1000) {
+    resultError.value = "单次结果查询的时间范围不能超过 31 天";
+    resultReadState.value = "error";
+    return null;
+  }
+  if (endTs > Date.now() + 60_000) {
+    resultError.value = "结果查询结束时间不能晚于当前时间";
+    resultReadState.value = "error";
+    return null;
+  }
+  return {
+    deviceId: resultDeviceId.value.trim() || undefined,
+    startTs,
+    endTs,
+    page: Math.max(1, resultPageNumber.value),
+    limit: RESULT_PAGE_SIZE
+  };
+}
+
+function normalizeOptionalCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function normalizeCloudResultPage(page: CloudReportResultPage): CloudReportResultPage {
+  return {
+    items: Array.isArray(page?.items) ? page.items : [],
+    ackCount: normalizeOptionalCount(page?.ackCount),
+    total: normalizeOptionalCount(page?.total),
+    complete: page?.complete === true,
+    pendingCount: normalizeOptionalCount(page?.pendingCount),
+    missingCount: normalizeOptionalCount(page?.missingCount)
+  };
+}
+
+async function loadCloudResults() {
+  const generation = ++resultLoadGeneration;
+  resultLoading.value = true;
+  resultError.value = "";
+  const query = buildCloudResultQuery();
+  if (!query) {
+    if (generation === resultLoadGeneration) resultLoading.value = false;
+    return;
+  }
+  resultLastAttemptAt.value = Date.now();
+  resultReadState.value = "loading";
+  try {
+    const nextPage = await listCloudResults(query);
+    if (generation !== resultLoadGeneration) return;
+    resultPageData.value = normalizeCloudResultPage(nextPage);
+    resultLastSuccess.value = new Date();
+    resultReadState.value = "ready";
+    resultLoadedContext.value = {
+      deviceId: query.deviceId || "",
+      startTs: query.startTs,
+      endTs: query.endTs,
+      page: query.page,
+      limit: query.limit
+    };
+  } catch (err) {
+    if (generation !== resultLoadGeneration) return;
+    resultReadState.value = "error";
+    resultError.value = errorMessage(err, "独立上报结果读取失败");
+  } finally {
+    if (generation === resultLoadGeneration) resultLoading.value = false;
+  }
+}
+
+function submitCloudResults() {
+  resultPageNumber.value = 1;
+  void loadCloudResults();
+}
+
+function changeResultPage(delta: number) {
+  const nextPage = resultPageNumber.value + delta;
+  if (nextPage < 1 || (delta > 0 && !resultHasNextPage.value)) return;
+  resultPageNumber.value = nextPage;
+  void loadCloudResults();
+}
+
+function formatDeviceIds(deviceIds?: string[]): string {
+  return Array.isArray(deviceIds) && deviceIds.length ? deviceIds.join("、") : "-";
+}
+
+function formatResultTimestamp(timestamp?: number): string {
+  return timestamp != null && timestamp > 0 ? formatTimestamp(timestamp) : "-";
+}
+
+function formatAckTimestamp(row: CloudReportResultItem): string {
+  if (row.status !== "ACK_CONFIRMED") return "未确认";
+  return row.ackAt != null && row.ackAt > 0 ? formatTimestamp(row.ackAt) : "时间未知";
+}
+
+function formatResultAttempts(attempts?: number): string {
+  return knownCountText(attempts);
+}
+
 onMounted(() => {
   void loadCloud();
+  void loadCloudResults();
 });
 
 async function loadCloud() {
@@ -364,7 +658,7 @@ async function loadCloud() {
 }
 
 async function refreshCloud() {
-  await loadCloud();
+  await Promise.all([loadCloud(), loadCloudResults()]);
 }
 
 async function openDetail(messageId: string) {

@@ -4,13 +4,17 @@ import com.wangbin.collector.core.cloud.config.CloudAckCommitMode;
 import com.wangbin.collector.core.report.config.ReportProperties;
 import com.wangbin.collector.core.report.inbound.MqttAckReply;
 import com.wangbin.collector.core.report.inbound.MqttAckReplyObserver;
-import com.wangbin.collector.core.report.model.ReportData;
 import com.wangbin.collector.core.report.model.ReportResult;
 import com.wangbin.collector.core.report.shadow.ShadowManager;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 统一处理发布结果和平台业务确认，保证消息提交幂等。
@@ -22,16 +26,30 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
     private final CloudOutboxRepository repository;
     private final ShadowManager shadowManager;
     private final ReportProperties reportProperties;
+    @Nullable
+    private final CloudReportResultRecorder resultRecorder;
 
     /**
      * 创建当前组件实例。
      */
+    @Autowired
     public CloudOutboxCoordinator(CloudOutboxRepository repository,
                                   ShadowManager shadowManager,
-                                  ReportProperties reportProperties) {
+                                  ReportProperties reportProperties,
+                                  @Nullable CloudReportResultRecorder resultRecorder) {
         this.repository = repository;
         this.shadowManager = shadowManager;
         this.reportProperties = reportProperties;
+        this.resultRecorder = resultRecorder;
+    }
+
+    /**
+     * 保留无结果存储时的构造方式，兼容仅加载云模块的调用方。
+     */
+    CloudOutboxCoordinator(CloudOutboxRepository repository,
+                           ShadowManager shadowManager,
+                           ReportProperties reportProperties) {
+        this(repository, shadowManager, reportProperties, null);
     }
 
     /**
@@ -45,6 +63,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                             messageId, message.getStatus());
                     return;
                 }
+                message.setPublishedAt(System.currentTimeMillis());
                 if (isAwaitingAck(result)) {
                     long timeout = metadataLong(result.getMetadata(),
                             CloudOutboxMetadataKeys.ACK_TIMEOUT_MS,
@@ -54,7 +73,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                     message.setLastError(null);
                     repository.rescheduleIfPresent(message);
                 } else {
-                    complete(message);
+                    complete(message, CloudReportResultStatus.PUBLISHED);
                 }
                 return;
             }
@@ -119,7 +138,13 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                 return;
             }
             if (ackReply.code() == 0) {
-                complete(message);
+                long ackAt = System.currentTimeMillis();
+                // 快速业务 ACK 可能先于异步发布回调；此时以确认时间近似记录发布时间。
+                if (message.getPublishedAt() <= 0) {
+                    message.setPublishedAt(ackAt);
+                }
+                message.setAckReceivedAt(ackAt);
+                complete(message, CloudReportResultStatus.ACK_CONFIRMED);
             } else {
                 rescheduleFailure(message, "平台业务确认失败: " + ackReply.message());
             }
@@ -129,7 +154,8 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
     /**
      * 执行当前业务逻辑。
      */
-    private void complete(CloudOutboxMessage message) {
+    private void complete(CloudOutboxMessage message, CloudReportResultStatus resultStatus) {
+        long completedAt = System.currentTimeMillis();
         for (CloudOutboxMessage.CloudOutboxCommit commit : message.resolveCommits()) {
             shadowManager.markOutboxReported(
                     commit.getLocalDeviceId(),
@@ -149,6 +175,7 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
                         true);
             }
         }
+        recordResult(message, resultStatus, completedAt);
     }
 
     /**
@@ -161,8 +188,9 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         if (attempts >= Math.max(1, reportProperties.getOutbox().getMaxRetryTimes())) {
             message.setStatus(CloudOutboxStatus.ISOLATED);
             repository.rescheduleIfPresent(message);
-            log.error("云端上报消息已进入隔离区，消息={}, 设备={}, 尝试次数={}",
+            log.error("云端上报消息已进入隔离区，消息={}，设备={}，尝试次数={}",
                     message.getMessageId(), message.getLocalDeviceId(), attempts);
+            recordResult(message, CloudReportResultStatus.FAILED, System.currentTimeMillis());
             return;
         }
         message.setStatus(CloudOutboxStatus.PENDING);
@@ -177,6 +205,43 @@ public class CloudOutboxCoordinator implements MqttAckReplyObserver {
         long base = Math.max(100L, reportProperties.getRetryBackoffMs());
         long max = Math.max(base, reportProperties.getMaxRetryBackoffMs());
         return Math.min(max, base * (1L << Math.min(Math.max(0, attempts - 1), 10)));
+    }
+
+    /**
+     * 向可选的结果存储端口提交终态元数据；记录失败不得影响既有提交状态机。
+     */
+    private void recordResult(CloudOutboxMessage message,
+                              CloudReportResultStatus status,
+                              long completedAt) {
+        if (resultRecorder == null || message == null || message.getMessageId() == null) {
+            return;
+        }
+        try {
+            Set<String> deviceIds = new LinkedHashSet<>();
+            if (message.getLocalDeviceId() != null && !message.getLocalDeviceId().isBlank()) {
+                deviceIds.add(message.getLocalDeviceId());
+            }
+            for (CloudOutboxMessage.CloudOutboxCommit commit : message.resolveCommits()) {
+                if (commit != null && commit.getLocalDeviceId() != null && !commit.getLocalDeviceId().isBlank()) {
+                    deviceIds.add(commit.getLocalDeviceId());
+                }
+            }
+            resultRecorder.record(new CloudReportResult(
+                    message.getMessageId(),
+                    List.copyOf(deviceIds),
+                    message.getDeviceName(),
+                    message.getGatewayDeviceId(),
+                    status,
+                    message.getPublishedAt(),
+                    message.getAckReceivedAt(),
+                    message.getCreatedAt(),
+                    completedAt,
+                    message.getAttempts(),
+                    status == CloudReportResultStatus.FAILED ? "已达到重试上限" : null));
+        } catch (RuntimeException exception) {
+            log.warn("云上报终态记录失败，消息={}，异常类型={}，记录缺口不影响已完成的上报状态",
+                    message.getMessageId(), exception.getClass().getSimpleName());
+        }
     }
 
     private boolean isPublishResultApplicable(CloudOutboxMessage message) {

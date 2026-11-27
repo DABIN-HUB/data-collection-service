@@ -38,33 +38,39 @@ public class MqttAckReplyHandler {
                 log.trace("MQTT ACK 缺少 id：主题={}", message.topic());
                 return;
             }
-            int code = parseAckCode(root);
+            Integer code = parseAckCode(root);
+            if (code == null) {
+                log.warn("忽略缺少有效业务状态码的 MQTT ACK：主题={}", message.topic());
+                return;
+            }
             String msgText = text(root, "msg");
             ackReplySink.complete(new MqttAckReply(messageId, code, msgText == null ? "" : msgText));
             if (code != 0) {
-                log.warn("MQTT ACK 返回业务错误：id={} 状态码={} msg={} 主题={}",
-                        messageId, code, msgText, message.topic());
+                log.warn("MQTT ACK 返回业务错误：状态码={} 主题={}", code, message.topic());
             }
         } catch (Exception e) {
-            log.warn("解析 MQTT ACK 失败：主题={} err={}", message.topic(), e.getMessage());
+            log.warn("解析 MQTT ACK 失败：主题={} 异常类型={}", message.topic(), e.getClass().getSimpleName());
         }
     }
 
     /**
      * 解析或转换业务数据。
      */
-    private int parseAckCode(JsonNode root) {
+    private Integer parseAckCode(JsonNode root) {
         JsonNode codeNode = root != null ? root.get("code") : null;
         if (codeNode == null || codeNode.isNull()) {
-            return 0;
+            return null;
         }
         if (codeNode.isInt()) {
             return codeNode.asInt();
         }
+        if (!codeNode.isTextual()) {
+            return null;
+        }
         try {
             return Integer.parseInt(codeNode.asText());
         } catch (NumberFormatException ex) {
-            return 0;
+            return null;
         }
     }
 

@@ -1,5 +1,5 @@
 import type { AlarmRow } from "@/types/monitor";
-import type { HistoryRow } from "./history-data-utils";
+import { historyNumericValue, latestHistoryValueText, sortHistoryRowsAscending, type HistoryRow } from "./history-data-utils";
 
 export interface HistoryTrendSeriesInput {
   key: string;
@@ -40,10 +40,14 @@ export interface HistoryTrendSummaryCard {
 const SERIES_COLORS = ["#38bdf8", "#f97316", "#22c55e", "#a855f7", "#f43f5e", "#eab308"];
 
 export function buildHistoryTrendSeries(seriesInputs: HistoryTrendSeriesInput[]): HistoryTrendSeriesSummary[] {
-  const rows = seriesInputs.map((item) => ({
-    ...item,
-    values: item.rows.map(historyValue).filter((value): value is number => Number.isFinite(value))
-  }));
+  const rows = seriesInputs.map((item) => {
+    const orderedRows = sortHistoryRowsAscending(item.rows);
+    return {
+      ...item,
+      rows: orderedRows,
+      values: orderedRows.map(historyNumericValue).filter((value): value is number => value !== undefined)
+    };
+  });
   const allValues = rows.flatMap((item) => item.values);
   const globalMin = allValues.length ? Math.min(...allValues) : 0;
   const globalMax = allValues.length ? Math.max(...allValues) : 1;
@@ -57,7 +61,6 @@ export function buildHistoryTrendSeries(seriesInputs: HistoryTrendSeriesInput[])
         return `${x.toFixed(2)},${y.toFixed(2)}`;
       }).join(" ")
       : "";
-    const latestValue = item.values.length ? item.values[item.values.length - 1] : undefined;
     const minimumValue = item.values.length ? Math.min(...item.values) : undefined;
     const maximumValue = item.values.length ? Math.max(...item.values) : undefined;
     return {
@@ -66,7 +69,7 @@ export function buildHistoryTrendSeries(seriesInputs: HistoryTrendSeriesInput[])
       rows: item.rows,
       color: SERIES_COLORS[index % SERIES_COLORS.length],
       points,
-      latestText: formatNumeric(latestValue),
+      latestText: latestHistoryValueText(item.rows),
       minimumText: formatNumeric(minimumValue),
       maximumText: formatNumeric(maximumValue),
       sampleCount: item.rows.length
@@ -98,7 +101,7 @@ export function buildHistoryTrendExportText(input: HistoryTrendExportInput): str
 
 export function buildHistoryTrendSummaryCards(input: HistoryTrendSummaryInput): HistoryTrendSummaryCard[] {
   const series = input.series || [];
-  const allValues = series.flatMap((item) => item.rows.map(historyValue).filter((value): value is number => Number.isFinite(value)));
+  const allValues = series.flatMap((item) => item.rows.map(historyNumericValue).filter((value): value is number => value !== undefined));
   const mainSeries = series[0];
   const compareCount = Math.max(0, series.length - 1);
   const sampleCount = series.reduce((sum, item) => sum + item.sampleCount, 0);
@@ -141,12 +144,6 @@ export function buildHistoryTrendSummaryCards(input: HistoryTrendSummaryInput): 
       detail: input.pointLabel || input.pointRef
     }
   ];
-}
-
-function historyValue(row: HistoryRow): number | undefined {
-  const raw = row.value ?? row.currentValue ?? row.rawValue ?? row.val;
-  const number = Number(raw);
-  return Number.isFinite(number) ? number : undefined;
 }
 
 function formatNumeric(value: number | undefined): string {
